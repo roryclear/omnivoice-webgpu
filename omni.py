@@ -660,33 +660,13 @@ class OmniVoice(PreTrainedModel):
         rms: Union[float, None],
         gen_config: OmniVoiceGenerationConfig,
     ) -> np.ndarray:
-        """
-        Args:
-            tokens: Audio tokens — either a single tensor of shape
-                (num_codebooks, seq_len) or a list of chunk tensors.
-            rms: RMS of the reference audio for volume adjustment.
-            gen_config: Generation config for post-processing options.
-        Returns:
-            Decoded and post-processed audio array of shape (T,).
-        """
         tokenizer_device = self.audio_tokenizer.device
-        if isinstance(tokens, list):
-            chunk_audios = [
-                self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0))
-                .audio_values[0]
-                .cpu()
-                .numpy()
-                for t in tokens
-            ]
-            audio_waveform = cross_fade_chunks(chunk_audios, self.sampling_rate)
-        else:
-            audio_waveform = (
-                self.audio_tokenizer.decode(tokens.to(tokenizer_device).unsqueeze(0))
-                .audio_values[0]
-                .cpu()
-                .numpy()
-            )
-
+        audio_waveform = (
+            self.audio_tokenizer.decode(tokens.to(tokenizer_device).unsqueeze(0))
+            .audio_values[0]
+            .cpu()
+            .numpy()
+        )
         audio_waveform = self._post_process_audio(
             audio_waveform,
             postprocess_output=gen_config.postprocess_output,
