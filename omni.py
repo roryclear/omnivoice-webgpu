@@ -873,7 +873,7 @@ class OmniVoice(PreTrainedModel):
         batch_size = len(text_list)
 
         language_list = self._ensure_list(language, batch_size)
-        language_list = [_resolve_language(lang) for lang in language_list]
+        language_list = [None for _ in language_list]
         instruct_list = self._ensure_list(instruct, batch_size)
         for i, s in enumerate(instruct_list):
             if s is None:
@@ -1286,25 +1286,6 @@ def _mask_mod_packed(document_ids, b, h, q_idx, kv_idx):
     return same_doc
 
 
-def _resolve_language(language: Optional[str]) -> Union[str, None]:
-    from omnivoice.utils.lang_map import LANG_IDS, LANG_NAME_TO_ID
-
-    if language is None or language.lower() == "none":
-        return None
-    if language in LANG_IDS:
-        return language
-    key = language.lower()
-    if key in LANG_NAME_TO_ID:
-        return LANG_NAME_TO_ID[key]
-    logger.warning(
-        f"Language '{language}' is not recognized. "
-        f"Please use a valid language ID (e.g., 'en', 'zh', 'ja', 'de') "
-        f"or a full language name (e.g., 'English', 'Chinese', 'Japanese'). "
-        f"See supported_language_ids() or supported_language_names() for details. "
-        f"Falling back to None (language-agnostic mode)."
-    )
-    return None
-
 
 def _resolve_instruct(
     instruct: Optional[str], use_zh: bool = False
@@ -1535,11 +1516,3 @@ def _combine_text(text, ref_text: Optional[str] = None) -> str:
     full_text = re.sub(pattern, "", full_text)
 
     return full_text
-
-
-# ---------------------------------------------------------------------------
-# Register with HuggingFace Auto classes
-# ---------------------------------------------------------------------------
-
-AutoConfig.register("omnivoice", OmniVoiceConfig)
-AutoModel.register(OmniVoiceConfig, OmniVoice)
