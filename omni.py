@@ -872,8 +872,6 @@ class OmniVoice(PreTrainedModel):
             text_list = text
         batch_size = len(text_list)
 
-        language_list = self._ensure_list(language, batch_size)
-        language_list = [None for _ in language_list]
         instruct_list = self._ensure_list(instruct, batch_size)
         for i, s in enumerate(instruct_list):
             if s is None:
@@ -971,7 +969,7 @@ class OmniVoice(PreTrainedModel):
             batch_size=batch_size,
             texts=text_list,
             target_lens=num_target_tokens_list,
-            langs=language_list,
+            langs=[None],
             instructs=instruct_list,
             ref_texts=ref_text_list,
             ref_audio_tokens=ref_audio_tokens_list,
