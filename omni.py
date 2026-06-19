@@ -933,17 +933,13 @@ class OmniVoice(PreTrainedModel):
 
         num_target_tokens_list = []
         for i in range(batch_size):
-            # duration[i] overrides speed for estimation: use speed=1.0
-            # to get the raw estimate, then override target_lens below.
-            has_dur = durations is not None and durations[i] is not None
-            item_speed = 1.0 if has_dur else (user_speed[i] if user_speed else 1.0)
             est = self._estimate_target_tokens(
                 text_list[i],
                 ref_text_list[i],
                 ref_audio_tokens_list[i].size(-1)
                 if ref_audio_tokens_list[i] is not None
                 else None,
-                speed=item_speed,
+                speed=1.0,
             )
             num_target_tokens_list.append(est)
 
