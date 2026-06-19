@@ -1,32 +1,3 @@
-#!/usr/bin/env python3
-# Copyright    2026  Xiaomi Corp.        (authors:  Han Zhu)
-#
-# See ../../LICENSE for clarification regarding multiple authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""Core OmniVoice model implementation.
-
-Defines the ``OmniVoice`` model class, generation config, and inference pipeline.
-This is the main entry point for both inference and training:
-
-- **Inference**: ``OmniVoice.from_pretrained()`` loads the model, then
-  ``model.generate()`` supports voice cloning, voice design, and auto voice.
-- **Training**: ``model.forward()`` computes the training loss; the model is
-  built and used by ``omnivoice.training.builder`` and ``omnivoice.training.trainer``.
-
-"""
-
 import difflib
 import logging
 import math
@@ -42,12 +13,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 
-try:
-    from torch.nn.attention.flex_attention import create_block_mask
-
-    _flex_attention_available = True
-except ImportError:
-    _flex_attention_available = False
 from transformers import (
     AutoFeatureExtractor,
     AutoModel,
@@ -390,25 +355,7 @@ class OmniVoice(PreTrainedModel):
     ):
 
         inputs_embeds = self._prepare_embed_inputs(input_ids, audio_mask)
-
-        if attention_mask is None and document_ids is not None:
-            if not _flex_attention_available:
-                raise RuntimeError(
-                    "flex_attention is not available in the current environment. "
-                    "If you do not need flex_attention, set "
-                    '"attn_implementation": "sdpa" in your training config.'
-                )
-            attention_mask = create_block_mask(
-                _get_packed_mask(
-                    document_ids[0].to(inputs_embeds.device),
-                ),
-                B=None,
-                H=None,
-                Q_LEN=input_ids.size(-1),
-                KV_LEN=input_ids.size(-1),
-                _compile=True,
-                device=inputs_embeds.device,
-            )
+        
 
         llm_outputs = self.llm(
             inputs_embeds=inputs_embeds,
