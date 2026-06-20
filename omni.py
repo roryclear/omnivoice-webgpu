@@ -292,9 +292,7 @@ class OmniVoice(PreTrainedModel):
             instruct=instruct,
         )
 
-        long = full_task.target_lens[0] > int(AUDIO_CHUNKED_THRESHOLD * FRAME_RATE)
-        result = self._generate_chunked(full_task)[0] if long else self._generate_iterative(full_task)[0]            
-
+        result = self._generate_chunked(full_task)[0]         
         generated_audios = [self._decode_and_post_process(result, full_task.ref_rms[0])]
 
         return generated_audios
@@ -591,7 +589,6 @@ class OmniVoice(PreTrainedModel):
             )
 
         return chunk_results
-
 
 
     def _generate_iterative(
