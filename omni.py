@@ -548,38 +548,33 @@ class OmniVoice(PreTrainedModel):
         )
 
         max_num_chunks = len(chunks)
-        # chunk_results[item_idx] = list of generated token tensors per chunk
-        chunk_results = [[] for _ in range(task.batch_size)]
+        chunk_results = [[]]
 
-        def _run_batch(indices, texts, ref_audios, ref_texts):
-            speed_list = task.speed
+        def _run_batch(texts, ref_audios, ref_texts):
             target_lens = [
                 self._estimate_target_tokens(
-                    texts[j],
-                    ref_texts[j],
-                    ref_audios[j].size(-1) if ref_audios[j] is not None else None,
-                    speed=speed_list[i] if speed_list else 1.0,
+                    texts[0],
+                    ref_texts[0],
+                    ref_audios[0].size(-1),
+                    speed=1.0,
                 )
-                for j, i in enumerate(indices)
             ]
             sub_task = GenerationTask(
-                batch_size=len(indices),
+                batch_size=1,
                 texts=texts,
                 target_lens=target_lens,
-                langs=[task.langs[i] for i in indices],
-                instructs=[task.instructs[i] for i in indices],
+                langs=[task.langs[0]],
+                instructs=[task.instructs[0]],
                 ref_texts=ref_texts,
                 ref_audio_tokens=ref_audios,
-                ref_rms=[task.ref_rms[i] for i in indices],
-                speed=[task.speed[i] for i in indices] if task.speed else None,
+                ref_rms=[task.ref_rms[0]],
+                speed=None,
             )
             gen_tokens = self._generate_iterative(sub_task)
-            for j, idx in enumerate(indices):
-                chunk_results[idx].append(gen_tokens[j])
+            chunk_results[0].append(gen_tokens[0]) # todo
 
         for i in range(max_num_chunks):
             _run_batch(
-                [0],
                 texts=[chunks[i]],
                 ref_audios=[task.ref_audio_tokens[0]],
                 ref_texts=[task.ref_texts[0]],
