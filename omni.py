@@ -65,25 +65,18 @@ class GenerationTask:
         long_idx = [i for i, l in enumerate(self.target_lens) if l > threshold]
         return short_idx, long_idx
 
-    def slice_task(self, indices: List[int]):
-        if not indices:
-            return None
+    def slice_task(self):
         return GenerationTask(
-            batch_size=len(indices),
-            texts=[self.texts[i] for i in indices],
-            target_lens=[self.target_lens[i] for i in indices],
-            langs=[self.langs[i] for i in indices],
-            instructs=[self.instructs[i] for i in indices],
-            ref_texts=[self.ref_texts[i] for i in indices],
-            ref_audio_tokens=[self.ref_audio_tokens[i] for i in indices],
-            ref_rms=[self.ref_rms[i] for i in indices],
-            speed=[self.speed[i] for i in indices] if self.speed else None,
+            batch_size=1,
+            texts=[self.texts[0]],
+            target_lens=[self.target_lens[0]],
+            langs=[self.langs[0]],
+            instructs=[self.instructs[0]],
+            ref_texts=[self.ref_texts[0]],
+            ref_audio_tokens=[self.ref_audio_tokens[0]],
+            ref_rms=[self.ref_rms[0]],
+            speed=None
         )
-
-# ---------------------------------------------------------------------------
-# Config & Model
-# ---------------------------------------------------------------------------
-
 
 class OmniVoiceConfig(PretrainedConfig):
     model_type = "omnivoice"
@@ -299,23 +292,20 @@ class OmniVoice(PreTrainedModel):
         )
         
         short_idx, long_idx = full_task.get_indices()
-        
-        results = [None] # todo dont use list
 
         if short_idx:
-            short_task = full_task.slice_task(short_idx)
+            short_task = full_task
             short_results = self._generate_iterative(short_task)
             for idx, res in zip(short_idx, short_results):
-                results[idx] = res
+                result = res
 
         if long_idx:
-            long_task = full_task.slice_task(long_idx)
+            long_task = full_task
             long_results = self._generate_chunked(long_task)
             for idx, res in zip(long_idx, long_results):
-                results[idx] = res
+                result = res
 
-        generated_audios = []
-        generated_audios.append(self._decode_and_post_process(results[0], full_task.ref_rms[0]))
+        generated_audios = [self._decode_and_post_process(result, full_task.ref_rms[0])]
 
         return generated_audios
 
