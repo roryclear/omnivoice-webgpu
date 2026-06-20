@@ -280,9 +280,7 @@ class OmniVoice(PreTrainedModel):
         voice_clone_prompt=None,
         instruct: Union[str, list[str], None] = None,
     ) -> list[np.ndarray]:
-
         self.eval()
-
         full_task = self._preprocess_all(
             text=text,
             ref_text=ref_text,
@@ -290,23 +288,8 @@ class OmniVoice(PreTrainedModel):
             voice_clone_prompt=voice_clone_prompt,
             instruct=instruct,
         )
-        
-        short_idx, long_idx = full_task.get_indices()
-
-        if short_idx:
-            short_task = full_task
-            short_results = self._generate_iterative(short_task)
-            for idx, res in zip(short_idx, short_results):
-                result = res
-
-        if long_idx:
-            long_task = full_task
-            long_results = self._generate_chunked(long_task)
-            for idx, res in zip(long_idx, long_results):
-                result = res
-
+        result = self._generate_iterative(full_task)[0]
         generated_audios = [self._decode_and_post_process(result, full_task.ref_rms[0])]
-
         return generated_audios
 
     def _generate_chunked(
