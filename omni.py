@@ -55,7 +55,6 @@ class OmniVoiceGenerationConfig:
     denoise: bool = True
     preprocess_prompt: bool = True
     postprocess_output: bool = True
-    audio_chunk_duration: float = 15.0
     audio_chunk_threshold: float = 30.0
 
     @classmethod
@@ -66,6 +65,8 @@ class OmniVoiceGenerationConfig:
 
 
 FRAME_RATE1 = 25
+AUDIO_CHUNK_DURATION = 15.0
+NUM_STEPS = 32
 
 @dataclass
 class GenerationTask:
@@ -364,7 +365,6 @@ class OmniVoice(PreTrainedModel):
             ref_audio=ref_audio,
             voice_clone_prompt=voice_clone_prompt,
             instruct=instruct,
-            preprocess_prompt=gen_config.preprocess_prompt,
         )
         
         short_idx, long_idx = full_task.get_indices(gen_config)
@@ -401,7 +401,7 @@ class OmniVoice(PreTrainedModel):
         for i in range(task.batch_size):
             avg_tokens_per_char = task.target_lens[i] / len(task.texts[i])
             text_chunk_len = int(
-                gen_config.audio_chunk_duration
+                AUDIO_CHUNK_DURATION
                 * FRAME_RATE1
                 / avg_tokens_per_char
             )
@@ -495,7 +495,6 @@ class OmniVoice(PreTrainedModel):
         self,
         ref_audio: Union[str, tuple[torch.Tensor, int]],
         ref_text: Optional[str] = None,
-        preprocess_prompt: bool = True,
     ):
 
         ref_wav = load_audio(ref_audio, self.sampling_rate)
@@ -611,7 +610,6 @@ class OmniVoice(PreTrainedModel):
         ] = None,
         voice_clone_prompt=None,
         instruct: Union[str, list[str], None] = None,
-        preprocess_prompt: bool = True,
     ) -> GenerationTask:
 
         text_list = [text]
@@ -628,7 +626,6 @@ class OmniVoice(PreTrainedModel):
                 self.create_voice_clone_prompt(
                     ref_audio=ref_audio_list[i],
                     ref_text=ref_text_list[i],
-                    preprocess_prompt=preprocess_prompt,
                 )
             )
 
@@ -778,7 +775,7 @@ class OmniVoice(PreTrainedModel):
                 task.ref_audio_tokens[0],
                 task.langs[0],
                 task.instructs[0],
-                gen_config.denoise,
+                True,
             )
         ]
 
@@ -825,7 +822,7 @@ class OmniVoice(PreTrainedModel):
         timesteps = _get_time_steps(
             t_start=0.0,
             t_end=1.0,
-            num_step=gen_config.num_step,
+            num_step=NUM_STEPS,
             t_shift=gen_config.t_shift,
         ).tolist()
         schedules = []
@@ -833,10 +830,10 @@ class OmniVoice(PreTrainedModel):
             total_mask = t_len * self.config.num_audio_codebook
             rem = total_mask
             sched = []
-            for step in range(gen_config.num_step):
+            for step in range(NUM_STEPS):
                 num = (
                     rem
-                    if step == gen_config.num_step - 1
+                    if step == NUM_STEPS - 1
                     else min(
                         math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])),
                         rem,
@@ -850,7 +847,7 @@ class OmniVoice(PreTrainedModel):
             self.config.num_audio_codebook, device=self.device
         ).view(1, -1, 1)
 
-        for step in range(gen_config.num_step):
+        for step in range(NUM_STEPS):
             batch_logits = self(
                 input_ids=batch_input_ids,
                 audio_mask=batch_audio_mask,
