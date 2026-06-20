@@ -526,23 +526,23 @@ class OmniVoice(PreTrainedModel):
         max_num_chunks = len(chunks)
         chunk_results = [[]]
 
-        def _run_batch(texts, ref_audios, ref_texts):
+        def _run_batch(text, ref_audio, ref_text):
             target_lens = [
                 self._estimate_target_tokens(
-                    texts[0],
-                    ref_texts[0],
-                    ref_audios[0].size(-1),
+                    text,
+                    ref_text,
+                    ref_audio.size(-1),
                     speed=1.0,
                 )
             ]
             sub_task = GenerationTask(
                 batch_size=1,
-                texts=texts,
+                texts=[text],
                 target_lens=target_lens,
                 langs=[task.langs[0]],
                 instructs=[task.instructs[0]],
-                ref_texts=ref_texts,
-                ref_audio_tokens=ref_audios,
+                ref_texts=[ref_text],
+                ref_audio_tokens=[ref_audio],
                 ref_rms=[task.ref_rms[0]],
                 speed=None,
             )
@@ -551,9 +551,9 @@ class OmniVoice(PreTrainedModel):
 
         for i in range(max_num_chunks):
             _run_batch(
-                texts=[chunks[i]],
-                ref_audios=[task.ref_audio_tokens[0]],
-                ref_texts=[task.ref_texts[0]],
+                text=chunks[i],
+                ref_audio=task.ref_audio_tokens[0],
+                ref_text=task.ref_texts[0],
             )
 
         return chunk_results
