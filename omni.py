@@ -256,9 +256,7 @@ class OmniVoice(PreTrainedModel):
         self,
         input_ids: torch.LongTensor,
         audio_mask: torch.Tensor,
-        labels: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        document_ids: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
     ):
 
@@ -273,8 +271,6 @@ class OmniVoice(PreTrainedModel):
         )
         hidden_states = llm_outputs[0]
 
-        loss = None
-
         # Shape: [B, S, C * Vocab]
         batch_size, seq_len, _ = hidden_states.shape
         logits_flat = self.audio_heads(hidden_states)
@@ -285,31 +281,6 @@ class OmniVoice(PreTrainedModel):
             self.config.num_audio_codebook,
             self.config.audio_vocab_size,
         ).permute(0, 2, 1, 3)
-
-        if labels is not None:
-
-            # audio_logits.permute(0, 3, 1, 2):
-            # [Batch, Layer, Seq, Vocab] -> [Batch, Vocab, Layer, Seq]
-            # per_token_loss shape: [Batch, Layer, Seq]，ignore -100
-            per_token_loss = torch.nn.functional.cross_entropy(
-                audio_logits.permute(0, 3, 1, 2),
-                labels,
-                reduction="none",
-                ignore_index=-100,
-            )
-            # valid_mask shape: [Batch, Layer, Seq]
-            valid_mask = (labels != -100).float()
-
-            # layer_means shape: [num_layers]
-            layer_means = (per_token_loss * valid_mask).sum(
-                dim=(0, 2)
-            ) / valid_mask.sum(dim=(0, 2)).clamp(min=1.0)
-
-            weights = torch.tensor(
-                self.normalized_audio_codebook_weights, device=audio_logits.device
-            )
-            loss = (layer_means * weights).sum()
-
         return audio_logits
 
     # -------------------------------------------------------------------
@@ -324,7 +295,6 @@ class OmniVoice(PreTrainedModel):
         ref_audio=None,
         voice_clone_prompt=None,
         instruct: Union[str, list[str], None] = None,
-        **kwargs,
     ) -> list[np.ndarray]:
 
         self.eval()
@@ -338,8 +308,8 @@ class OmniVoice(PreTrainedModel):
         )
         
         short_idx, long_idx = full_task.get_indices()
-
-        results = [None] * full_task.batch_size
+        
+        results = [None] # todo dont use list
 
         if short_idx:
             short_task = full_task.slice_task(short_idx)
@@ -354,13 +324,7 @@ class OmniVoice(PreTrainedModel):
                 results[idx] = res
 
         generated_audios = []
-        for i in range(full_task.batch_size):
-            assert results[i] is not None, f"Result {i} was not generated"
-            generated_audios.append(
-                self._decode_and_post_process(
-                    results[i], full_task.ref_rms[i]  # type: ignore[arg-type]
-                )
-            )
+        generated_audios.append(self._decode_and_post_process(results[0], full_task.ref_rms[0]))
 
         return generated_audios
 
