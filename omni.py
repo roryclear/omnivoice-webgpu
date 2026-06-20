@@ -46,12 +46,7 @@ class VoiceClonePrompt:
 
 @dataclass
 class OmniVoiceGenerationConfig:
-    num_step: int = 32
-    guidance_scale: float = 2.0
     t_shift: float = 0.1
-    layer_penalty_factor: float = 5.0
-    position_temperature: float = 5.0
-    class_temperature: float = 0.0
     denoise: bool = True
     preprocess_prompt: bool = True
     postprocess_output: bool = True
@@ -67,6 +62,9 @@ class OmniVoiceGenerationConfig:
 FRAME_RATE1 = 25
 AUDIO_CHUNK_DURATION = 15.0
 NUM_STEPS = 32
+POSITION_TEMP = 5.0
+LAYER_PENTALTY_FACTOR = 5.0
+GUIDANCE_SCALE = 2.0
 
 @dataclass
 class GenerationTask:
@@ -869,10 +867,9 @@ class OmniVoice(PreTrainedModel):
                 c_logits, u_logits, gen_config
             )
 
-            scores = scores - (layer_ids * gen_config.layer_penalty_factor)
+            scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
 
-            if gen_config.position_temperature > 0.0:
-                scores = _gumbel_sample(scores, gen_config.position_temperature)
+            scores = _gumbel_sample(scores, POSITION_TEMP)
 
             sample_tokens = tokens[0: 1, :, :t_len]
             scores.masked_fill_(
@@ -892,25 +889,15 @@ class OmniVoice(PreTrainedModel):
         return [tokens[0, :, : task.target_lens[0]]]
 
     def _predict_tokens_with_scoring(self, c_logits, u_logits, gen_config):
-        if gen_config.guidance_scale != 0:
-            c_log_probs = F.log_softmax(c_logits, dim=-1)
-            u_log_probs = F.log_softmax(u_logits, dim=-1)
-            log_probs = torch.log_softmax(
-                c_log_probs + gen_config.guidance_scale * (c_log_probs - u_log_probs),
-                dim=-1,
-            )
-        else:
-            log_probs = F.log_softmax(c_logits, dim=-1)
+        c_log_probs = F.log_softmax(c_logits, dim=-1)
+        u_log_probs = F.log_softmax(u_logits, dim=-1)
+        log_probs = torch.log_softmax(
+            c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs),
+            dim=-1,
+        )
 
         log_probs[..., self.config.audio_mask_id] = -float("inf")
-
-        if gen_config.class_temperature > 0.0:
-            filtered_probs = _filter_top_k(log_probs, ratio=0.1)
-            pred_tokens = _gumbel_sample(
-                filtered_probs, gen_config.class_temperature
-            ).argmax(dim=-1)
-        else:
-            pred_tokens = log_probs.argmax(dim=-1)
+        pred_tokens = log_probs.argmax(dim=-1)
 
         confidence_scores = log_probs.max(dim=-1)[0]
 
