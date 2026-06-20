@@ -338,14 +338,6 @@ class OmniVoice(PreTrainedModel):
             logits=audio_logits,
         )
 
-    def supported_language_ids(self) -> set[str]:
-        """Return a list of supported language IDs."""
-        return LANG_IDS
-
-    def supported_language_names(self) -> set[str]:
-        """Return a list of supported language names."""
-        return LANG_NAMES
-
     # -------------------------------------------------------------------
     # Inference API
     # -------------------------------------------------------------------
@@ -354,21 +346,10 @@ class OmniVoice(PreTrainedModel):
     def generate(
         self,
         text: Union[str, list[str]],
-        language: Union[str, list[str], None] = None,
         ref_text: Union[str, list[str], None] = None,
-        ref_audio: Union[
-            str,
-            list[str],
-            tuple[torch.Tensor, int],
-            list[tuple[torch.Tensor, int]],
-            None,
-        ] = None,
-        voice_clone_prompt: Union[
-            VoiceClonePrompt, list[VoiceClonePrompt], None
-        ] = None,
+        ref_audio=None,
+        voice_clone_prompt=None,
         instruct: Union[str, list[str], None] = None,
-        duration: Union[float, list[Optional[float]], None] = None,
-        speed: Union[float, list[Optional[float]], None] = None,
         **kwargs,
     ) -> list[np.ndarray]:
 
@@ -377,14 +358,11 @@ class OmniVoice(PreTrainedModel):
 
         full_task = self._preprocess_all(
             text=text,
-            language=language,
             ref_text=ref_text,
             ref_audio=ref_audio,
             voice_clone_prompt=voice_clone_prompt,
             instruct=instruct,
             preprocess_prompt=gen_config.preprocess_prompt,
-            speed=speed,
-            duration=duration,
         )
 
         short_idx, long_idx = full_task.get_indices(
@@ -518,7 +496,7 @@ class OmniVoice(PreTrainedModel):
         ref_audio: Union[str, tuple[torch.Tensor, int]],
         ref_text: Optional[str] = None,
         preprocess_prompt: bool = True,
-    ) -> VoiceClonePrompt:
+    ):
 
         ref_wav = load_audio(ref_audio, self.sampling_rate)
         ref_rms = float(np.sqrt(np.mean(ref_wav**2)))
@@ -623,7 +601,6 @@ class OmniVoice(PreTrainedModel):
     def _preprocess_all(
         self,
         text: Union[str, list[str]],
-        language: Union[str, list[str], None] = None,
         ref_text: Union[str, list[str], None] = None,
         ref_audio: Union[
             str,
@@ -632,13 +609,9 @@ class OmniVoice(PreTrainedModel):
             list[tuple[torch.Tensor, int]],
             None,
         ] = None,
-        voice_clone_prompt: Union[
-            VoiceClonePrompt, list[VoiceClonePrompt], None
-        ] = None,
+        voice_clone_prompt=None,
         instruct: Union[str, list[str], None] = None,
         preprocess_prompt: bool = True,
-        speed: Union[float, list[Optional[float]], None] = None,
-        duration: Union[float, list[Optional[float]], None] = None,
     ) -> GenerationTask:
 
         text_list = [text]
