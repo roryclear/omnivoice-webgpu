@@ -168,39 +168,6 @@ class OmniVoice(PreTrainedModel):
 
         return model
 
-    @torch.inference_mode()
-    def transcribe(
-        self,
-        audio: Union[str, tuple],
-    ) -> str:
-        """Transcribe audio using the loaded Whisper ASR model.
-
-        Args:
-            audio: File path or ``(waveform, sample_rate)`` tuple.
-                Waveform can be a numpy array or torch.Tensor of shape
-                ``(1, T)`` or ``(T,)``.
-
-        Returns:
-            Transcribed text.
-        """
-        if self._asr_pipe is None:
-            raise RuntimeError(
-                "ASR model is not loaded. Call model.load_asr_model() first."
-            )
-
-        if isinstance(audio, str):
-            return self._asr_pipe(audio)["text"].strip()
-        else:
-            waveform, sr = audio
-            if isinstance(waveform, torch.Tensor):
-                waveform = waveform.cpu().numpy()
-            waveform = np.squeeze(waveform)  # (1, T) or (T,) → (T,)
-            audio_input = {
-                "array": waveform,
-                "sampling_rate": sr,
-            }
-            return self._asr_pipe(audio_input)["text"].strip()
-
     def _prepare_embed_inputs(
         self, input_ids: torch.Tensor, audio_mask: torch.Tensor
     ) -> torch.Tensor:
