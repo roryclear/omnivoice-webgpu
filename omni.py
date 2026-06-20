@@ -520,9 +520,9 @@ class OmniVoice(PreTrainedModel):
         preprocess_prompt: bool = True,
     ) -> VoiceClonePrompt:
 
-        if isinstance(ref_audio, str): ref_wav = load_audio(ref_audio, self.sampling_rate)
-
+        ref_wav = load_audio(ref_audio, self.sampling_rate)
         ref_rms = float(np.sqrt(np.mean(ref_wav**2)))
+
         if 0 < ref_rms < 0.1:
             ref_wav = ref_wav * 0.1 / ref_rms
 
@@ -554,8 +554,7 @@ class OmniVoice(PreTrainedModel):
             0
         )  # (C, T)
 
-        if preprocess_prompt:
-            ref_text = add_punctuation(ref_text)
+        ref_text = add_punctuation(ref_text)
 
         return VoiceClonePrompt(
             ref_audio_tokens=ref_audio_tokens,
@@ -599,15 +598,6 @@ class OmniVoice(PreTrainedModel):
         postprocess_output: bool,
         ref_rms: Union[float, None],
     ) -> np.ndarray:
-        """Optionally remove long silences, adjust volume, and add edge padding.
-
-        Args:
-            generated_audio: Numpy array of shape (1, T).
-            postprocess_output: If True, remove long silences and apply fade/pad.
-            ref_rms: RMS of the reference audio for volume normalisation.
-        Returns:
-            Processed numpy array of shape (1, T).
-        """
         if postprocess_output:
             generated_audio = remove_silence(
                 generated_audio,
@@ -651,24 +641,11 @@ class OmniVoice(PreTrainedModel):
         duration: Union[float, list[Optional[float]], None] = None,
     ) -> GenerationTask:
 
-        if isinstance(text, str):
-            text_list = [text]
-        else:
-            assert isinstance(
-                text, list
-            ), "text should be a string or a list of strings"
-            text_list = text
+        text_list = [text]
         batch_size = len(text_list)
 
         instruct_list = self._ensure_list(instruct, batch_size)
 
-        if voice_clone_prompt is not None and (
-            ref_text is not None or ref_audio is not None
-        ):
-            logger.warning(
-                "Both voice_clone_prompt and ref_text/ref_audio are provided. "
-                "ref_text/ref_audio will be ignored."
-            )
         if voice_clone_prompt is None and ref_audio is not None:
             # If voice_clone_prompt is not provided, create it from
             # ref_audio (ref_text will be auto-transcribed if not given).
