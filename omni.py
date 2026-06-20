@@ -34,23 +34,8 @@ from omnivoice.utils.audio import (
 from omnivoice.utils.duration import RuleDurationEstimator
 from omnivoice.utils.lang_map import LANG_IDS, LANG_NAMES
 from omnivoice.utils.text import add_punctuation, chunk_text_punctuation
-from omnivoice.utils.voice_design import (
-    _INSTRUCT_ALL_VALID,
-    _INSTRUCT_EN_TO_ZH,
-    _INSTRUCT_MUTUALLY_EXCLUSIVE,
-    _INSTRUCT_VALID_EN,
-    _INSTRUCT_VALID_ZH,
-    _INSTRUCT_ZH_TO_EN,
-    _ZH_RE,
-)
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Dataclasses
-# ---------------------------------------------------------------------------
-
 
 @dataclass
 class VoiceClonePrompt:
@@ -738,11 +723,6 @@ class OmniVoice(PreTrainedModel):
         batch_size = len(text_list)
 
         instruct_list = self._ensure_list(instruct, batch_size)
-        for i, s in enumerate(instruct_list):
-            if s is None:
-                continue
-            use_zh = bool(text_list[i] and _ZH_RE.search(text_list[i]))
-            instruct_list[i] = _resolve_instruct(s, use_zh=use_zh)
 
         if voice_clone_prompt is not None and (
             ref_text is not None or ref_audio is not None
@@ -839,17 +819,9 @@ class OmniVoice(PreTrainedModel):
         )
 
     def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens, speed=1.0):
-        """Estimate number of target audio tokens."""
-        if num_ref_audio_tokens is None or ref_text is None or len(ref_text) == 0:
-            # Fall back to a simple heuristic
-            ref_text = "Nice to meet you."
-            num_ref_audio_tokens = 25
-
         est = self.duration_estimator.estimate_duration(
             text, ref_text, num_ref_audio_tokens
         )
-        if speed > 0 and speed != 1.0:
-            est = est / speed
         return max(1, int(est))
 
     def _ensure_list(
