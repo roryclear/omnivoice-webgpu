@@ -425,9 +425,7 @@ class OmniVoice(PreTrainedModel):
         num_target_tokens = self._estimate_target_tokens(
             text,
             ref_text,
-            voice_clone_prompt.ref_audio_tokens.size(-1)
-            if voice_clone_prompt.ref_audio_tokens is not None
-            else None,
+            voice_clone_prompt.ref_audio_tokens.size(-1),
             speed=1.0,
         )
 
@@ -455,31 +453,9 @@ class OmniVoice(PreTrainedModel):
         num_target_tokens: int,
         ref_text: Optional[str] = None,
         ref_audio_tokens: Optional[torch.Tensor] = None,
-        lang: Optional[str] = None,
-        instruct: Optional[str] = None,
-        denoise: bool = True,
-    ):
-        """Prepare input_ids and audio masks for inference.
-        Args:
-            text: Target text to generate.
-            num_target_tokens: Number of audio tokens to generate.
-            ref_text: Optional reference text for voice cloning.
-            ref_audio_tokens: Optional reference audio tokens for voice cloning.
-                with shape (C, T).
-            lang: Optional language ID.
-            instruct: Optional style instruction for voice design.
-            denoise: Whether to include the <|denoise|> token.
-        """
-
-        # Build style tokens: <|denoise|> + <|lang_start|>...<|lang_end|>
-        #                      + <|instruct_start|>...<|instruct_end|>
-        style_text = ""
-        if denoise and ref_audio_tokens is not None:
-            style_text += "<|denoise|>"
-        lang_str = lang if lang else "None"
-        instruct_str = instruct if instruct else "None"
-        style_text += f"<|lang_start|>{lang_str}<|lang_end|>"
-        style_text += f"<|instruct_start|>{instruct_str}<|instruct_end|>"
+    ):  
+        # todo add lang / instruct?
+        style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
 
         style_tokens = (
             self.text_tokenizer(style_text, return_tensors="pt")
@@ -590,10 +566,7 @@ class OmniVoice(PreTrainedModel):
                 task.texts[0],
                 task.target_lens[0],
                 task.ref_texts[0],
-                task.ref_audio_tokens[0],
-                task.langs[0],
-                task.instructs[0],
-                True)
+                task.ref_audio_tokens[0])
 
         c_lens = [input["input_ids"].size(2)]
         max_c_len = max(c_lens)
