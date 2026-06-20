@@ -1,17 +1,14 @@
-import difflib
 import logging
 import math
 import os
 import re
-from dataclasses import dataclass, fields
-from functools import partial
+from dataclasses import dataclass
 from typing import Any, List, Optional, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchaudio
 
 from transformers import (
     AutoFeatureExtractor,
@@ -29,7 +26,6 @@ from omnivoice.utils.audio import (
     fade_and_pad_audio,
     load_audio,
     remove_silence,
-    trim_long_audio,
 )
 from omnivoice.utils.duration import RuleDurationEstimator
 from omnivoice.utils.lang_map import LANG_IDS, LANG_NAMES
@@ -44,27 +40,14 @@ class VoiceClonePrompt:
     ref_rms: float
 
 
-@dataclass
-class OmniVoiceGenerationConfig:
-    t_shift: float = 0.1
-    denoise: bool = True
-    preprocess_prompt: bool = True
-    postprocess_output: bool = True
-    audio_chunk_threshold: float = 30.0
-
-    @classmethod
-    def from_dict(cls, kwargs_dict):
-        valid_keys = {f.name for f in fields(cls)}
-        filtered = {k: v for k, v in kwargs_dict.items() if k in valid_keys}
-        return cls(**filtered)
-
-
-FRAME_RATE1 = 25
+FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 NUM_STEPS = 32
 POSITION_TEMP = 5.0
 LAYER_PENTALTY_FACTOR = 5.0
 GUIDANCE_SCALE = 2.0
+T_SHIFT = 0.1
+AUDIO_CHUNKED_THRESHOLD = 30.0
 
 @dataclass
 class GenerationTask:
@@ -78,8 +61,8 @@ class GenerationTask:
     ref_rms: List[Optional[float]]
     speed: Optional[List[float]] = None
 
-    def get_indices(self, config: OmniVoiceGenerationConfig):
-        threshold = int(config.audio_chunk_threshold * FRAME_RATE1)
+    def get_indices(self):
+        threshold = int(AUDIO_CHUNKED_THRESHOLD * FRAME_RATE)
         short_idx = [i for i, l in enumerate(self.target_lens) if l <= threshold]
         long_idx = [i for i, l in enumerate(self.target_lens) if l > threshold]
         return short_idx, long_idx
@@ -354,7 +337,6 @@ class OmniVoice(PreTrainedModel):
         **kwargs,
     ) -> list[np.ndarray]:
 
-        gen_config = OmniVoiceGenerationConfig.from_dict(kwargs)
         self.eval()
 
         full_task = self._preprocess_all(
@@ -365,19 +347,19 @@ class OmniVoice(PreTrainedModel):
             instruct=instruct,
         )
         
-        short_idx, long_idx = full_task.get_indices(gen_config)
+        short_idx, long_idx = full_task.get_indices()
 
         results = [None] * full_task.batch_size
 
         if short_idx:
             short_task = full_task.slice_task(short_idx)
-            short_results = self._generate_iterative(short_task, gen_config)
+            short_results = self._generate_iterative(short_task)
             for idx, res in zip(short_idx, short_results):
                 results[idx] = res
 
         if long_idx:
             long_task = full_task.slice_task(long_idx)
-            long_results = self._generate_chunked(long_task, gen_config)
+            long_results = self._generate_chunked(long_task)
             for idx, res in zip(long_idx, long_results):
                 results[idx] = res
 
@@ -386,21 +368,21 @@ class OmniVoice(PreTrainedModel):
             assert results[i] is not None, f"Result {i} was not generated"
             generated_audios.append(
                 self._decode_and_post_process(
-                    results[i], full_task.ref_rms[i], gen_config  # type: ignore[arg-type]
+                    results[i], full_task.ref_rms[i]  # type: ignore[arg-type]
                 )
             )
 
         return generated_audios
 
     def _generate_chunked(
-        self, task: GenerationTask, gen_config: OmniVoiceGenerationConfig
+        self, task: GenerationTask
     ) -> List[List[torch.Tensor]]:
         all_chunks = []
         for i in range(task.batch_size):
             avg_tokens_per_char = task.target_lens[i] / len(task.texts[i])
             text_chunk_len = int(
                 AUDIO_CHUNK_DURATION
-                * FRAME_RATE1
+                * FRAME_RATE
                 / avg_tokens_per_char
             )
             chunks = chunk_text_punctuation(
@@ -444,7 +426,7 @@ class OmniVoice(PreTrainedModel):
                 ref_rms=[task.ref_rms[i] for i in indices],
                 speed=[task.speed[i] for i in indices] if task.speed else None,
             )
-            gen_tokens = self._generate_iterative(sub_task, gen_config)
+            gen_tokens = self._generate_iterative(sub_task)
             for j, idx in enumerate(indices):
                 chunk_results[idx].append(gen_tokens[j])
 
@@ -541,7 +523,6 @@ class OmniVoice(PreTrainedModel):
         self,
         tokens: Union[torch.Tensor, List[torch.Tensor]],
         rms: Union[float, None],
-        gen_config: OmniVoiceGenerationConfig,
     ) -> np.ndarray:
         tokenizer_device = self.audio_tokenizer.device
         if isinstance(tokens, list):
@@ -562,7 +543,7 @@ class OmniVoice(PreTrainedModel):
             )
             audio_waveform = self._post_process_audio(
                 audio_waveform,
-                postprocess_output=gen_config.postprocess_output,
+                postprocess_output=True,
                 ref_rms=rms,
             )
         return audio_waveform.squeeze(0)
@@ -763,7 +744,7 @@ class OmniVoice(PreTrainedModel):
         }
 
     def _generate_iterative(
-        self, task: GenerationTask, gen_config: OmniVoiceGenerationConfig
+        self, task: GenerationTask
     ) -> List[torch.Tensor]:
         inputs_list = [
             self._prepare_inference_inputs(
@@ -821,7 +802,7 @@ class OmniVoice(PreTrainedModel):
             t_start=0.0,
             t_end=1.0,
             num_step=NUM_STEPS,
-            t_shift=gen_config.t_shift,
+            t_shift=T_SHIFT,
         ).tolist()
         schedules = []
         for t_len in task.target_lens:
@@ -864,7 +845,7 @@ class OmniVoice(PreTrainedModel):
             u_logits = batch_logits[1: 2, :, :t_len, :]
 
             pred_tokens, scores = self._predict_tokens_with_scoring(
-                c_logits, u_logits, gen_config
+                c_logits, u_logits
             )
 
             scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
@@ -888,7 +869,7 @@ class OmniVoice(PreTrainedModel):
 
         return [tokens[0, :, : task.target_lens[0]]]
 
-    def _predict_tokens_with_scoring(self, c_logits, u_logits, gen_config):
+    def _predict_tokens_with_scoring(self, c_logits, u_logits):
         c_log_probs = F.log_softmax(c_logits, dim=-1)
         u_log_probs = F.log_softmax(u_logits, dim=-1)
         log_probs = torch.log_softmax(
