@@ -797,31 +797,7 @@ class OmniVoice(PreTrainedModel):
     def _generate_iterative(
         self, task: GenerationTask, gen_config: OmniVoiceGenerationConfig
     ) -> List[torch.Tensor]:
-        """N-step iterative unmasked decoding.
-
-        Args:
-            task: A :class:`GenerationTask` containing batch texts, target
-                lengths, languages, instructions, and optional reference data.
-            gen_config: A :class:`OmniVoiceGenerationConfig` controlling
-                decoding steps, guidance, temperatures, etc.
-        Returns:
-            List of generated audio token tensors of shape (C, T) (one per
-            input text).
-        """
-
-        B = task.batch_size
-
-        for i in range(B):
-            logger.debug(
-                "Item %d — text: %s | ref_text: %s | instruct: %s | lang: %s | target_tokens: %d",
-                i,
-                task.texts[i],
-                task.ref_texts[i],
-                task.instructs[i],
-                task.langs[i],
-                task.target_lens[i],
-            )
-
+        B = task.batch_size # todo always 1?
         inputs_list = [
             self._prepare_inference_inputs(
                 task.texts[i],
@@ -1049,13 +1025,7 @@ def _tokenize_with_nonverbal_tags(text: str, tokenizer) -> torch.Tensor:
 
 
 def _combine_text(text, ref_text: Optional[str] = None) -> str:
-
-    # combine with reference text if not None
-    if ref_text:
-        full_text = ref_text.strip() + " " + text.strip()
-    else:
-        full_text = text.strip()
-
+    full_text = ref_text.strip() + " " + text.strip()
     # filter out newline / carriage-return characters
     full_text = re.sub(r"[\r\n]+", "", full_text)
 
