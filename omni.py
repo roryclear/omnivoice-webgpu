@@ -299,97 +299,6 @@ class OmniVoice(PreTrainedModel):
 
         return generated_audios
 
-    def _generate_chunked(
-        self, task: GenerationTask
-    ) -> List[List[torch.Tensor]]:
-        all_chunks = []
-        for i in range(task.batch_size):
-            avg_tokens_per_char = task.target_lens[i] / len(task.texts[i])
-            text_chunk_len = int(
-                AUDIO_CHUNK_DURATION
-                * FRAME_RATE
-                / avg_tokens_per_char
-            )
-            chunks = chunk_text_punctuation(
-                text=task.texts[i],
-                chunk_len=text_chunk_len,
-                min_chunk_len=3,
-            )
-            all_chunks.append(chunks)
-
-        has_ref = [t is not None for t in task.ref_audio_tokens]
-        max_num_chunks = max(len(c) for c in all_chunks)
-
-        # chunk_results[item_idx] = list of generated token tensors per chunk
-        chunk_results = [[] for _ in range(task.batch_size)]
-
-        def _run_batch(indices, texts, ref_audios, ref_texts):
-            speed_list = task.speed
-            target_lens = [
-                self._estimate_target_tokens(
-                    texts[j],
-                    ref_texts[j],
-                    ref_audios[j].size(-1) if ref_audios[j] is not None else None,
-                    speed=speed_list[i] if speed_list else 1.0,
-                )
-                for j, i in enumerate(indices)
-            ]
-            sub_task = GenerationTask(
-                batch_size=len(indices),
-                texts=texts,
-                target_lens=target_lens,
-                langs=[task.langs[i] for i in indices],
-                instructs=[task.instructs[i] for i in indices],
-                ref_texts=ref_texts,
-                ref_audio_tokens=ref_audios,
-                ref_rms=[task.ref_rms[i] for i in indices],
-                speed=[task.speed[i] for i in indices] if task.speed else None,
-            )
-            gen_tokens = self._generate_iterative(sub_task)
-            for j, idx in enumerate(indices):
-                chunk_results[idx].append(gen_tokens[j])
-
-        if all(has_ref):
-            # All items have reference audio.
-            # We still sequentially generate chunks within each item, but we
-            # batch across items for the same chunk index. This allows to keep
-            # the VRAM usage manageable while still benefiting from batching.
-            for ci in range(max_num_chunks):
-                indices = [i for i in range(task.batch_size) if ci < len(all_chunks[i])]
-                if not indices:
-                    continue
-                _run_batch(
-                    indices,
-                    texts=[all_chunks[i][ci] for i in indices],
-                    ref_audios=[task.ref_audio_tokens[i] for i in indices],
-                    ref_texts=[task.ref_texts[i] for i in indices],
-                )
-        else:
-            # No reference audio — generate chunk 0 for all items first,
-            # then use chunk 0 output as reference for all subsequent chunks.
-            indices_0 = [i for i in range(task.batch_size) if len(all_chunks[i]) > 0]
-            _run_batch(
-                indices_0,
-                texts=[all_chunks[i][0] for i in indices_0],
-                ref_audios=[None] * len(indices_0),
-                ref_texts=[None] * len(indices_0),
-            )
-            first_chunk_map = {idx: chunk_results[idx][0] for idx in indices_0}
-
-            # Batch all remaining chunks, using chunk 0 as fixed reference
-            for ci in range(1, max_num_chunks):
-                indices = [i for i in range(task.batch_size) if ci < len(all_chunks[i])]
-                if not indices:
-                    continue
-                _run_batch(
-                    indices,
-                    texts=[all_chunks[i][ci] for i in indices],
-                    ref_audios=[first_chunk_map[i] for i in indices],
-                    ref_texts=[all_chunks[i][0] for i in indices],
-                )
-
-        return chunk_results
-
     def create_voice_clone_prompt(
         self,
         ref_audio: Union[str, tuple[torch.Tensor, int]],
@@ -622,6 +531,68 @@ class OmniVoice(PreTrainedModel):
             "input_ids": cond_input_ids,
             "audio_mask": cond_audio_mask,
         }
+
+
+    def _generate_chunked(
+        self, task: GenerationTask
+    ) -> List[List[torch.Tensor]]:
+        all_chunks = []
+        for i in range(task.batch_size):
+            avg_tokens_per_char = task.target_lens[i] / len(task.texts[i])
+            text_chunk_len = int(
+                AUDIO_CHUNK_DURATION
+                * FRAME_RATE
+                / avg_tokens_per_char
+            )
+            chunks = chunk_text_punctuation(
+                text=task.texts[i],
+                chunk_len=text_chunk_len,
+                min_chunk_len=3,
+            )
+            all_chunks.append(chunks)
+
+        max_num_chunks = max(len(c) for c in all_chunks)
+        # chunk_results[item_idx] = list of generated token tensors per chunk
+        chunk_results = [[] for _ in range(task.batch_size)]
+
+        def _run_batch(indices, texts, ref_audios, ref_texts):
+            speed_list = task.speed
+            target_lens = [
+                self._estimate_target_tokens(
+                    texts[j],
+                    ref_texts[j],
+                    ref_audios[j].size(-1) if ref_audios[j] is not None else None,
+                    speed=speed_list[i] if speed_list else 1.0,
+                )
+                for j, i in enumerate(indices)
+            ]
+            sub_task = GenerationTask(
+                batch_size=len(indices),
+                texts=texts,
+                target_lens=target_lens,
+                langs=[task.langs[i] for i in indices],
+                instructs=[task.instructs[i] for i in indices],
+                ref_texts=ref_texts,
+                ref_audio_tokens=ref_audios,
+                ref_rms=[task.ref_rms[i] for i in indices],
+                speed=[task.speed[i] for i in indices] if task.speed else None,
+            )
+            gen_tokens = self._generate_iterative(sub_task)
+            for j, idx in enumerate(indices):
+                chunk_results[idx].append(gen_tokens[j])
+
+        for ci in range(max_num_chunks):
+            indices = [i for i in range(task.batch_size) if ci < len(all_chunks[i])]
+            _run_batch(
+                indices,
+                texts=[all_chunks[i][ci] for i in indices],
+                ref_audios=[task.ref_audio_tokens[i] for i in indices],
+                ref_texts=[task.ref_texts[i] for i in indices],
+            )
+
+        return chunk_results
+
+
 
     def _generate_iterative(
         self, task: GenerationTask
