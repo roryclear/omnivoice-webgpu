@@ -1,7 +1,9 @@
 from omni import OmniVoice
 import soundfile as sf
 import torch
-from dataclasses import dataclass, fields
+torch.manual_seed(42)
+import pickle
+import numpy as np
 
 if __name__ == "__main__":
   # Load the model
@@ -18,6 +20,9 @@ if __name__ == "__main__":
       ref_audio="voice.mp3",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  #pickle.dump(audio[0], open("short.pkl", "wb"))
+  exp = pickle.load(open("short.pkl", "rb"))
+  np.testing.assert_allclose(exp, audio[0], rtol=1e-5)
   sf.write("out.wav", audio[0], 24000)
   
   audio = model.generate(
@@ -25,4 +30,7 @@ if __name__ == "__main__":
       ref_audio="voice.mp3",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  #pickle.dump(audio[0], open("long.pkl", "wb"))
+  exp = pickle.load(open("long.pkl", "rb"))
+  np.testing.assert_allclose(exp, audio[0], rtol=1e-5)
   sf.write("out_long.wav", audio[0], 24000)

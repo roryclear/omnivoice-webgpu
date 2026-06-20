@@ -7,6 +7,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 import torch
+torch.manual_seed(42)
 import torch.nn as nn
 import torch.nn.functional as F
 
