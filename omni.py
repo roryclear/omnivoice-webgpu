@@ -50,7 +50,6 @@ AUDIO_CHUNKED_THRESHOLD = 30.0
 
 @dataclass
 class GenerationTask:
-    batch_size: int
     texts: List[str]
     target_lens: List[int]
     langs: List[Optional[str]]
@@ -58,26 +57,12 @@ class GenerationTask:
     ref_texts: List[Optional[str]]
     ref_audio_tokens: List[Optional[torch.Tensor]]
     ref_rms: List[Optional[float]]
-    speed: Optional[List[float]] = None
 
     def get_indices(self):
         threshold = int(AUDIO_CHUNKED_THRESHOLD * FRAME_RATE)
         short_idx = [i for i, l in enumerate(self.target_lens) if l <= threshold]
         long_idx = [i for i, l in enumerate(self.target_lens) if l > threshold]
         return short_idx, long_idx
-
-    def slice_task(self):
-        return GenerationTask(
-            batch_size=1,
-            texts=[self.texts[0]],
-            target_lens=[self.target_lens[0]],
-            langs=[self.langs[0]],
-            instructs=[self.instructs[0]],
-            ref_texts=[self.ref_texts[0]],
-            ref_audio_tokens=[self.ref_audio_tokens[0]],
-            ref_rms=[self.ref_rms[0]],
-            speed=None
-        )
 
 class OmniVoiceConfig(PretrainedConfig):
     model_type = "omnivoice"
@@ -415,7 +400,7 @@ class OmniVoice(PreTrainedModel):
         ] = None,
         voice_clone_prompt=None,
         instruct: Union[str, list[str], None] = None,
-    ) -> GenerationTask:
+    ):
 
 
         voice_clone_prompt =  self.create_voice_clone_prompt(
@@ -426,11 +411,9 @@ class OmniVoice(PreTrainedModel):
             text,
             ref_text,
             voice_clone_prompt.ref_audio_tokens.size(-1),
-            speed=1.0,
         )
 
         return GenerationTask(
-            batch_size=1,
             texts=[text],
             target_lens=[num_target_tokens],
             langs=[None],
@@ -438,13 +421,10 @@ class OmniVoice(PreTrainedModel):
             ref_texts=[ref_text],
             ref_audio_tokens=[voice_clone_prompt.ref_audio_tokens],
             ref_rms=[voice_clone_prompt.ref_rms],
-            speed=None,
         )
 
-    def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens, speed=1.0):
-        est = self.duration_estimator.estimate_duration(
-            text, ref_text, num_ref_audio_tokens
-        )
+    def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
+        est = self.duration_estimator.estimate_duration(text, ref_text, num_ref_audio_tokens)
         return max(1, int(est))
 
     def _prepare_inference_inputs(
@@ -461,9 +441,7 @@ class OmniVoice(PreTrainedModel):
             self.text_tokenizer(style_text, return_tensors="pt")
             .input_ids.repeat(self.config.num_audio_codebook, 1)
             .unsqueeze(0)
-        ).to(
-            self.device
-        )  # [1, C, N1]
+        ).to(self.device)  # [1, C, N1]
 
         # Build text tokens
         full_text = _combine_text(ref_text=ref_text, text=text)
@@ -472,9 +450,7 @@ class OmniVoice(PreTrainedModel):
             _tokenize_with_nonverbal_tags(wrapped_text, self.text_tokenizer)
             .repeat(self.config.num_audio_codebook, 1)
             .unsqueeze(0)
-        ).to(
-            self.device
-        )  # [1, C, N2]
+        ).to(self.device)  # [1, C, N2]
 
         # Target: all MASK
         target_audio_tokens = torch.full(
@@ -486,29 +462,24 @@ class OmniVoice(PreTrainedModel):
 
         # Conditional input
         parts = [style_tokens, text_tokens]
-        if ref_audio_tokens is not None:
-            parts.append(ref_audio_tokens.unsqueeze(0).to(self.device))
+        parts.append(ref_audio_tokens.unsqueeze(0).to(self.device))
         parts.append(target_audio_tokens)
         cond_input_ids = torch.cat(parts, dim=2)
 
         cond_total_length = cond_input_ids.shape[2]
         cond_audio_start_idx = cond_total_length - num_target_tokens
-        if ref_audio_tokens is not None:
-            cond_audio_start_idx -= ref_audio_tokens.size(-1)
+        cond_audio_start_idx -= ref_audio_tokens.size(-1)
 
         cond_audio_mask = torch.zeros(
             1, cond_total_length, dtype=torch.bool, device=self.device
         )
         cond_audio_mask[0, cond_audio_start_idx:] = True
 
-        return {
-            "input_ids": cond_input_ids,
-            "audio_mask": cond_audio_mask,
-        }
+        return cond_input_ids, cond_audio_mask
 
 
     def _generate_chunked(
-        self, task: GenerationTask
+        self, task
     ) -> List[List[torch.Tensor]]:
 
         avg_tokens_per_char = task.target_lens[0] / len(task.texts[0])
@@ -532,19 +503,16 @@ class OmniVoice(PreTrainedModel):
                     text,
                     ref_text,
                     ref_audio.size(-1),
-                    speed=1.0,
                 )
             ]
             sub_task = GenerationTask(
-                batch_size=1,
                 texts=[text],
                 target_lens=target_lens,
                 langs=[task.langs[0]],
                 instructs=[task.instructs[0]],
                 ref_texts=[ref_text],
                 ref_audio_tokens=[ref_audio],
-                ref_rms=[task.ref_rms[0]],
-                speed=None,
+                ref_rms=[task.ref_rms[0]]
             )
             gen_tokens = self._generate_iterative(sub_task)
             chunk_results[0].append(gen_tokens[0]) # todo
@@ -562,13 +530,13 @@ class OmniVoice(PreTrainedModel):
     def _generate_iterative(
         self, task: GenerationTask
     ) -> List[torch.Tensor]:
-        input = self._prepare_inference_inputs(
+        cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(
                 task.texts[0],
                 task.target_lens[0],
                 task.ref_texts[0],
                 task.ref_audio_tokens[0])
 
-        c_lens = [input["input_ids"].size(2)]
+        c_lens = [cond_input_ids.size(2)]
         max_c_len = max(c_lens)
         pad_id = self.config.audio_mask_id  # Or any other tokens
 
@@ -588,13 +556,13 @@ class OmniVoice(PreTrainedModel):
         c_len, u_len = c_lens[0], task.target_lens[0]
 
         # Cond (0 ~ B-1)
-        batch_input_ids[0, :, :c_len] = input["input_ids"]
-        batch_audio_mask[0, :c_len] = input["audio_mask"]
+        batch_input_ids[0, :, :c_len] = cond_input_ids
+        batch_audio_mask[0, :c_len] = cond_audio_mask
         batch_attention_mask[0, :, :c_len, :c_len] = True
 
         # Uncond (B ~ 2B-1)
-        batch_input_ids[1, :, :u_len] = input["input_ids"][..., -u_len:]
-        batch_audio_mask[1, :u_len] = input["audio_mask"][..., -u_len:]
+        batch_input_ids[1, :, :u_len] = cond_input_ids[..., -u_len:]
+        batch_audio_mask[1, :u_len] = cond_audio_mask[..., -u_len:]
         batch_attention_mask[1, :, :u_len, :u_len] = True
         if max_c_len > u_len:
             pad_diag = torch.arange(u_len, max_c_len, device=self.device)
