@@ -534,22 +534,20 @@ class OmniVoice(PreTrainedModel):
     def _generate_chunked(
         self, task: GenerationTask
     ) -> List[List[torch.Tensor]]:
-        all_chunks = []
-        for i in range(task.batch_size):
-            avg_tokens_per_char = task.target_lens[i] / len(task.texts[i])
-            text_chunk_len = int(
-                AUDIO_CHUNK_DURATION
-                * FRAME_RATE
-                / avg_tokens_per_char
-            )
-            chunks = chunk_text_punctuation(
-                text=task.texts[i],
-                chunk_len=text_chunk_len,
-                min_chunk_len=3,
-            )
-            all_chunks.append(chunks)
 
-        max_num_chunks = max(len(c) for c in all_chunks)
+        avg_tokens_per_char = task.target_lens[0] / len(task.texts[0])
+        text_chunk_len = int(
+            AUDIO_CHUNK_DURATION
+            * FRAME_RATE
+            / avg_tokens_per_char
+        )
+        chunks = chunk_text_punctuation(
+            text=task.texts[0],
+            chunk_len=text_chunk_len,
+            min_chunk_len=3,
+        )
+
+        max_num_chunks = len(chunks)
         # chunk_results[item_idx] = list of generated token tensors per chunk
         chunk_results = [[] for _ in range(task.batch_size)]
 
@@ -579,13 +577,12 @@ class OmniVoice(PreTrainedModel):
             for j, idx in enumerate(indices):
                 chunk_results[idx].append(gen_tokens[j])
 
-        for ci in range(max_num_chunks):
-            indices = [i for i in range(task.batch_size) if ci < len(all_chunks[i])]
+        for i in range(max_num_chunks):
             _run_batch(
-                indices,
-                texts=[all_chunks[i][ci] for i in indices],
-                ref_audios=[task.ref_audio_tokens[i] for i in indices],
-                ref_texts=[task.ref_texts[i] for i in indices],
+                [0],
+                texts=[chunks[i]],
+                ref_audios=[task.ref_audio_tokens[0]],
+                ref_texts=[task.ref_texts[0]],
             )
 
         return chunk_results
