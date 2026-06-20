@@ -857,43 +857,42 @@ class OmniVoice(PreTrainedModel):
                 attention_mask=batch_attention_mask,
             ).logits.to(torch.float32)
 
-            for i in range(1): # todo remove loop
-                k = schedules[i][step]
-                if k <= 0:
-                    continue
+            k = schedules[0][step]
+            if k <= 0:
+                continue
 
-                c_len, t_len = c_lens[i], task.target_lens[i]
+            c_len, t_len = c_lens[i], task.target_lens[i]
 
-                # Extract real target Logits
-                # [1, C, T, V]
-                c_logits = batch_logits[i : i + 1, :, c_len - t_len : c_len, :]
-                u_logits = batch_logits[1 + i : 1 + i + 1, :, :t_len, :]
+            # Extract real target Logits
+            # [1, C, T, V]
+            c_logits = batch_logits[0: 1, :, c_len - t_len : c_len, :]
+            u_logits = batch_logits[1: 2, :, :t_len, :]
 
-                pred_tokens, scores = self._predict_tokens_with_scoring(
-                    c_logits, u_logits, gen_config
-                )
+            pred_tokens, scores = self._predict_tokens_with_scoring(
+                c_logits, u_logits, gen_config
+            )
 
-                scores = scores - (layer_ids * gen_config.layer_penalty_factor)
+            scores = scores - (layer_ids * gen_config.layer_penalty_factor)
 
-                if gen_config.position_temperature > 0.0:
-                    scores = _gumbel_sample(scores, gen_config.position_temperature)
+            if gen_config.position_temperature > 0.0:
+                scores = _gumbel_sample(scores, gen_config.position_temperature)
 
-                sample_tokens = tokens[i : i + 1, :, :t_len]
-                scores.masked_fill_(
-                    sample_tokens != self.config.audio_mask_id, -float("inf")
-                )
+            sample_tokens = tokens[0: 1, :, :t_len]
+            scores.masked_fill_(
+                sample_tokens != self.config.audio_mask_id, -float("inf")
+            )
 
-                _, topk_idx = torch.topk(scores.flatten(), k)
-                flat_tokens = sample_tokens.flatten()
-                flat_tokens[topk_idx] = pred_tokens.flatten()[topk_idx]
-                sample_tokens.copy_(flat_tokens.view_as(sample_tokens))
+            _, topk_idx = torch.topk(scores.flatten(), k)
+            flat_tokens = sample_tokens.flatten()
+            flat_tokens[topk_idx] = pred_tokens.flatten()[topk_idx]
+            sample_tokens.copy_(flat_tokens.view_as(sample_tokens))
 
-                # Update individual slices into batched structure
-                tokens[i : i + 1, :, :t_len] = sample_tokens
-                batch_input_ids[i : i + 1, :, c_len - t_len : c_len] = sample_tokens
-                batch_input_ids[1 + i : 1 + i + 1, :, :t_len] = sample_tokens
+            # Update individual slices into batched structure
+            tokens[0: 1, :, :t_len] = sample_tokens
+            batch_input_ids[0: 1, :, c_len - t_len : c_len] = sample_tokens
+            batch_input_ids[1: 2, :, :t_len] = sample_tokens
 
-        return [tokens[i, :, : task.target_lens[i]]]
+        return [tokens[0, :, : task.target_lens[0]]]
 
     def _predict_tokens_with_scoring(self, c_logits, u_logits, gen_config):
         if gen_config.guidance_scale != 0:
