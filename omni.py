@@ -646,50 +646,27 @@ class OmniVoice(PreTrainedModel):
 
         instruct_list = self._ensure_list(instruct, batch_size)
 
-        if voice_clone_prompt is None and ref_audio is not None:
-            # If voice_clone_prompt is not provided, create it from
-            # ref_audio (ref_text will be auto-transcribed if not given).
-            ref_text_list = self._ensure_list(ref_text, batch_size, auto_repeat=False)
-            ref_audio_list = self._ensure_list(ref_audio, batch_size, auto_repeat=False)
+        ref_text_list = self._ensure_list(ref_text, batch_size, auto_repeat=False)
+        ref_audio_list = self._ensure_list(ref_audio, batch_size, auto_repeat=False)
 
-            voice_clone_prompt = []
-            for i in range(len(ref_text_list)):
-                voice_clone_prompt.append(
-                    self.create_voice_clone_prompt(
-                        ref_audio=ref_audio_list[i],
-                        ref_text=ref_text_list[i],
-                        preprocess_prompt=preprocess_prompt,
-                    )
+        voice_clone_prompt = []
+        for i in range(len(ref_text_list)):
+            voice_clone_prompt.append(
+                self.create_voice_clone_prompt(
+                    ref_audio=ref_audio_list[i],
+                    ref_text=ref_text_list[i],
+                    preprocess_prompt=preprocess_prompt,
                 )
+            )
+
 
         voice_clone_prompt_list = self._ensure_list(voice_clone_prompt, batch_size)
-        if voice_clone_prompt_list[0] is not None:
-            ref_text_list = [vc.ref_text for vc in voice_clone_prompt_list]
-            ref_audio_tokens_list = [
-                vc.ref_audio_tokens for vc in voice_clone_prompt_list
-            ]
-            ref_rms_list = [vc.ref_rms for vc in voice_clone_prompt_list]
-        else:
-            ref_text_list = [None] * batch_size
-            ref_audio_tokens_list = [None] * batch_size
-            ref_rms_list = [None] * batch_size
 
-        # Normalize speed/duration to per-item lists (may contain None).
-        if speed is not None:
-            if isinstance(speed, (int, float)):
-                user_speed = [float(speed)] * batch_size
-            else:
-                user_speed = list(speed)
-        else:
-            user_speed = None
-
-        if duration is not None:
-            if isinstance(duration, (int, float)):
-                durations = [float(duration)] * batch_size
-            else:
-                durations = list(duration)
-        else:
-            durations = None
+        ref_text_list = [vc.ref_text for vc in voice_clone_prompt_list]
+        ref_audio_tokens_list = [
+            vc.ref_audio_tokens for vc in voice_clone_prompt_list
+        ]
+        ref_rms_list = [vc.ref_rms for vc in voice_clone_prompt_list]
 
         num_target_tokens_list = []
         for i in range(batch_size):
@@ -703,24 +680,6 @@ class OmniVoice(PreTrainedModel):
             )
             num_target_tokens_list.append(est)
 
-        # Per-item duration overrides: set target_lens to exact frame count
-        # and compute speed ratio so chunked generation scales proportionally.
-        speed_list: Optional[List[float]] = None
-        if durations is not None:
-            frame_rate = self.audio_tokenizer.config.frame_rate
-            speed_list = []
-            for i in range(batch_size):
-                if durations[i] is not None:
-                    target_tokens = max(1, int(durations[i] * frame_rate))
-                    est = num_target_tokens_list[i]
-                    speed_list.append(est / target_tokens if target_tokens > 0 else 1.0)
-                    num_target_tokens_list[i] = target_tokens
-                else:
-                    s = user_speed[i] if user_speed else None
-                    speed_list.append(s if s is not None else 1.0)
-        elif user_speed is not None:
-            speed_list = [s if s is not None else 1.0 for s in user_speed]
-
         return GenerationTask(
             batch_size=batch_size,
             texts=text_list,
@@ -730,7 +689,7 @@ class OmniVoice(PreTrainedModel):
             ref_texts=ref_text_list,
             ref_audio_tokens=ref_audio_tokens_list,
             ref_rms=ref_rms_list,
-            speed=speed_list,
+            speed=None,
         )
 
     def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens, speed=1.0):
