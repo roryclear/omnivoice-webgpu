@@ -155,13 +155,7 @@ class OmniVoice(PreTrainedModel):
     def __init__(self, config: OmniVoiceConfig, llm: Optional[PreTrainedModel] = None):
         super().__init__(config)
 
-        if llm is not None:
-            # If an LLM instance is provided, use it directly
-            # (skipping config-based init).
-            self.llm = llm
-        else:
-            # Otherwise, initialize the LLM from the config.
-            self.llm = AutoModel.from_config(self.config.llm_config)
+        self.llm = AutoModel.from_config(self.config.llm_config)
 
         self.audio_embeddings = nn.Embedding(
             config.num_audio_codebook * config.audio_vocab_size,
@@ -194,79 +188,31 @@ class OmniVoice(PreTrainedModel):
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        train_mode = kwargs.pop("train", False)
-        load_asr = kwargs.pop("load_asr", False)
-        asr_model_name = kwargs.pop("asr_model_name", "openai/whisper-large-v3-turbo")
-
-        # Suppress noisy INFO logs from transformers/huggingface_hub during loading
-        _prev_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
 
-        try:
-            # Resolve to local path first; download only if not already cached
-            resolved_path = _resolve_model_path(pretrained_model_name_or_path)
+        # Resolve to local path first; download only if not already cached
+        resolved_path = _resolve_model_path(pretrained_model_name_or_path)
+        model = super().from_pretrained(resolved_path, *args, **kwargs)
+        model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path)
+        audio_tokenizer_path = os.path.join(resolved_path, "audio_tokenizer")
 
-            model = super().from_pretrained(resolved_path, *args, **kwargs)
+        # higgs-audio-v2-tokenizer does not support MPS
+        # (output channels > 65536)
+        tokenizer_device = (
+            "cpu" if str(model.device).startswith("mps") else model.device
+        )
+        model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(
+            audio_tokenizer_path, device_map=tokenizer_device
+        )
+        model.feature_extractor = AutoFeatureExtractor.from_pretrained(
+            audio_tokenizer_path
+        )
 
-            if not train_mode:
-                model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path)
+        model.sampling_rate = model.feature_extractor.sampling_rate
 
-                audio_tokenizer_path = os.path.join(resolved_path, "audio_tokenizer")
-
-                if not os.path.isdir(audio_tokenizer_path):
-                    audio_tokenizer_path = _resolve_model_path(
-                        "eustlb/higgs-audio-v2-tokenizer"
-                    )
-
-                # higgs-audio-v2-tokenizer does not support MPS
-                # (output channels > 65536)
-                tokenizer_device = (
-                    "cpu" if str(model.device).startswith("mps") else model.device
-                )
-                model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(
-                    audio_tokenizer_path, device_map=tokenizer_device
-                )
-                model.feature_extractor = AutoFeatureExtractor.from_pretrained(
-                    audio_tokenizer_path
-                )
-
-                model.sampling_rate = model.feature_extractor.sampling_rate
-
-                model.duration_estimator = RuleDurationEstimator()
-
-                if load_asr:
-                    model.load_asr_model(model_name=asr_model_name)
-        finally:
-            logging.disable(_prev_disable)
+        model.duration_estimator = RuleDurationEstimator()
 
         return model
-
-    # -------------------------------------------------------------------
-    # ASR support (optional, for auto-transcription)
-    # -------------------------------------------------------------------
-
-    def load_asr_model(self, model_name: str = "openai/whisper-large-v3-turbo"):
-        """Load a Whisper ASR model for reference audio transcription.
-
-        Args:
-            model_name: HuggingFace model name or local path for the Whisper model.
-        """
-        from transformers import pipeline as hf_pipeline
-
-        logger.info("Loading ASR model %s ...", model_name)
-        asr_dtype = (
-            torch.float16 if str(self.device).startswith(("cuda", "xpu")) else torch.float32
-        )
-
-        model_name = _resolve_model_path(model_name)
-
-        self._asr_pipe = hf_pipeline(
-            "automatic-speech-recognition",
-            model=model_name,
-            dtype=asr_dtype,
-            device_map=self.device,
-        )
-        logger.info("ASR model loaded on %s.", self.device)
 
     @torch.inference_mode()
     def transcribe(
@@ -596,14 +542,6 @@ class OmniVoice(PreTrainedModel):
                 "quality. We recommend trimming it to 3-10s.",
                 ref_duration,
             )
-
-        # Auto-transcribe if ref_text not provided
-        if ref_text is None:
-            if self._asr_pipe is None:
-                logger.info("ASR model not loaded yet, loading on-the-fly ...")
-                self.load_asr_model()
-            ref_text = self.transcribe((ref_wav, self.sampling_rate))
-            logger.debug("Auto-transcribed ref_text: %s", ref_text)
 
         chunk_size = self.audio_tokenizer.config.hop_length
         clip_size = int(ref_wav.shape[-1] % chunk_size)
