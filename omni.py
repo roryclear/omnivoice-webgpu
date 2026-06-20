@@ -447,9 +447,7 @@ class OmniVoice(PreTrainedModel):
         full_text = _combine_text(ref_text=ref_text, text=text)
         wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
         text_tokens = (
-            _tokenize_with_nonverbal_tags(wrapped_text, self.text_tokenizer)
-            .repeat(self.config.num_audio_codebook, 1)
-            .unsqueeze(0)
+            self.text_tokenizer(wrapped_text, return_tensors="pt").input_ids.repeat(self.config.num_audio_codebook, 1).unsqueeze(0)
         ).to(self.device)  # [1, C, N2]
 
         # Target: all MASK
@@ -470,9 +468,7 @@ class OmniVoice(PreTrainedModel):
         cond_audio_start_idx = cond_total_length - num_target_tokens
         cond_audio_start_idx -= ref_audio_tokens.size(-1)
 
-        cond_audio_mask = torch.zeros(
-            1, cond_total_length, dtype=torch.bool, device=self.device
-        )
+        cond_audio_mask = torch.zeros(1, cond_total_length, dtype=torch.bool, device=self.device)
         cond_audio_mask[0, cond_audio_start_idx:] = True
 
         return cond_input_ids, cond_audio_mask
@@ -686,45 +682,6 @@ _NONVERBAL_PATTERN = re.compile(
     r"surprise-yo|dissatisfaction-hnn)\]"
 )
 
-
-def _tokenize_with_nonverbal_tags(text: str, tokenizer) -> torch.Tensor:
-    """Tokenize text containing non-verbal tags, handling each tag independently.
-
-    Non-verbal tags are tokenized standalone to guarantee consistent token
-    IDs regardless of surrounding language context (Chinese, English, etc.).
-
-    Args:
-        text: Full text string potentially containing non-verbal tags.
-        tokenizer: HuggingFace text tokenizer instance.
-    Returns:
-        Token IDs tensor of shape (1, seq_len).
-    """
-    parts = []
-    last_end = 0
-    for m in _NONVERBAL_PATTERN.finditer(text):
-        if m.start() > last_end:
-            segment = text[last_end : m.start()]
-            ids = tokenizer(segment, add_special_tokens=False).input_ids
-            if ids:
-                parts.append(ids)
-        tag_ids = tokenizer(m.group(), add_special_tokens=False).input_ids
-        if tag_ids:
-            parts.append(tag_ids)
-        last_end = m.end()
-    if last_end < len(text):
-        segment = text[last_end:]
-        ids = tokenizer(segment, add_special_tokens=False).input_ids
-        if ids:
-            parts.append(ids)
-
-    if not parts:
-        result = tokenizer(text, return_tensors="pt").input_ids
-    else:
-        combined = []
-        for p in parts:
-            combined.extend(p)
-        result = torch.tensor([combined], dtype=torch.long)
-    return result
 
 
 def _combine_text(text, ref_text: Optional[str] = None) -> str:
