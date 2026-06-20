@@ -222,12 +222,6 @@ class OmniVoice(PreTrainedModel):
             }
             return self._asr_pipe(audio_input)["text"].strip()
 
-    def get_input_embeddings(self):
-        return self.llm.get_input_embeddings()
-
-    def set_input_embeddings(self, value):
-        self.llm.set_input_embeddings(value)
-
     def _prepare_embed_inputs(
         self, input_ids: torch.Tensor, audio_mask: torch.Tensor
     ) -> torch.Tensor:
@@ -235,7 +229,7 @@ class OmniVoice(PreTrainedModel):
         Prepares embeddings from input_ids of shape (batch_size, layers, seq_length).
         Embedding shape is (batch_size, seq_length, hidden_size).
         """
-        text_embeds = self.get_input_embeddings()(input_ids[:, 0, :])
+        text_embeds = self.llm.get_input_embeddings()(input_ids[:, 0, :])
 
         # Apply shift to audio IDs based on codebook layer
         # audio_ids: [Batch, 8, Seq]
@@ -247,7 +241,6 @@ class OmniVoice(PreTrainedModel):
 
         # input: [Batch, 8, Seq] -> output: [Batch, Seq, Hidden]
         audio_embeds = self.audio_embeddings(shifted_ids).sum(dim=1)
-
         return torch.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
 
     def forward(
@@ -542,20 +535,19 @@ class OmniVoice(PreTrainedModel):
                 ref_audio=ref_audio,
                 ref_text=ref_text,)
 
-
-        num_target_tokens_list = [self._estimate_target_tokens(
+        num_target_tokens = self._estimate_target_tokens(
             text,
             ref_text,
             voice_clone_prompt.ref_audio_tokens.size(-1)
             if voice_clone_prompt.ref_audio_tokens is not None
             else None,
             speed=1.0,
-        )]
+        )
 
         return GenerationTask(
             batch_size=1,
             texts=[text],
-            target_lens=num_target_tokens_list,
+            target_lens=[num_target_tokens],
             langs=[None],
             instructs=[None],
             ref_texts=[ref_text],
@@ -654,19 +646,16 @@ class OmniVoice(PreTrainedModel):
     def _generate_iterative(
         self, task: GenerationTask
     ) -> List[torch.Tensor]:
-        inputs_list = [
-            self._prepare_inference_inputs(
+        input = self._prepare_inference_inputs(
                 task.texts[0],
                 task.target_lens[0],
                 task.ref_texts[0],
                 task.ref_audio_tokens[0],
                 task.langs[0],
                 task.instructs[0],
-                True,
-            )
-        ]
+                True)
 
-        c_lens = [inp["input_ids"].size(2) for inp in inputs_list]
+        c_lens = [input["input_ids"].size(2)]
         max_c_len = max(c_lens)
         pad_id = self.config.audio_mask_id  # Or any other tokens
 
@@ -683,21 +672,20 @@ class OmniVoice(PreTrainedModel):
             (2, 1, max_c_len, max_c_len), dtype=torch.bool, device=self.device
         )
 
-        for i, inp in enumerate(inputs_list):
-            c_len, u_len = c_lens[i], task.target_lens[i]
+        c_len, u_len = c_lens[0], task.target_lens[0]
 
-            # Cond (0 ~ B-1)
-            batch_input_ids[i, :, :c_len] = inp["input_ids"]
-            batch_audio_mask[i, :c_len] = inp["audio_mask"]
-            batch_attention_mask[i, :, :c_len, :c_len] = True
+        # Cond (0 ~ B-1)
+        batch_input_ids[0, :, :c_len] = input["input_ids"]
+        batch_audio_mask[0, :c_len] = input["audio_mask"]
+        batch_attention_mask[0, :, :c_len, :c_len] = True
 
-            # Uncond (B ~ 2B-1)
-            batch_input_ids[1 + i, :, :u_len] = inp["input_ids"][..., -u_len:]
-            batch_audio_mask[1 + i, :u_len] = inp["audio_mask"][..., -u_len:]
-            batch_attention_mask[1 + i, :, :u_len, :u_len] = True
-            if max_c_len > u_len:
-                pad_diag = torch.arange(u_len, max_c_len, device=self.device)
-                batch_attention_mask[1 + i, :, pad_diag, pad_diag] = True
+        # Uncond (B ~ 2B-1)
+        batch_input_ids[1, :, :u_len] = input["input_ids"][..., -u_len:]
+        batch_audio_mask[1, :u_len] = input["audio_mask"][..., -u_len:]
+        batch_attention_mask[1, :, :u_len, :u_len] = True
+        if max_c_len > u_len:
+            pad_diag = torch.arange(u_len, max_c_len, device=self.device)
+            batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
         tokens = torch.full(
             (1, self.config.num_audio_codebook, max(task.target_lens)),
@@ -745,7 +733,7 @@ class OmniVoice(PreTrainedModel):
             if k <= 0:
                 continue
 
-            c_len, t_len = c_lens[i], task.target_lens[i]
+            c_len, t_len = c_lens[0], task.target_lens[0]
 
             # Extract real target Logits
             # [1, C, T, V]
