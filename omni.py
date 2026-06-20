@@ -65,6 +65,8 @@ class OmniVoiceGenerationConfig:
         return cls(**filtered)
 
 
+FRAME_RATE1 = 25
+
 @dataclass
 class GenerationTask:
     batch_size: int
@@ -77,8 +79,8 @@ class GenerationTask:
     ref_rms: List[Optional[float]]
     speed: Optional[List[float]] = None
 
-    def get_indices(self, config: OmniVoiceGenerationConfig, frame_rate: int):
-        threshold = int(config.audio_chunk_threshold * frame_rate)
+    def get_indices(self, config: OmniVoiceGenerationConfig):
+        threshold = int(config.audio_chunk_threshold * FRAME_RATE1)
         short_idx = [i for i, l in enumerate(self.target_lens) if l <= threshold]
         long_idx = [i for i, l in enumerate(self.target_lens) if l > threshold]
         return short_idx, long_idx
@@ -364,10 +366,8 @@ class OmniVoice(PreTrainedModel):
             instruct=instruct,
             preprocess_prompt=gen_config.preprocess_prompt,
         )
-
-        short_idx, long_idx = full_task.get_indices(
-            gen_config, self.audio_tokenizer.config.frame_rate
-        )
+        
+        short_idx, long_idx = full_task.get_indices(gen_config)
 
         results = [None] * full_task.batch_size
 
@@ -402,7 +402,7 @@ class OmniVoice(PreTrainedModel):
             avg_tokens_per_char = task.target_lens[i] / len(task.texts[i])
             text_chunk_len = int(
                 gen_config.audio_chunk_duration
-                * self.audio_tokenizer.config.frame_rate
+                * FRAME_RATE1
                 / avg_tokens_per_char
             )
             chunks = chunk_text_punctuation(
