@@ -548,21 +548,13 @@ class OmniVoice(PreTrainedModel):
         text_list = [text]
         batch_size = len(text_list)
 
-        instruct_list = self._ensure_list(instruct, batch_size)
+        voice_clone_prompt = [
+            self.create_voice_clone_prompt(
+                ref_audio=ref_audio,
+                ref_text=ref_text,
+            )]
 
-        ref_text_list = self._ensure_list(ref_text, batch_size, auto_repeat=False)
-        ref_audio_list = self._ensure_list(ref_audio, batch_size, auto_repeat=False)
-
-        voice_clone_prompt = []
-        for i in range(len(ref_text_list)):
-            voice_clone_prompt.append(
-                self.create_voice_clone_prompt(
-                    ref_audio=ref_audio_list[i],
-                    ref_text=ref_text_list[i],
-                )
-            )
-
-
+        
         voice_clone_prompt_list = self._ensure_list(voice_clone_prompt, batch_size)
 
         ref_text_list = [vc.ref_text for vc in voice_clone_prompt_list]
@@ -588,7 +580,7 @@ class OmniVoice(PreTrainedModel):
             texts=text_list,
             target_lens=num_target_tokens_list,
             langs=[None],
-            instructs=instruct_list,
+            instructs=[None],
             ref_texts=ref_text_list,
             ref_audio_tokens=ref_audio_tokens_list,
             ref_rms=ref_rms_list,
@@ -605,15 +597,6 @@ class OmniVoice(PreTrainedModel):
         self, x: Union[Any, List[Any]], batch_size: int, auto_repeat: bool = True
     ) -> List[Any]:
         x_list = x if isinstance(x, list) else [x]
-        if len(x_list) not in (
-            1,
-            batch_size,
-        ):
-            raise ValueError(
-                f"should be either the number of the text or 1, but got {len(x_list)}"
-            )
-        if auto_repeat and len(x_list) == 1 and batch_size is not None:
-            x_list = x_list * batch_size
         return x_list
 
     def _prepare_inference_inputs(
