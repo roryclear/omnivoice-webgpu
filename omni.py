@@ -303,56 +303,15 @@ class OmniVoice(PreTrainedModel):
         rms: Union[float, None],
     ) -> np.ndarray:
         tokenizer_device = self.audio_tokenizer.device
-        if isinstance(tokens, list):
-            chunk_audios = [
-                self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0))
-                .audio_values[0]
-                .cpu()
-                .numpy()
-                for t in tokens
-            ]
-            audio_waveform = cross_fade_chunks(chunk_audios, self.sampling_rate)
-        else:
-            audio_waveform = (
-                self.audio_tokenizer.decode(tokens.to(tokenizer_device).unsqueeze(0))
-                .audio_values[0]
-                .cpu()
-                .numpy()
-            )
-            audio_waveform = self._post_process_audio(
-                audio_waveform,
-                postprocess_output=True,
-                ref_rms=rms,
-            )
+        chunk_audios = [
+            self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0))
+            .audio_values[0]
+            .cpu()
+            .numpy()
+            for t in tokens
+        ]
+        audio_waveform = cross_fade_chunks(chunk_audios, self.sampling_rate)
         return audio_waveform.squeeze(0)
-
-    def _post_process_audio(
-        self,
-        generated_audio: np.ndarray,
-        postprocess_output: bool,
-        ref_rms: Union[float, None],
-    ) -> np.ndarray:
-        if postprocess_output:
-            generated_audio = remove_silence(
-                generated_audio,
-                self.sampling_rate,
-                mid_sil=500,
-                lead_sil=100,
-                trail_sil=100,
-            )
-
-        if ref_rms is not None and ref_rms < 0.1:
-            generated_audio = generated_audio * ref_rms / 0.1
-        elif ref_rms is None:
-            peak = np.abs(generated_audio).max()
-            if peak > 1e-6:
-                generated_audio = generated_audio / peak * 0.5
-
-        generated_audio = fade_and_pad_audio(
-            generated_audio,
-            sample_rate=self.sampling_rate,
-        )
-        return generated_audio
 
     def _preprocess_all(
         self,
