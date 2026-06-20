@@ -82,13 +82,6 @@ class GenerationTask:
             speed=[self.speed[i] for i in indices] if self.speed else None,
         )
 
-
-@dataclass
-class OmniVoiceModelOutput(ModelOutput):
-    loss: Optional[torch.Tensor] = None
-    logits: Optional[torch.Tensor] = None
-
-
 # ---------------------------------------------------------------------------
 # Config & Model
 # ---------------------------------------------------------------------------
@@ -317,10 +310,7 @@ class OmniVoice(PreTrainedModel):
             )
             loss = (layer_means * weights).sum()
 
-        return OmniVoiceModelOutput(
-            loss=loss,
-            logits=audio_logits,
-        )
+        return audio_logits
 
     # -------------------------------------------------------------------
     # Inference API
@@ -831,7 +821,7 @@ class OmniVoice(PreTrainedModel):
                 input_ids=batch_input_ids,
                 audio_mask=batch_audio_mask,
                 attention_mask=batch_attention_mask,
-            ).logits.to(torch.float32)
+            ).to(torch.float32)
 
             k = schedules[0][step]
             if k <= 0:
