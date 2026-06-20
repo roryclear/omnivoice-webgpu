@@ -3,7 +3,7 @@ import math
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, List, Optional, Union
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
@@ -30,8 +30,6 @@ from omnivoice.utils.audio import (
 from omnivoice.utils.duration import RuleDurationEstimator
 from omnivoice.utils.lang_map import LANG_IDS, LANG_NAMES
 from omnivoice.utils.text import add_punctuation, chunk_text_punctuation
-
-logger = logging.getLogger(__name__)
 
 @dataclass
 class VoiceClonePrompt:
@@ -344,15 +342,9 @@ class OmniVoice(PreTrainedModel):
                 chunk_len=text_chunk_len,
                 min_chunk_len=3,
             )
-            logger.debug(f"Item {i} chunked into {len(chunks)} pieces: {chunks}")
             all_chunks.append(chunks)
 
         has_ref = [t is not None for t in task.ref_audio_tokens]
-        assert all(has_ref) or not any(has_ref), (
-            "Chunked inference requires all items to either have or not have "
-            "ref_audio. Mixed ref/non-ref is not supported."
-        )
-
         max_num_chunks = max(len(c) for c in all_chunks)
 
         # chunk_results[item_idx] = list of generated token tensors per chunk
@@ -545,45 +537,30 @@ class OmniVoice(PreTrainedModel):
         instruct: Union[str, list[str], None] = None,
     ) -> GenerationTask:
 
-        text_list = [text]
-        batch_size = len(text_list)
 
-        voice_clone_prompt = [
-            self.create_voice_clone_prompt(
+        voice_clone_prompt =  self.create_voice_clone_prompt(
                 ref_audio=ref_audio,
-                ref_text=ref_text,
-            )]
+                ref_text=ref_text,)
 
-        
-        voice_clone_prompt_list = self._ensure_list(voice_clone_prompt, batch_size)
 
-        ref_text_list = [vc.ref_text for vc in voice_clone_prompt_list]
-        ref_audio_tokens_list = [
-            vc.ref_audio_tokens for vc in voice_clone_prompt_list
-        ]
-        ref_rms_list = [vc.ref_rms for vc in voice_clone_prompt_list]
-
-        num_target_tokens_list = []
-        for i in range(batch_size):
-            est = self._estimate_target_tokens(
-                text_list[i],
-                ref_text_list[i],
-                ref_audio_tokens_list[i].size(-1)
-                if ref_audio_tokens_list[i] is not None
-                else None,
-                speed=1.0,
-            )
-            num_target_tokens_list.append(est)
+        num_target_tokens_list = [self._estimate_target_tokens(
+            text,
+            ref_text,
+            voice_clone_prompt.ref_audio_tokens.size(-1)
+            if voice_clone_prompt.ref_audio_tokens is not None
+            else None,
+            speed=1.0,
+        )]
 
         return GenerationTask(
-            batch_size=batch_size,
-            texts=text_list,
+            batch_size=1,
+            texts=[text],
             target_lens=num_target_tokens_list,
             langs=[None],
             instructs=[None],
-            ref_texts=ref_text_list,
-            ref_audio_tokens=ref_audio_tokens_list,
-            ref_rms=ref_rms_list,
+            ref_texts=[ref_text],
+            ref_audio_tokens=[voice_clone_prompt.ref_audio_tokens],
+            ref_rms=[voice_clone_prompt.ref_rms],
             speed=None,
         )
 
@@ -592,12 +569,6 @@ class OmniVoice(PreTrainedModel):
             text, ref_text, num_ref_audio_tokens
         )
         return max(1, int(est))
-
-    def _ensure_list(
-        self, x: Union[Any, List[Any]], batch_size: int, auto_repeat: bool = True
-    ) -> List[Any]:
-        x_list = x if isinstance(x, list) else [x]
-        return x_list
 
     def _prepare_inference_inputs(
         self,
@@ -820,15 +791,6 @@ class OmniVoice(PreTrainedModel):
         confidence_scores = log_probs.max(dim=-1)[0]
 
         return pred_tokens, confidence_scores
-
-
-def _filter_top_k(logits: torch.Tensor, ratio: float = 0.1) -> torch.Tensor:
-    k = math.ceil(ratio * logits.shape[-1])
-    val, ind = logits.topk(k, dim=-1)
-    probs = torch.full_like(logits, float("-inf"))
-    probs.scatter_(-1, ind, val)
-    return probs
-
 
 def _gumbel_sample(logits: torch.Tensor, temperature: float) -> torch.Tensor:
     scaled_logits = logits / temperature
