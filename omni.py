@@ -255,8 +255,11 @@ class OmniVoice(PreTrainedModel):
         return audio_waveform.squeeze(0)
 
     def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
-        est = self.duration_estimator.estimate_duration(text, ref_text, num_ref_audio_tokens)
-        return max(1, int(est))
+        ref_weight = self.duration_estimator.calculate_total_weight(ref_text)
+        speed_factor = ref_weight / num_ref_audio_tokens
+        target_weight = self.duration_estimator.calculate_total_weight(text)
+        estimated_duration = target_weight / speed_factor
+        return int(estimated_duration)
 
     def _prepare_inference_inputs(
         self,
