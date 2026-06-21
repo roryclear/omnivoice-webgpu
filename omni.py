@@ -19,17 +19,14 @@ from transformers import (
     PretrainedConfig,
     PreTrainedModel,
 )
-from transformers.modeling_outputs import ModelOutput
 from transformers.models.auto import CONFIG_MAPPING, AutoConfig
 
 from omnivoice.utils.audio import (
     cross_fade_chunks,
-    fade_and_pad_audio,
     load_audio,
     remove_silence,
 )
 from omnivoice.utils.duration import RuleDurationEstimator
-from omnivoice.utils.lang_map import LANG_IDS, LANG_NAMES
 from omnivoice.utils.text import add_punctuation, chunk_text_punctuation
 
 @dataclass
@@ -221,7 +218,7 @@ class OmniVoice(PreTrainedModel):
             voice_clone_prompt=voice_clone_prompt,
         )
 
-        result = self._generate_chunked(full_task)[0]         
+        result = self._generate_chunked(full_task)     
         generated_audios = [self._decode_and_post_process(result, full_task.ref_rms[0])]
 
         return generated_audios
@@ -358,22 +355,12 @@ class OmniVoice(PreTrainedModel):
     def _generate_chunked(
         self, task
     ) -> List[List[torch.Tensor]]:
-
         avg_tokens_per_char = task.target_length / len(task.text)
-        text_chunk_len = int(
-            AUDIO_CHUNK_DURATION
-            * FRAME_RATE
-            / avg_tokens_per_char
-        )
-        chunks = chunk_text_punctuation(
-            text=task.text,
-            chunk_len=text_chunk_len,
-            min_chunk_len=3,
-        )
+        text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
+        chunks = chunk_text_punctuation(text=task.text, chunk_len=text_chunk_len, min_chunk_len=3,)
 
         max_num_chunks = len(chunks)
-        chunk_results = [[]]
-
+        chunk_results = []
         for i in range(max_num_chunks):
             target_length = self._estimate_target_tokens(chunks[i], task.ref_text, task.ref_audio_tokens[0].size(-1))
             sub_task = GenerationTask(
@@ -385,9 +372,8 @@ class OmniVoice(PreTrainedModel):
                 ref_audio_tokens=task.ref_audio_tokens,
                 ref_rms=task.ref_rms
             )
-            gen_tokens = self._generate_iterative(sub_task)
-            chunk_results[0].append(gen_tokens[0])
 
+            chunk_results.append(self._generate_iterative(sub_task))
 
         return chunk_results
 
@@ -470,7 +456,7 @@ class OmniVoice(PreTrainedModel):
             batch_input_ids[0: 1, :, c_len - task.target_length : c_len] = sample_tokens
             batch_input_ids[1: 2, :, :task.target_length] = sample_tokens
 
-        return [tokens[0, :, : task.target_length]]
+        return tokens[0, :, : task.target_length]
 
     def _predict_tokens_with_scoring(self, c_logits, u_logits):
         c_log_probs = F.log_softmax(c_logits, dim=-1)
