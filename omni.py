@@ -67,6 +67,7 @@ NUM_AUDIO_CODEBOOK = 8
 AUDIO_VOCAB_SIZE = 1025
 AUDIO_CODEBOOK_WEIGHTS = [8, 8, 6, 6, 4, 4, 2, 2]
 AUDIO_MASK_ID = 1024
+SAMPLING_RATE = 24000
 
 import soundfile as sf
 def load_waveform(audio_path: str):
@@ -119,6 +120,8 @@ class OmniVoice(PreTrainedModel):
         # Resolve to local path first; download only if not already cached
         resolved_path = _resolve_model_path(pretrained_model_name_or_path)
         model = super().from_pretrained(resolved_path, *args, **kwargs)
+
+
         model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path)
         audio_tokenizer_path = os.path.join(resolved_path, "audio_tokenizer")
 
@@ -133,8 +136,6 @@ class OmniVoice(PreTrainedModel):
         model.feature_extractor = AutoFeatureExtractor.from_pretrained(
             audio_tokenizer_path
         )
-
-        model.sampling_rate = model.feature_extractor.sampling_rate
 
         model.duration_estimator = RuleDurationEstimator()
 
@@ -212,20 +213,20 @@ class OmniVoice(PreTrainedModel):
         ref_text: Optional[str] = None,
     ):
 
-        ref_wav = load_audio(ref_audio, self.sampling_rate)
+        ref_wav = load_audio(ref_audio, SAMPLING_RATE)
         ref_rms = float(np.sqrt(np.mean(ref_wav**2)))
         if 0 < ref_rms < 0.1:
             ref_wav = ref_wav * 0.1 / ref_rms
 
         ref_wav = remove_silence(
             ref_wav,
-            self.sampling_rate,
+            SAMPLING_RATE,
             mid_sil=200,
             lead_sil=100,
             trail_sil=200,
         )
 
-        ref_duration = ref_wav.shape[-1] / self.sampling_rate
+        ref_duration = ref_wav.shape[-1] / SAMPLING_RATE
         if ref_duration > 20.0: # todo just limit it to 20s on front end?
             print(
                 "Reference audio is %.1fs long (>20s). This may cause slower "
@@ -250,7 +251,7 @@ class OmniVoice(PreTrainedModel):
     ) -> np.ndarray:
         tokenizer_device = self.audio_tokenizer.device
         chunk_audios = [self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0)).audio_values[0].cpu().numpy() for t in tokens]
-        audio_waveform = cross_fade_chunks(chunk_audios, self.sampling_rate)
+        audio_waveform = cross_fade_chunks(chunk_audios, SAMPLING_RATE)
         return audio_waveform.squeeze(0)
 
     def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
