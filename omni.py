@@ -29,12 +29,6 @@ from omnivoice.utils.audio import (
 from omnivoice.utils.duration import RuleDurationEstimator
 from omnivoice.utils.text import add_punctuation, chunk_text_punctuation
 
-@dataclass
-class VoiceClonePrompt:
-    ref_audio_tokens: torch.Tensor  # (C, T)
-    ref_text: str
-    ref_rms: float
-
 
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
@@ -195,12 +189,12 @@ class OmniVoice(PreTrainedModel):
 
         self.eval()
 
-        voice_clone_prompt =  self.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text,)
-        num_target_tokens = self._estimate_target_tokens(text, ref_text, voice_clone_prompt.ref_audio_tokens.size(-1),)
+        ref_audio_tokens, ref_rms  =  self.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text,)
+        num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
 
         result = self._generate_chunked(target_length=num_target_tokens, text=text,\
-            ref_text=ref_text, ref_audio_tokens=voice_clone_prompt.ref_audio_tokens)     
-        generated_audios = [self._decode_and_post_process(result, voice_clone_prompt.ref_rms)]
+            ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)     
+        generated_audios = [self._decode_and_post_process(result, ref_rms)]
 
         return generated_audios
 
@@ -242,11 +236,7 @@ class OmniVoice(PreTrainedModel):
 
         ref_text = add_punctuation(ref_text)
 
-        return VoiceClonePrompt(
-            ref_audio_tokens=ref_audio_tokens,
-            ref_text=ref_text,
-            ref_rms=ref_rms,
-        )
+        return ref_audio_tokens, ref_rms
 
     def _decode_and_post_process(
         self,
