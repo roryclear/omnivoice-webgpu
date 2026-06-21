@@ -51,17 +51,17 @@ AUDIO_CHUNKED_THRESHOLD = 30.0
 @dataclass
 class GenerationTask:
     texts: List[str]
-    target_lengths: List[int]
+    target_length: int
     langs: List[Optional[str]]
     instructs: List[Optional[str]]
     ref_texts: List[Optional[str]]
     ref_audio_tokens: List[Optional[torch.Tensor]]
     ref_rms: List[Optional[float]]
 
-    def get_indices(self):
+    def get_indices(self): # todo remove
         threshold = int(AUDIO_CHUNKED_THRESHOLD * FRAME_RATE)
-        short_idx = [i for i, l in enumerate(self.target_lengths) if l <= threshold]
-        long_idx = [i for i, l in enumerate(self.target_lengths) if l > threshold]
+        short_idx = [0] if self.target_length < threshold else []
+        long_idx = [0] if self.target_length > threshold else []
         return short_idx, long_idx
 
 class OmniVoiceConfig(PretrainedConfig):
@@ -320,7 +320,7 @@ class OmniVoice(PreTrainedModel):
 
         return GenerationTask(
             texts=[text],
-            target_lengths=[num_target_tokens],
+            target_length=num_target_tokens,
             langs=[None],
             instructs=[None],
             ref_texts=[ref_text],
@@ -378,7 +378,7 @@ class OmniVoice(PreTrainedModel):
         self, task
     ) -> List[List[torch.Tensor]]:
 
-        avg_tokens_per_char = task.target_lengths[0] / len(task.texts[0])
+        avg_tokens_per_char = task.target_length / len(task.texts[0])
         text_chunk_len = int(
             AUDIO_CHUNK_DURATION
             * FRAME_RATE
@@ -394,16 +394,10 @@ class OmniVoice(PreTrainedModel):
         chunk_results = [[]]
 
         def _run_batch(text, ref_audio, ref_text):
-            target_lengths = [
-                self._estimate_target_tokens(
-                    text,
-                    ref_text,
-                    ref_audio.size(-1),
-                )
-            ]
+            target_length = self._estimate_target_tokens(text, ref_text, ref_audio.size(-1))
             sub_task = GenerationTask(
                 texts=[text],
-                target_lengths=target_lengths,
+                target_length=target_length,
                 langs=[task.langs[0]],
                 instructs=[task.instructs[0]],
                 ref_texts=[ref_text],
@@ -428,7 +422,7 @@ class OmniVoice(PreTrainedModel):
     ) -> List[torch.Tensor]:
         cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(
                 task.texts[0],
-                task.target_lengths[0],
+                task.target_length,
                 task.ref_texts[0],
                 task.ref_audio_tokens[0])
 
@@ -448,7 +442,7 @@ class OmniVoice(PreTrainedModel):
             (2, 1, max_c_len, max_c_len), dtype=torch.bool, device=self.device
         )
 
-        c_len, u_len = c_lens[0], task.target_lengths[0]
+        c_len, u_len = c_lens[0], task.target_length
 
         # Cond (0 ~ B-1)
         batch_input_ids[0, :, :c_len] = cond_input_ids
@@ -463,12 +457,12 @@ class OmniVoice(PreTrainedModel):
             pad_diag = torch.arange(u_len, max_c_len, device=self.device)
             batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-        tokens = torch.full((1, NUM_AUDIO_CODEBOOK, max(task.target_lengths)), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
+        tokens = torch.full((1, NUM_AUDIO_CODEBOOK, task.target_length), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
 
         timesteps = torch.linspace(0.0, 1.0, NUM_STEPS + 1)
         timesteps = (T_SHIFT * timesteps / (1 + (T_SHIFT - 1) * timesteps)).tolist()
 
-        total_mask = task.target_lengths[0] * NUM_AUDIO_CODEBOOK
+        total_mask = task.target_length * NUM_AUDIO_CODEBOOK
         rem = total_mask
         sched = []
         for step in range(NUM_STEPS):
@@ -490,7 +484,7 @@ class OmniVoice(PreTrainedModel):
             if k <= 0:
                 continue
 
-            c_len, t_len = c_lens[0], task.target_lengths[0]
+            c_len, t_len = c_lens[0], task.target_length
 
             # Extract real target Logits
             # [1, C, T, V]
@@ -518,7 +512,7 @@ class OmniVoice(PreTrainedModel):
             batch_input_ids[0: 1, :, c_len - t_len : c_len] = sample_tokens
             batch_input_ids[1: 2, :, :t_len] = sample_tokens
 
-        return [tokens[0, :, : task.target_lengths[0]]]
+        return [tokens[0, :, : task.target_length]]
 
     def _predict_tokens_with_scoring(self, c_logits, u_logits):
         c_log_probs = F.log_softmax(c_logits, dim=-1)
