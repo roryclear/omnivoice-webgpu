@@ -70,28 +70,16 @@ AUDIO_MASK_ID = 1024
 
 import soundfile as sf
 def load_waveform(audio_path: str):
-    try:
-        data, sr = sf.read(audio_path, dtype="float32", always_2d=True)
-        return data.T, sr  # (T, C) → (C, T)
-    except Exception:
-        # soundfile cannot handle MP3/M4A etc., fall back to librosa.
-        import librosa
-
-        data, sr = librosa.load(audio_path, sr=None, mono=False)
-        if data.ndim == 1:
-            data = data[np.newaxis, :]
-        return data, sr
+    data, sr = sf.read(audio_path, dtype="float32", always_2d=True)
+    return data.T, sr  # (T, C) → (C, T)
 
 def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
     data, sr = load_waveform(audio_path)
 
-    if data.shape[0] > 1:
-        data = np.mean(data, axis=0, keepdims=True)
-    if sr != sampling_rate:
-        data = torchaudio.functional.resample(
-            torch.from_numpy(data), orig_freq=sr, new_freq=sampling_rate
-        ).numpy()
-
+    # two sides
+    data = np.mean(data, axis=0, keepdims=True)
+    # just resample every time?
+    data = torchaudio.functional.resample(torch.from_numpy(data), orig_freq=sr, new_freq=sampling_rate).numpy()
     return data
 
 class OmniVoice(PreTrainedModel):
