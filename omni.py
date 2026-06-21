@@ -2,7 +2,6 @@ import logging
 import math
 import os
 import re
-from dataclasses import dataclass
 from typing import List, Optional, Union
 
 import numpy as np
@@ -184,19 +183,14 @@ class OmniVoice(PreTrainedModel):
         text=None,
         ref_text=None,
         ref_audio=None,
-        voice_clone_prompt=None
     ) -> list[np.ndarray]:
-
         self.eval()
-
-        ref_audio_tokens, ref_rms  =  self.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text,)
+        ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text,)
         num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
 
         result = self._generate_chunked(target_length=num_target_tokens, text=text,\
-            ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)     
-        generated_audios = [self._decode_and_post_process(result, ref_rms)]
-
-        return generated_audios
+            ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
+        return self._decode_and_post_process(result)    
 
     def create_voice_clone_prompt(
         self,
@@ -206,7 +200,6 @@ class OmniVoice(PreTrainedModel):
 
         ref_wav = load_audio(ref_audio, self.sampling_rate)
         ref_rms = float(np.sqrt(np.mean(ref_wav**2)))
-
         if 0 < ref_rms < 0.1:
             ref_wav = ref_wav * 0.1 / ref_rms
 
@@ -236,12 +229,11 @@ class OmniVoice(PreTrainedModel):
 
         ref_text = add_punctuation(ref_text)
 
-        return ref_audio_tokens, ref_rms
+        return ref_audio_tokens
 
     def _decode_and_post_process(
         self,
         tokens: Union[torch.Tensor, List[torch.Tensor]],
-        rms: Union[float, None],
     ) -> np.ndarray:
         tokenizer_device = self.audio_tokenizer.device
         chunk_audios = [self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0)).audio_values[0].cpu().numpy() for t in tokens]
