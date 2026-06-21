@@ -363,29 +363,15 @@ class OmniVoice(PreTrainedModel):
         chunk_results = []
         for i in range(max_num_chunks):
             target_length = self._estimate_target_tokens(chunks[i], task.ref_text, task.ref_audio_tokens[0].size(-1))
-            sub_task = GenerationTask(
-                text=chunks[i],
-                target_length=target_length,
-                langs=task.langs,
-                instructs=task.instructs,
-                ref_text=task.ref_text,
-                ref_audio_tokens=task.ref_audio_tokens,
-                ref_rms=task.ref_rms
-            )
-
-            chunk_results.append(self._generate_iterative(sub_task))
+            chunk_results.append(self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=task.ref_text, ref_audio_tokens=task.ref_audio_tokens[0]))
 
         return chunk_results
 
 
     def _generate_iterative(
-        self, task: GenerationTask
+        self, text, target_length, ref_text, ref_audio_tokens
     ) -> List[torch.Tensor]:
-        cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(
-                task.text,
-                task.target_length,
-                task.ref_text,
-                task.ref_audio_tokens[0])
+        cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
         c_len = cond_input_ids.size(2)
         batch_input_ids = torch.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
@@ -398,19 +384,19 @@ class OmniVoice(PreTrainedModel):
         batch_attention_mask[0, :, :c_len, :c_len] = True
 
         # Uncond (B ~ 2B-1)
-        batch_input_ids[1, :, :task.target_length] = cond_input_ids[..., -task.target_length:]
-        batch_audio_mask[1, :task.target_length] = cond_audio_mask[..., -task.target_length:]
-        batch_attention_mask[1, :, :task.target_length, :task.target_length] = True
-        if c_len > task.target_length:
-            pad_diag = torch.arange(task.target_length, c_len, device=self.device)
+        batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:]
+        batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:]
+        batch_attention_mask[1, :, :target_length, :target_length] = True
+        if c_len > target_length:
+            pad_diag = torch.arange(target_length, c_len, device=self.device)
             batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-        tokens = torch.full((1, NUM_AUDIO_CODEBOOK, task.target_length), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
+        tokens = torch.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
 
         timesteps = torch.linspace(0.0, 1.0, NUM_STEPS + 1)
         timesteps = (T_SHIFT * timesteps / (1 + (T_SHIFT - 1) * timesteps)).tolist()
 
-        total_mask = task.target_length * NUM_AUDIO_CODEBOOK
+        total_mask = target_length * NUM_AUDIO_CODEBOOK
         rem = total_mask
         sched = []
         for step in range(NUM_STEPS):
@@ -434,8 +420,8 @@ class OmniVoice(PreTrainedModel):
 
             # Extract real target Logits
             # [1, C, T, V]
-            c_logits = batch_logits[0: 1, :, c_len - task.target_length : c_len, :]
-            u_logits = batch_logits[1: 2, :, :task.target_length, :]
+            c_logits = batch_logits[0: 1, :, c_len - target_length : c_len, :]
+            u_logits = batch_logits[1: 2, :, :target_length, :]
 
             pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
 
@@ -443,7 +429,7 @@ class OmniVoice(PreTrainedModel):
 
             scores = _gumbel_sample(scores, POSITION_TEMP)
 
-            sample_tokens = tokens[0: 1, :, :task.target_length]
+            sample_tokens = tokens[0: 1, :, :target_length]
             scores.masked_fill_(sample_tokens != AUDIO_MASK_ID, -float("inf"))
 
             _, topk_idx = torch.topk(scores.flatten(), k)
@@ -452,11 +438,11 @@ class OmniVoice(PreTrainedModel):
             sample_tokens.copy_(flat_tokens.view_as(sample_tokens))
 
             # Update individual slices into batched structure
-            tokens[0: 1, :, :task.target_length] = sample_tokens
-            batch_input_ids[0: 1, :, c_len - task.target_length : c_len] = sample_tokens
-            batch_input_ids[1: 2, :, :task.target_length] = sample_tokens
+            tokens[0: 1, :, :target_length] = sample_tokens
+            batch_input_ids[0: 1, :, c_len - target_length : c_len] = sample_tokens
+            batch_input_ids[1: 2, :, :target_length] = sample_tokens
 
-        return tokens[0, :, : task.target_length]
+        return tokens[0, :, : target_length]
 
     def _predict_tokens_with_scoring(self, c_logits, u_logits):
         c_log_probs = F.log_softmax(c_logits, dim=-1)
