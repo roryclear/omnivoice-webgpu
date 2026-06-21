@@ -70,19 +70,15 @@ class OmniVoiceConfig(PretrainedConfig):
 
     def __init__(
         self,
-        audio_mask_id: int = 1024,
-        audio_codebook_weights: Optional[list[float]] = None,
         llm_config: Optional[Union[dict, PretrainedConfig]] = None,
         **kwargs,
     ):
 
         if isinstance(llm_config, dict):
-            llm_config = CONFIG_MAPPING[llm_config["model_type"]](**llm_config)
+            self.llm_config = CONFIG_MAPPING[llm_config["model_type"]](**llm_config)
 
-        self.llm_config = llm_config
 
         super().__init__(**kwargs)
-        self.audio_mask_id = audio_mask_id
 
 
 def _resolve_model_path(name_or_path: str) -> str:
@@ -96,6 +92,7 @@ HIDDEN_SIZE = 1024
 NUM_AUDIO_CODEBOOK = 8
 AUDIO_VOCAB_SIZE = 1025
 AUDIO_CODEBOOK_WEIGHTS = [8, 8, 6, 6, 4, 4, 2, 2]
+AUDIO_MASK_ID = 1024
 
 class OmniVoice(PreTrainedModel):
     _supports_flex_attn = True
@@ -103,7 +100,7 @@ class OmniVoice(PreTrainedModel):
     _supports_sdpa = True
     config_class = OmniVoiceConfig
 
-    def __init__(self, config: OmniVoiceConfig):
+    def __init__(self, config):
         super().__init__(config)
         
         self.llm = AutoModel.from_config(self.config.llm_config)
@@ -269,11 +266,7 @@ class OmniVoice(PreTrainedModel):
         ref_wav = ref_wav[:, :-clip_size] if clip_size > 0 else ref_wav
         # numpy → torch at tokenizer boundary
         ref_wav_tensor = torch.from_numpy(ref_wav).to(self.audio_tokenizer.device)
-        ref_audio_tokens = self.audio_tokenizer.encode(
-            ref_wav_tensor.unsqueeze(0),
-        ).audio_codes.squeeze(
-            0
-        )  # (C, T)
+        ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).audio_codes.squeeze(0)  # (C, T)
 
         ref_text = add_punctuation(ref_text)
 
@@ -363,12 +356,7 @@ class OmniVoice(PreTrainedModel):
         ).to(self.device)  # [1, C, N2]
 
         # Target: all MASK
-        target_audio_tokens = torch.full(
-            (1, NUM_AUDIO_CODEBOOK, num_target_tokens),
-            self.config.audio_mask_id,
-            dtype=torch.long,
-            device=self.device,
-        )
+        target_audio_tokens = torch.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=torch.long, device=self.device)
 
         # Conditional input
         parts = [style_tokens, text_tokens]
@@ -446,11 +434,10 @@ class OmniVoice(PreTrainedModel):
 
         c_lens = [cond_input_ids.size(2)]
         max_c_len = max(c_lens)
-        pad_id = self.config.audio_mask_id  # Or any other tokens
 
         batch_input_ids = torch.full(
             (2, NUM_AUDIO_CODEBOOK, max_c_len),
-            pad_id,
+            AUDIO_MASK_ID,
             dtype=torch.long,
             device=self.device,
         )
@@ -476,12 +463,7 @@ class OmniVoice(PreTrainedModel):
             pad_diag = torch.arange(u_len, max_c_len, device=self.device)
             batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-        tokens = torch.full(
-            (1, NUM_AUDIO_CODEBOOK, max(task.target_lengths)),
-            self.config.audio_mask_id,
-            dtype=torch.long,
-            device=self.device,
-        )
+        tokens = torch.full((1, NUM_AUDIO_CODEBOOK, max(task.target_lengths)), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
 
         timesteps = _get_time_steps(
             t_start=0.0,
@@ -527,9 +509,7 @@ class OmniVoice(PreTrainedModel):
             scores = _gumbel_sample(scores, POSITION_TEMP)
 
             sample_tokens = tokens[0: 1, :, :t_len]
-            scores.masked_fill_(
-                sample_tokens != self.config.audio_mask_id, -float("inf")
-            )
+            scores.masked_fill_(sample_tokens != AUDIO_MASK_ID, -float("inf"))
 
             _, topk_idx = torch.topk(scores.flatten(), k)
             flat_tokens = sample_tokens.flatten()
@@ -551,7 +531,7 @@ class OmniVoice(PreTrainedModel):
             dim=-1,
         )
 
-        log_probs[..., self.config.audio_mask_id] = -float("inf")
+        log_probs[..., AUDIO_MASK_ID] = -float("inf")
         pred_tokens = log_probs.argmax(dim=-1)
 
         confidence_scores = log_probs.max(dim=-1)[0]
