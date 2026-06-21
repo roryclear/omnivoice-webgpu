@@ -45,22 +45,6 @@ GUIDANCE_SCALE = 2.0
 T_SHIFT = 0.1
 AUDIO_CHUNKED_THRESHOLD = 30.0
 
-@dataclass
-class GenerationTask:
-    text: str
-    target_length: int
-    langs: List[Optional[str]]
-    instructs: List[Optional[str]]
-    ref_text: str
-    ref_audio_tokens: List[Optional[torch.Tensor]]
-    ref_rms: List[Optional[float]]
-
-    def get_indices(self): # todo remove
-        threshold = int(AUDIO_CHUNKED_THRESHOLD * FRAME_RATE)
-        short_idx = [0] if self.target_length < threshold else []
-        long_idx = [0] if self.target_length > threshold else []
-        return short_idx, long_idx
-
 class OmniVoiceConfig(PretrainedConfig):
     model_type = "omnivoice"
     sub_configs = {"llm_config": AutoConfig}
@@ -211,16 +195,12 @@ class OmniVoice(PreTrainedModel):
 
         self.eval()
 
-        full_task = self._preprocess_all(
-            text=text,
-            ref_text=ref_text,
-            ref_audio=ref_audio,
-            voice_clone_prompt=voice_clone_prompt,
-        )
+        voice_clone_prompt =  self.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text,)
+        num_target_tokens = self._estimate_target_tokens(text, ref_text, voice_clone_prompt.ref_audio_tokens.size(-1),)
 
-        result = self._generate_chunked(target_length=full_task.target_length, text=full_task.text,\
-            ref_text=full_task.ref_text, ref_audio_tokens=full_task.ref_audio_tokens[0])     
-        generated_audios = [self._decode_and_post_process(result, full_task.ref_rms[0])]
+        result = self._generate_chunked(target_length=num_target_tokens, text=text,\
+            ref_text=ref_text, ref_audio_tokens=voice_clone_prompt.ref_audio_tokens)     
+        generated_audios = [self._decode_and_post_process(result, voice_clone_prompt.ref_rms)]
 
         return generated_audios
 
@@ -277,35 +257,6 @@ class OmniVoice(PreTrainedModel):
         chunk_audios = [self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0)).audio_values[0].cpu().numpy() for t in tokens]
         audio_waveform = cross_fade_chunks(chunk_audios, self.sampling_rate)
         return audio_waveform.squeeze(0)
-
-    def _preprocess_all(
-        self,
-        text: Union[str, list[str]],
-        ref_text: Union[str, list[str], None] = None,
-        ref_audio: Union[
-            str,
-            list[str],
-            tuple[torch.Tensor, int],
-            list[tuple[torch.Tensor, int]],
-            None,
-        ] = None,
-        voice_clone_prompt=None
-    ):
-
-
-        voice_clone_prompt =  self.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text,)
-
-        num_target_tokens = self._estimate_target_tokens(text, ref_text, voice_clone_prompt.ref_audio_tokens.size(-1),)
-
-        return GenerationTask(
-            text=text,
-            target_length=num_target_tokens,
-            langs=[None],
-            instructs=[None],
-            ref_text=ref_text,
-            ref_audio_tokens=[voice_clone_prompt.ref_audio_tokens],
-            ref_rms=[voice_clone_prompt.ref_rms],
-        )
 
     def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
         est = self.duration_estimator.estimate_duration(text, ref_text, num_ref_audio_tokens)
