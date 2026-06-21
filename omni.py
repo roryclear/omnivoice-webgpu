@@ -203,18 +203,13 @@ class OmniVoice(PreTrainedModel):
         ).permute(0, 2, 1, 3)
         return audio_logits
 
-    # -------------------------------------------------------------------
-    # Inference API
-    # -------------------------------------------------------------------
-
     @torch.inference_mode()
     def generate(
         self,
         text=None,
         ref_text=None,
         ref_audio=None,
-        voice_clone_prompt=None,
-        instruct: Union[str, list[str], None] = None,
+        voice_clone_prompt=None
     ) -> list[np.ndarray]:
 
         self.eval()
@@ -224,7 +219,6 @@ class OmniVoice(PreTrainedModel):
             ref_text=ref_text,
             ref_audio=ref_audio,
             voice_clone_prompt=voice_clone_prompt,
-            instruct=instruct,
         )
 
         result = self._generate_chunked(full_task)[0]         
@@ -297,8 +291,7 @@ class OmniVoice(PreTrainedModel):
             list[tuple[torch.Tensor, int]],
             None,
         ] = None,
-        voice_clone_prompt=None,
-        instruct: Union[str, list[str], None] = None,
+        voice_clone_prompt=None
     ):
 
 
@@ -414,19 +407,10 @@ class OmniVoice(PreTrainedModel):
                 task.ref_text,
                 task.ref_audio_tokens[0])
 
-        c_lens = [cond_input_ids.size(2)]
-        max_c_len = max(c_lens)
-
-        batch_input_ids = torch.full(
-            (2, NUM_AUDIO_CODEBOOK, max_c_len),
-            AUDIO_MASK_ID,
-            dtype=torch.long,
-            device=self.device,
-        )
-        batch_audio_mask = torch.zeros((2, max_c_len), dtype=torch.bool, device=self.device)
-        batch_attention_mask = torch.zeros((2, 1, max_c_len, max_c_len), dtype=torch.bool, device=self.device)
-
-        c_len, u_len = c_lens[0], task.target_length
+        c_len = cond_input_ids.size(2)
+        batch_input_ids = torch.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
+        batch_audio_mask = torch.zeros((2, c_len), dtype=torch.bool, device=self.device)
+        batch_attention_mask = torch.zeros((2, 1, c_len, c_len), dtype=torch.bool, device=self.device)
 
         # Cond (0 ~ B-1)
         batch_input_ids[0, :, :c_len] = cond_input_ids
@@ -434,11 +418,11 @@ class OmniVoice(PreTrainedModel):
         batch_attention_mask[0, :, :c_len, :c_len] = True
 
         # Uncond (B ~ 2B-1)
-        batch_input_ids[1, :, :u_len] = cond_input_ids[..., -u_len:]
-        batch_audio_mask[1, :u_len] = cond_audio_mask[..., -u_len:]
-        batch_attention_mask[1, :, :u_len, :u_len] = True
-        if max_c_len > u_len:
-            pad_diag = torch.arange(u_len, max_c_len, device=self.device)
+        batch_input_ids[1, :, :task.target_length] = cond_input_ids[..., -task.target_length:]
+        batch_audio_mask[1, :task.target_length] = cond_audio_mask[..., -task.target_length:]
+        batch_attention_mask[1, :, :task.target_length, :task.target_length] = True
+        if c_len > task.target_length:
+            pad_diag = torch.arange(task.target_length, c_len, device=self.device)
             batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
         tokens = torch.full((1, NUM_AUDIO_CODEBOOK, task.target_length), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
@@ -468,22 +452,18 @@ class OmniVoice(PreTrainedModel):
             if k <= 0:
                 continue
 
-            c_len, t_len = c_lens[0], task.target_length
-
             # Extract real target Logits
             # [1, C, T, V]
-            c_logits = batch_logits[0: 1, :, c_len - t_len : c_len, :]
-            u_logits = batch_logits[1: 2, :, :t_len, :]
+            c_logits = batch_logits[0: 1, :, c_len - task.target_length : c_len, :]
+            u_logits = batch_logits[1: 2, :, :task.target_length, :]
 
-            pred_tokens, scores = self._predict_tokens_with_scoring(
-                c_logits, u_logits
-            )
+            pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
 
             scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
 
             scores = _gumbel_sample(scores, POSITION_TEMP)
 
-            sample_tokens = tokens[0: 1, :, :t_len]
+            sample_tokens = tokens[0: 1, :, :task.target_length]
             scores.masked_fill_(sample_tokens != AUDIO_MASK_ID, -float("inf"))
 
             _, topk_idx = torch.topk(scores.flatten(), k)
@@ -492,9 +472,9 @@ class OmniVoice(PreTrainedModel):
             sample_tokens.copy_(flat_tokens.view_as(sample_tokens))
 
             # Update individual slices into batched structure
-            tokens[0: 1, :, :t_len] = sample_tokens
-            batch_input_ids[0: 1, :, c_len - t_len : c_len] = sample_tokens
-            batch_input_ids[1: 2, :, :t_len] = sample_tokens
+            tokens[0: 1, :, :task.target_length] = sample_tokens
+            batch_input_ids[0: 1, :, c_len - task.target_length : c_len] = sample_tokens
+            batch_input_ids[1: 2, :, :task.target_length] = sample_tokens
 
         return [tokens[0, :, : task.target_length]]
 
