@@ -465,12 +465,9 @@ class OmniVoice(PreTrainedModel):
 
         tokens = torch.full((1, NUM_AUDIO_CODEBOOK, max(task.target_lengths)), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
 
-        timesteps = _get_time_steps(
-            t_start=0.0,
-            t_end=1.0,
-            num_step=NUM_STEPS,
-            t_shift=T_SHIFT,
-        ).tolist()
+        timesteps = torch.linspace(0.0, 1.0, NUM_STEPS + 1)
+        timesteps = (T_SHIFT * timesteps / (1 + (T_SHIFT - 1) * timesteps)).tolist()
+
         total_mask = task.target_lengths[0] * NUM_AUDIO_CODEBOOK
         rem = total_mask
         sched = []
@@ -543,19 +540,6 @@ def _gumbel_sample(logits: torch.Tensor, temperature: float) -> torch.Tensor:
     u = torch.rand_like(scaled_logits)
     gumbel_noise = -torch.log(-torch.log(u + 1e-10) + 1e-10)
     return scaled_logits + gumbel_noise
-
-
-def _get_time_steps(
-    t_start: float = 0.0,
-    t_end: float = 1.0,
-    num_step: int = 10,
-    t_shift: float = 1.0,
-    device: torch.device = torch.device("cpu"),
-) -> torch.Tensor:
-    timesteps = torch.linspace(t_start, t_end, num_step + 1).to(device)
-    timesteps = t_shift * timesteps / (1 + (t_shift - 1) * timesteps)
-    return timesteps
-
 
 _NONVERBAL_PATTERN = re.compile(
     r"\[(laughter|sigh|confirmation-en|question-en|question-ah|question-oh|"
