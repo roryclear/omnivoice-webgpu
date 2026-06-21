@@ -335,9 +335,9 @@ class OmniVoice(PreTrainedModel):
         batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:]
         batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:]
         batch_attention_mask[1, :, :target_length, :target_length] = True
-        if c_len > target_length:
-            pad_diag = torch.arange(target_length, c_len, device=self.device)
-            batch_attention_mask[1, :, pad_diag, pad_diag] = True
+
+        pad_diag = torch.arange(target_length, c_len, device=self.device)
+        batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
         tokens = torch.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
 
