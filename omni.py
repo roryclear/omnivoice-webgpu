@@ -26,7 +26,7 @@ from omnivoice.utils.audio import (
     remove_silence,
 )
 from omnivoice.utils.duration import RuleDurationEstimator
-from omnivoice.utils.text import add_punctuation, chunk_text_punctuation
+from omnivoice.utils.text import chunk_text_punctuation
 
 
 FRAME_RATE = 25
@@ -241,7 +241,6 @@ class OmniVoice(PreTrainedModel):
         ref_wav_tensor = torch.from_numpy(ref_wav).to(self.audio_tokenizer.device)
         ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).audio_codes.squeeze(0)  # (C, T)
 
-        ref_text = add_punctuation(ref_text)
 
         return ref_audio_tokens
 
