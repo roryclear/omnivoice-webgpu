@@ -50,11 +50,11 @@ AUDIO_CHUNKED_THRESHOLD = 30.0
 
 @dataclass
 class GenerationTask:
-    texts: List[str]
+    text: str
     target_length: int
     langs: List[Optional[str]]
     instructs: List[Optional[str]]
-    ref_texts: List[Optional[str]]
+    ref_text: str
     ref_audio_tokens: List[Optional[torch.Tensor]]
     ref_rms: List[Optional[float]]
 
@@ -210,8 +210,8 @@ class OmniVoice(PreTrainedModel):
     @torch.inference_mode()
     def generate(
         self,
-        text: Union[str, list[str]],
-        ref_text: Union[str, list[str], None] = None,
+        text=None,
+        ref_text=None,
         ref_audio=None,
         voice_clone_prompt=None,
         instruct: Union[str, list[str], None] = None,
@@ -282,13 +282,7 @@ class OmniVoice(PreTrainedModel):
         rms: Union[float, None],
     ) -> np.ndarray:
         tokenizer_device = self.audio_tokenizer.device
-        chunk_audios = [
-            self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0))
-            .audio_values[0]
-            .cpu()
-            .numpy()
-            for t in tokens
-        ]
+        chunk_audios = [self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0)).audio_values[0].cpu().numpy() for t in tokens]
         audio_waveform = cross_fade_chunks(chunk_audios, self.sampling_rate)
         return audio_waveform.squeeze(0)
 
@@ -308,22 +302,16 @@ class OmniVoice(PreTrainedModel):
     ):
 
 
-        voice_clone_prompt =  self.create_voice_clone_prompt(
-                ref_audio=ref_audio,
-                ref_text=ref_text,)
+        voice_clone_prompt =  self.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text,)
 
-        num_target_tokens = self._estimate_target_tokens(
-            text,
-            ref_text,
-            voice_clone_prompt.ref_audio_tokens.size(-1),
-        )
+        num_target_tokens = self._estimate_target_tokens(text, ref_text, voice_clone_prompt.ref_audio_tokens.size(-1),)
 
         return GenerationTask(
-            texts=[text],
+            text=text,
             target_length=num_target_tokens,
             langs=[None],
             instructs=[None],
-            ref_texts=[ref_text],
+            ref_text=ref_text,
             ref_audio_tokens=[voice_clone_prompt.ref_audio_tokens],
             ref_rms=[voice_clone_prompt.ref_rms],
         )
@@ -336,7 +324,7 @@ class OmniVoice(PreTrainedModel):
         self,
         text: str,
         num_target_tokens: int,
-        ref_text: Optional[str] = None,
+        ref_text=None,
         ref_audio_tokens: Optional[torch.Tensor] = None,
     ):  
         # todo add lang / instruct?
@@ -378,14 +366,14 @@ class OmniVoice(PreTrainedModel):
         self, task
     ) -> List[List[torch.Tensor]]:
 
-        avg_tokens_per_char = task.target_length / len(task.texts[0])
+        avg_tokens_per_char = task.target_length / len(task.text)
         text_chunk_len = int(
             AUDIO_CHUNK_DURATION
             * FRAME_RATE
             / avg_tokens_per_char
         )
         chunks = chunk_text_punctuation(
-            text=task.texts[0],
+            text=task.text,
             chunk_len=text_chunk_len,
             min_chunk_len=3,
         )
@@ -396,11 +384,11 @@ class OmniVoice(PreTrainedModel):
         def _run_batch(text, ref_audio, ref_text):
             target_length = self._estimate_target_tokens(text, ref_text, ref_audio.size(-1))
             sub_task = GenerationTask(
-                texts=[text],
+                text=text,
                 target_length=target_length,
                 langs=[task.langs[0]],
                 instructs=[task.instructs[0]],
-                ref_texts=[ref_text],
+                ref_text=ref_text,
                 ref_audio_tokens=[ref_audio],
                 ref_rms=[task.ref_rms[0]]
             )
@@ -411,7 +399,7 @@ class OmniVoice(PreTrainedModel):
             _run_batch(
                 text=chunks[i],
                 ref_audio=task.ref_audio_tokens[0],
-                ref_text=task.ref_texts[0],
+                ref_text=task.ref_text,
             )
 
         return chunk_results
@@ -421,9 +409,9 @@ class OmniVoice(PreTrainedModel):
         self, task: GenerationTask
     ) -> List[torch.Tensor]:
         cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(
-                task.texts[0],
+                task.text,
                 task.target_length,
-                task.ref_texts[0],
+                task.ref_text,
                 task.ref_audio_tokens[0])
 
         c_lens = [cond_input_ids.size(2)]
@@ -435,12 +423,8 @@ class OmniVoice(PreTrainedModel):
             dtype=torch.long,
             device=self.device,
         )
-        batch_audio_mask = torch.zeros(
-            (2, max_c_len), dtype=torch.bool, device=self.device
-        )
-        batch_attention_mask = torch.zeros(
-            (2, 1, max_c_len, max_c_len), dtype=torch.bool, device=self.device
-        )
+        batch_audio_mask = torch.zeros((2, max_c_len), dtype=torch.bool, device=self.device)
+        batch_attention_mask = torch.zeros((2, 1, max_c_len, max_c_len), dtype=torch.bool, device=self.device)
 
         c_len, u_len = c_lens[0], task.target_length
 
@@ -540,8 +524,6 @@ _NONVERBAL_PATTERN = re.compile(
     r"question-ei|question-yi|surprise-ah|surprise-oh|surprise-wa|"
     r"surprise-yo|dissatisfaction-hnn)\]"
 )
-
-
 
 def _combine_text(text, ref_text: Optional[str] = None) -> str:
     full_text = ref_text.strip() + " " + text.strip()
