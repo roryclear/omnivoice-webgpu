@@ -70,9 +70,7 @@ class OmniVoiceConfig(PretrainedConfig):
 
     def __init__(
         self,
-        audio_vocab_size: int = 1025,
         audio_mask_id: int = 1024,
-        num_audio_codebook: int = 8,
         audio_codebook_weights: Optional[list[float]] = None,
         llm_config: Optional[Union[dict, PretrainedConfig]] = None,
         **kwargs,
@@ -84,12 +82,7 @@ class OmniVoiceConfig(PretrainedConfig):
         self.llm_config = llm_config
 
         super().__init__(**kwargs)
-        self.audio_vocab_size = audio_vocab_size
         self.audio_mask_id = audio_mask_id
-        self.num_audio_codebook = num_audio_codebook
-        if audio_codebook_weights is None:
-            audio_codebook_weights = [8, 8, 6, 6, 4, 4, 2, 2]
-        self.audio_codebook_weights = audio_codebook_weights
 
 
 def _resolve_model_path(name_or_path: str) -> str:
@@ -99,6 +92,10 @@ def _resolve_model_path(name_or_path: str) -> str:
 
     return snapshot_download(name_or_path)
 
+HIDDEN_SIZE = 1024
+NUM_AUDIO_CODEBOOK = 8
+AUDIO_VOCAB_SIZE = 1025
+AUDIO_CODEBOOK_WEIGHTS = [8, 8, 6, 6, 4, 4, 2, 2]
 
 class OmniVoice(PreTrainedModel):
     _supports_flex_attn = True
@@ -106,30 +103,27 @@ class OmniVoice(PreTrainedModel):
     _supports_sdpa = True
     config_class = OmniVoiceConfig
 
-    def __init__(self, config: OmniVoiceConfig, llm: Optional[PreTrainedModel] = None):
+    def __init__(self, config: OmniVoiceConfig):
         super().__init__(config)
-
+        
         self.llm = AutoModel.from_config(self.config.llm_config)
 
         self.audio_embeddings = nn.Embedding(
-            config.num_audio_codebook * config.audio_vocab_size,
-            self.config.llm_config.hidden_size,
+            NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE,
+            HIDDEN_SIZE,
         )
         self.register_buffer(
             "codebook_layer_offsets",
-            torch.arange(config.num_audio_codebook) * config.audio_vocab_size,
+            torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE,
         )
 
         self.audio_heads = nn.Linear(
-            self.config.llm_config.hidden_size,
-            config.num_audio_codebook * config.audio_vocab_size,
+            HIDDEN_SIZE,
+            NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE,
             bias=False,
         )
 
-        self.normalized_audio_codebook_weights = [
-            w / sum(config.audio_codebook_weights)
-            for w in config.audio_codebook_weights
-        ]
+        self.normalized_audio_codebook_weights = [w / sum(AUDIO_CODEBOOK_WEIGHTS) for w in AUDIO_CODEBOOK_WEIGHTS]
 
         self.post_init()
 
@@ -207,8 +201,8 @@ class OmniVoice(PreTrainedModel):
         audio_logits = logits_flat.view(
             batch_size,
             seq_len,
-            self.config.num_audio_codebook,
-            self.config.audio_vocab_size,
+            NUM_AUDIO_CODEBOOK,
+            AUDIO_VOCAB_SIZE,
         ).permute(0, 2, 1, 3)
         return audio_logits
 
@@ -357,7 +351,7 @@ class OmniVoice(PreTrainedModel):
 
         style_tokens = (
             self.text_tokenizer(style_text, return_tensors="pt")
-            .input_ids.repeat(self.config.num_audio_codebook, 1)
+            .input_ids.repeat(NUM_AUDIO_CODEBOOK, 1)
             .unsqueeze(0)
         ).to(self.device)  # [1, C, N1]
 
@@ -365,12 +359,12 @@ class OmniVoice(PreTrainedModel):
         full_text = _combine_text(ref_text=ref_text, text=text)
         wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
         text_tokens = (
-            self.text_tokenizer(wrapped_text, return_tensors="pt").input_ids.repeat(self.config.num_audio_codebook, 1).unsqueeze(0)
+            self.text_tokenizer(wrapped_text, return_tensors="pt").input_ids.repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
         ).to(self.device)  # [1, C, N2]
 
         # Target: all MASK
         target_audio_tokens = torch.full(
-            (1, self.config.num_audio_codebook, num_target_tokens),
+            (1, NUM_AUDIO_CODEBOOK, num_target_tokens),
             self.config.audio_mask_id,
             dtype=torch.long,
             device=self.device,
@@ -455,7 +449,7 @@ class OmniVoice(PreTrainedModel):
         pad_id = self.config.audio_mask_id  # Or any other tokens
 
         batch_input_ids = torch.full(
-            (2, self.config.num_audio_codebook, max_c_len),
+            (2, NUM_AUDIO_CODEBOOK, max_c_len),
             pad_id,
             dtype=torch.long,
             device=self.device,
@@ -483,7 +477,7 @@ class OmniVoice(PreTrainedModel):
             batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
         tokens = torch.full(
-            (1, self.config.num_audio_codebook, max(task.target_lengths)),
+            (1, NUM_AUDIO_CODEBOOK, max(task.target_lengths)),
             self.config.audio_mask_id,
             dtype=torch.long,
             device=self.device,
@@ -495,7 +489,7 @@ class OmniVoice(PreTrainedModel):
             num_step=NUM_STEPS,
             t_shift=T_SHIFT,
         ).tolist()
-        total_mask = task.target_lengths[0] * self.config.num_audio_codebook
+        total_mask = task.target_lengths[0] * NUM_AUDIO_CODEBOOK
         rem = total_mask
         sched = []
         for step in range(NUM_STEPS):
@@ -504,7 +498,7 @@ class OmniVoice(PreTrainedModel):
             rem -= int(num)
         schedules = [sched]
 
-        layer_ids = torch.arange(self.config.num_audio_codebook, device=self.device).view(1, -1, 1)
+        layer_ids = torch.arange(NUM_AUDIO_CODEBOOK, device=self.device).view(1, -1, 1)
 
         for step in range(NUM_STEPS):
             batch_logits = self(
