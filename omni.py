@@ -345,7 +345,6 @@ class OmniVoice(PreTrainedModel):
             num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
             sched.append(int(num))
             rem -= int(num)
-        schedules = [sched]
 
         layer_ids = torch.arange(NUM_AUDIO_CODEBOOK, device=self.device).view(1, -1, 1)
 
@@ -355,10 +354,6 @@ class OmniVoice(PreTrainedModel):
                 audio_mask=batch_audio_mask,
                 attention_mask=batch_attention_mask,
             ).to(torch.float32)
-
-            k = schedules[0][step]
-            if k <= 0:
-                continue
 
             # Extract real target Logits
             # [1, C, T, V]
@@ -374,7 +369,7 @@ class OmniVoice(PreTrainedModel):
             sample_tokens = tokens[0: 1, :, :target_length]
             scores.masked_fill_(sample_tokens != AUDIO_MASK_ID, -float("inf"))
 
-            _, topk_idx = torch.topk(scores.flatten(), k)
+            _, topk_idx = torch.topk(scores.flatten(), sched[step])
             flat_tokens = sample_tokens.flatten()
             flat_tokens[topk_idx] = pred_tokens.flatten()[topk_idx]
             sample_tokens.copy_(flat_tokens.view_as(sample_tokens))
