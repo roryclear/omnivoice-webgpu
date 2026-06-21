@@ -6,6 +6,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 import torch
+import torchaudio
 torch.manual_seed(42)
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,7 +23,6 @@ from transformers.models.auto import CONFIG_MAPPING, AutoConfig
 
 from omnivoice.utils.audio import (
     cross_fade_chunks,
-    load_audio,
     remove_silence,
 )
 from omnivoice.utils.duration import RuleDurationEstimator
@@ -67,6 +67,32 @@ NUM_AUDIO_CODEBOOK = 8
 AUDIO_VOCAB_SIZE = 1025
 AUDIO_CODEBOOK_WEIGHTS = [8, 8, 6, 6, 4, 4, 2, 2]
 AUDIO_MASK_ID = 1024
+
+import soundfile as sf
+def load_waveform(audio_path: str):
+    try:
+        data, sr = sf.read(audio_path, dtype="float32", always_2d=True)
+        return data.T, sr  # (T, C) → (C, T)
+    except Exception:
+        # soundfile cannot handle MP3/M4A etc., fall back to librosa.
+        import librosa
+
+        data, sr = librosa.load(audio_path, sr=None, mono=False)
+        if data.ndim == 1:
+            data = data[np.newaxis, :]
+        return data, sr
+
+def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
+    data, sr = load_waveform(audio_path)
+
+    if data.shape[0] > 1:
+        data = np.mean(data, axis=0, keepdims=True)
+    if sr != sampling_rate:
+        data = torchaudio.functional.resample(
+            torch.from_numpy(data), orig_freq=sr, new_freq=sampling_rate
+        ).numpy()
+
+    return data
 
 class OmniVoice(PreTrainedModel):
     _supports_flex_attn = True
