@@ -51,7 +51,7 @@ AUDIO_CHUNKED_THRESHOLD = 30.0
 @dataclass
 class GenerationTask:
     texts: List[str]
-    target_lens: List[int]
+    target_lengths: List[int]
     langs: List[Optional[str]]
     instructs: List[Optional[str]]
     ref_texts: List[Optional[str]]
@@ -60,8 +60,8 @@ class GenerationTask:
 
     def get_indices(self):
         threshold = int(AUDIO_CHUNKED_THRESHOLD * FRAME_RATE)
-        short_idx = [i for i, l in enumerate(self.target_lens) if l <= threshold]
-        long_idx = [i for i, l in enumerate(self.target_lens) if l > threshold]
+        short_idx = [i for i, l in enumerate(self.target_lengths) if l <= threshold]
+        long_idx = [i for i, l in enumerate(self.target_lengths) if l > threshold]
         return short_idx, long_idx
 
 class OmniVoiceConfig(PretrainedConfig):
@@ -133,13 +133,6 @@ class OmniVoice(PreTrainedModel):
 
         self.post_init()
 
-        # Inference-only attributes (set by from_pretrained when not in train mode)
-        self.text_tokenizer = None
-        self.audio_tokenizer = None
-        self.duration_estimator = None
-        self.sampling_rate = None
-        self._asr_pipe = None
-
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
         logging.disable(logging.INFO)
@@ -203,7 +196,6 @@ class OmniVoice(PreTrainedModel):
         llm_outputs = self.llm(
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
-            return_dict=True,
             position_ids=position_ids,
         )
         hidden_states = llm_outputs[0]
@@ -341,7 +333,7 @@ class OmniVoice(PreTrainedModel):
 
         return GenerationTask(
             texts=[text],
-            target_lens=[num_target_tokens],
+            target_lengths=[num_target_tokens],
             langs=[None],
             instructs=[None],
             ref_texts=[ref_text],
@@ -404,7 +396,7 @@ class OmniVoice(PreTrainedModel):
         self, task
     ) -> List[List[torch.Tensor]]:
 
-        avg_tokens_per_char = task.target_lens[0] / len(task.texts[0])
+        avg_tokens_per_char = task.target_lengths[0] / len(task.texts[0])
         text_chunk_len = int(
             AUDIO_CHUNK_DURATION
             * FRAME_RATE
@@ -420,7 +412,7 @@ class OmniVoice(PreTrainedModel):
         chunk_results = [[]]
 
         def _run_batch(text, ref_audio, ref_text):
-            target_lens = [
+            target_lengths = [
                 self._estimate_target_tokens(
                     text,
                     ref_text,
@@ -429,7 +421,7 @@ class OmniVoice(PreTrainedModel):
             ]
             sub_task = GenerationTask(
                 texts=[text],
-                target_lens=target_lens,
+                target_lengths=target_lengths,
                 langs=[task.langs[0]],
                 instructs=[task.instructs[0]],
                 ref_texts=[ref_text],
@@ -454,7 +446,7 @@ class OmniVoice(PreTrainedModel):
     ) -> List[torch.Tensor]:
         cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(
                 task.texts[0],
-                task.target_lens[0],
+                task.target_lengths[0],
                 task.ref_texts[0],
                 task.ref_audio_tokens[0])
 
@@ -475,7 +467,7 @@ class OmniVoice(PreTrainedModel):
             (2, 1, max_c_len, max_c_len), dtype=torch.bool, device=self.device
         )
 
-        c_len, u_len = c_lens[0], task.target_lens[0]
+        c_len, u_len = c_lens[0], task.target_lengths[0]
 
         # Cond (0 ~ B-1)
         batch_input_ids[0, :, :c_len] = cond_input_ids
@@ -491,7 +483,7 @@ class OmniVoice(PreTrainedModel):
             batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
         tokens = torch.full(
-            (1, self.config.num_audio_codebook, max(task.target_lens)),
+            (1, self.config.num_audio_codebook, max(task.target_lengths)),
             self.config.audio_mask_id,
             dtype=torch.long,
             device=self.device,
@@ -503,27 +495,16 @@ class OmniVoice(PreTrainedModel):
             num_step=NUM_STEPS,
             t_shift=T_SHIFT,
         ).tolist()
-        schedules = []
-        for t_len in task.target_lens:
-            total_mask = t_len * self.config.num_audio_codebook
-            rem = total_mask
-            sched = []
-            for step in range(NUM_STEPS):
-                num = (
-                    rem
-                    if step == NUM_STEPS - 1
-                    else min(
-                        math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])),
-                        rem,
-                    )
-                )
-                sched.append(int(num))
-                rem -= int(num)
-            schedules.append(sched)
+        total_mask = task.target_lengths[0] * self.config.num_audio_codebook
+        rem = total_mask
+        sched = []
+        for step in range(NUM_STEPS):
+            num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
+            sched.append(int(num))
+            rem -= int(num)
+        schedules = [sched]
 
-        layer_ids = torch.arange(
-            self.config.num_audio_codebook, device=self.device
-        ).view(1, -1, 1)
+        layer_ids = torch.arange(self.config.num_audio_codebook, device=self.device).view(1, -1, 1)
 
         for step in range(NUM_STEPS):
             batch_logits = self(
@@ -536,7 +517,7 @@ class OmniVoice(PreTrainedModel):
             if k <= 0:
                 continue
 
-            c_len, t_len = c_lens[0], task.target_lens[0]
+            c_len, t_len = c_lens[0], task.target_lengths[0]
 
             # Extract real target Logits
             # [1, C, T, V]
@@ -566,7 +547,7 @@ class OmniVoice(PreTrainedModel):
             batch_input_ids[0: 1, :, c_len - t_len : c_len] = sample_tokens
             batch_input_ids[1: 2, :, :t_len] = sample_tokens
 
-        return [tokens[0, :, : task.target_lens[0]]]
+        return [tokens[0, :, : task.target_lengths[0]]]
 
     def _predict_tokens_with_scoring(self, c_logits, u_logits):
         c_log_probs = F.log_softmax(c_logits, dim=-1)
