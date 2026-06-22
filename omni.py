@@ -2,6 +2,7 @@ import logging
 import math
 import os
 import re
+import struct
 from typing import List, Optional, Union
 import pickle
 
@@ -64,10 +65,18 @@ SAMPLING_RATE = 24000
 # saved from getting all chars with https://github.com/k2-fsa/OmniVoice/blob/9948396864cb713b0c2f92495cf4449bd8717127/omnivoice/utils/duration.py#L204
 CHAR_WEIGHTS = pickle.load(open('char_weights.pkl', 'rb'))
 
-from mysoundfile import read
 def load_waveform(audio_path: str):
-    data, sr = read(audio_path, dtype="float32", always_2d=True)
-    return data.T, sr  # (T, C) → (C, T)
+    data = open(audio_path, "rb").read()
+    sample_rate = struct.unpack_from('<I', data, 24)[0]
+    channels = struct.unpack_from('<H', data, 22)[0]
+    data_offset = data.find(b'data') + 8
+    raw_samples = data[data_offset:]
+    n_samples = len(raw_samples) // 2  # 2 bytes per int16
+    samples = struct.unpack(f'<{n_samples}h', raw_samples)  # 'h' = int16
+    audio = np.array(samples, dtype=np.float32).reshape(-1, channels)
+    # Normalize to [-1.0, 1.0] (matching typical float32 WAV/libraries)
+    audio /= 32768.0
+    return audio.T, sample_rate
 
 def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
     data, sr = load_waveform(audio_path)
