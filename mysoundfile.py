@@ -532,41 +532,6 @@ class SoundFile:
     def __exit__(self, *args: Any) -> None:
         self.close()
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        """Write text meta-data in the sound file through properties."""
-        if name in _str_types:
-            self._check_if_closed()
-            err = _snd.sf_set_string(self._file, _str_types[name],
-                                     value.encode())
-            _error_check(err)
-        else:
-            object.__setattr__(self, name, value)
-
-    def __getattr__(self, name: str) -> Any:
-        """Read text meta-data in the sound file through properties."""
-        if name in _str_types:
-            self._check_if_closed()
-            data = _snd.sf_get_string(self._file, _str_types[name])
-            return _ffi.string(data).decode('utf-8', 'replace') if data else ""
-        else:
-            raise AttributeError(
-                f"'SoundFile' object has no attribute {name!r}")
-
-    def __len__(self) -> int:
-        # Note: This is deprecated and will be removed at some point,
-        # see https://github.com/bastibe/python-soundfile/issues/199
-        return self._info.frames
-
-    def __bool__(self) -> bool:
-        # Note: This is temporary until __len__ is removed, afterwards it
-        # can (and should) be removed without change of behavior
-        return True
-
-    def __nonzero__(self) -> bool:
-        # Note: This is only for compatibility with Python 2 and it shall be
-        # removed at the same time as __bool__().
-        return self.__bool__()
-
     def seekable(self) -> bool:
         """Return True if the file supports seeking."""
         return self._info.seekable == _snd.SF_TRUE
@@ -607,7 +572,6 @@ class SoundFile:
         44100  # this is the file length
 
         """
-        self._check_if_closed()
         position = _snd.sf_seek(self._file, frames, whence)
         _error_check(self._errorcode)
         return position
@@ -712,275 +676,6 @@ class SoundFile:
                 out[frames:] = fill_value
         return out
 
-
-    def buffer_read(self, frames: int = -1, dtype: dtype_str | None = None) -> memoryview:
-        """Read from the file and return data as buffer object.
-
-        Reads the given number of *frames* in the given data format
-        starting at the current read/write position.  This advances the
-        read/write position by the same number of frames.
-        By default, all frames from the current read/write position to
-        the end of the file are returned.
-        Use `seek()` to move the current read/write position.
-
-        Parameters
-        ----------
-        frames : int, optional
-            The number of frames to read. If ``frames < 0``, the whole
-            rest of the file is read.
-        dtype : {'float64', 'float32', 'int32', 'int16'}
-            Audio data will be converted to the given data type.
-
-        Returns
-        -------
-        buffer
-            A buffer containing the read data.
-
-        See Also
-        --------
-        buffer_read_into, .read, buffer_write
-
-        """
-        frames = self._check_frames(frames, fill_value=None)
-        ctype = self._check_dtype(dtype)
-        cdata = _ffi.new(ctype + '[]', frames * self.channels)
-        read_frames = self._cdata_io('read', cdata, ctype, frames)
-        assert read_frames == frames
-        return _ffi.buffer(cdata)
-
-    def buffer_read_into(self, buffer: bytearray | memoryview | Any, dtype: dtype_str) -> int:
-        """Read from the file into a given buffer object.
-
-        Fills the given *buffer* with frames in the given data format
-        starting at the current read/write position (which can be
-        changed with `seek()`) until the buffer is full or the end
-        of the file is reached.  This advances the read/write position
-        by the number of frames that were read.
-
-        Parameters
-        ----------
-        buffer : writable buffer
-            Audio frames from the file are written to this buffer.
-        dtype : {'float64', 'float32', 'int32', 'int16'}
-            The data type of *buffer*.
-
-        Returns
-        -------
-        int
-            The number of frames that were read from the file.
-            This can be less than the size of *buffer*.
-            The rest of the buffer is not filled with meaningful data.
-
-        See Also
-        --------
-        buffer_read, .read
-
-        """
-        ctype = self._check_dtype(dtype)
-        cdata, frames = self._check_buffer(buffer, ctype)
-        frames = self._cdata_io('read', cdata, ctype, frames)
-        return frames
-
-    def write(self, data: AudioData) -> None:
-        """Write audio data from a NumPy array to the file.
-
-        Writes a number of frames at the read/write position to the
-        file. This also advances the read/write position by the same
-        number of frames and enlarges the file if necessary.
-
-        Note that writing int values to a float file will *not* scale
-        the values to [-1.0, 1.0). If you write the value
-        ``np.array([42], dtype='int32')``, to a ``subtype='FLOAT'``
-        file, the file will then contain ``np.array([42.],
-        dtype='float32')``.
-
-        Parameters
-        ----------
-        data : array_like
-            The data to write. Usually two-dimensional (frames x
-            channels), but one-dimensional *data* can be used for mono
-            files. Only the data types ``'float64'``, ``'float32'``,
-            ``'int32'`` and ``'int16'`` are supported.
-
-            .. note:: The data type of *data* does **not** select the
-                  data type of the written file. Audio data will be
-                  converted to the given *subtype*. Writing int values
-                  to a float file will *not* scale the values to
-                  [-1.0, 1.0). If you write the value ``np.array([42],
-                  dtype='int32')``, to a ``subtype='FLOAT'`` file, the
-                  file will then contain ``np.array([42.],
-                  dtype='float32')``.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from soundfile import SoundFile
-        >>> myfile = SoundFile('stereo_file.wav')
-
-        Write 10 frames of random data to a new file:
-
-        >>> with SoundFile('stereo_file.wav', 'w', 44100, 2, 'PCM_24') as f:
-        >>>     f.write(np.random.randn(10, 2))
-
-        See Also
-        --------
-        buffer_write, .read
-
-        """
-        import numpy as np
-
-        # no copy is made if data has already the correct memory layout:
-        data = np.ascontiguousarray(data)
-        written = self._array_io('write', data, len(data))
-        assert written == len(data)
-        self._update_frames(written)
-
-    def buffer_write(self, data: bytes, dtype: dtype_str) -> None:
-        """Write audio data from a buffer/bytes object to the file.
-
-        Writes the contents of *data* to the file at the current
-        read/write position.
-        This also advances the read/write position by the number of
-        frames that were written and enlarges the file if necessary.
-
-        Parameters
-        ----------
-        data : buffer or bytes
-            A buffer or bytes object containing the audio data to be
-            written.
-        dtype : {'float64', 'float32', 'int32', 'int16'}
-            The data type of the audio data stored in *data*.
-
-        See Also
-        --------
-        .write, buffer_read
-
-        """
-        ctype = self._check_dtype(dtype)
-        cdata, frames = self._check_buffer(data, ctype)
-        written = self._cdata_io('write', cdata, ctype, frames)
-        assert written == frames
-        self._update_frames(written)
-
-    def blocks(self, blocksize: int | None = None, overlap: int = 0,
-               frames: int = -1, dtype: dtype_str = 'float64',
-               always_2d: bool = False, fill_value: float | None = None,
-               out: AudioData | AudioData_2d | None = None) -> Generator[AudioData, None, None] | Generator[AudioData_2d, None, None]:
-        """Return a generator for block-wise reading.
-
-        By default, the generator yields blocks of the given
-        *blocksize* (using a given *overlap*) until the end of the file
-        is reached; *frames* can be used to stop earlier.
-
-        Parameters
-        ----------
-        blocksize : int
-            The number of frames to read per block. Either this or *out*
-            must be given.
-        overlap : int, optional
-            The number of frames to rewind between each block.
-        frames : int, optional
-            The number of frames to read.
-            If ``frames < 0``, the file is read until the end.
-        dtype : {'float64', 'float32', 'int32', 'int16'}, optional
-            See `read()`.
-
-        Yields
-        ------
-        `numpy.ndarray` or type(out)
-            Blocks of audio data.
-            If *out* was given, and the requested frames are not an
-            integer multiple of the length of *out*, and no
-            *fill_value* was given, the last block will be a smaller
-            view into *out*.
-
-
-        Other Parameters
-        ----------------
-        always_2d, fill_value, out
-            See `read()`.
-        fill_value : float, optional
-            See `read()`.
-        out : `numpy.ndarray` or subclass, optional
-            If *out* is specified, the data is written into the given
-            array instead of creating a new array. In this case, the
-            arguments *dtype* and *always_2d* are silently ignored!
-
-        Examples
-        --------
-        >>> from soundfile import SoundFile
-        >>> with SoundFile('stereo_file.wav') as f:
-        >>>     for block in f.blocks(blocksize=1024):
-        >>>         pass  # do something with 'block'
-
-        """
-        import numpy as np
-
-        if 'r' not in self.mode and '+' not in self.mode:
-            raise SoundFileRuntimeError("blocks() is not allowed in write-only mode")
-
-        frames = self._check_frames(frames, fill_value)
-        if out is None:
-            if blocksize is None:
-                raise TypeError("One of {blocksize, out} must be specified")
-            out_size = blocksize if fill_value is not None else min(blocksize, frames)
-            out = self._create_empty_array(out_size, always_2d, dtype)
-            copy_out = True
-        else:
-            if blocksize is not None:
-                raise TypeError(
-                    "Only one of {blocksize, out} may be specified")
-            blocksize = len(out)
-            copy_out = False
-
-        overlap_memory = None
-        while frames > 0:
-            if overlap_memory is None:
-                output_offset = 0
-            else:
-                output_offset = len(overlap_memory)
-                out[:output_offset] = overlap_memory
-
-            toread = min(blocksize - output_offset, frames)
-            self.read(toread, dtype, always_2d, fill_value, out[output_offset:])
-
-            if overlap:
-                if overlap_memory is None:
-                    overlap_memory = np.copy(out[-overlap:])
-                else:
-                    overlap_memory[:] = out[-overlap:]
-
-            if blocksize > frames + overlap and fill_value is None:
-                block = out[:frames + overlap]
-            else:
-                block = out
-            yield np.copy(block) if copy_out else block
-            frames -= toread
-
-    def truncate(self, frames: int | None = None) -> None:
-        """Truncate the file to a given number of frames.
-
-        After this command, the read/write position will be at the new
-        end of the file.
-
-        Parameters
-        ----------
-        frames : int, optional
-            Only the data before *frames* is kept, the rest is deleted.
-            If not specified, the current read/write position is used.
-
-        """
-        if frames is None:
-            frames = self.tell()
-        err = _snd.sf_command(self._file, _snd.SFC_FILE_TRUNCATE,
-                              _ffi.new("sf_count_t*", frames),
-                              _ffi.sizeof("sf_count_t"))
-        if err:
-            # get the actual error code
-            err = _snd.sf_error(self._file)
-            raise LibsndfileError(err, "Error truncating the file")
-        self._info.frames = frames
-
     def flush(self) -> None:
         """Write unwritten data to the file system.
 
@@ -992,7 +687,6 @@ class SoundFile:
         This has no effect on files opened in read-only mode.
 
         """
-        self._check_if_closed()
         _snd.sf_write_sync(self._file)
 
     def close(self) -> None:
@@ -1048,73 +742,6 @@ class SoundFile:
             # frames == 0 in this case), but it doesn't hurt, either.
         return file_ptr
 
-    def _init_virtual_io(self, file):
-        """Initialize callback functions for sf_open_virtual()."""
-        @_ffi.callback("sf_vio_get_filelen")
-        def vio_get_filelen(user_data):
-            curr = file.tell()
-            file.seek(0, SEEK_END)
-            size = file.tell()
-            file.seek(curr, SEEK_SET)
-            return size
-
-        @_ffi.callback("sf_vio_seek")
-        def vio_seek(offset, whence, user_data):
-            file.seek(offset, whence)
-            return file.tell()
-
-        @_ffi.callback("sf_vio_read")
-        def vio_read(ptr, count, user_data):
-            # first try readinto(), if not available fall back to read()
-            try:
-                buf = _ffi.buffer(ptr, count)
-                data_read = file.readinto(buf)
-            except AttributeError:
-                data = file.read(count)
-                data_read = len(data)
-                buf = _ffi.buffer(ptr, data_read)
-                buf[0:data_read] = data
-            return data_read
-
-        @_ffi.callback("sf_vio_write")
-        def vio_write(ptr, count, user_data):
-            buf = _ffi.buffer(ptr, count)
-            data = buf[:]
-            written = file.write(data)
-            # write() returns None for file objects in Python <= 2.7:
-            if written is None:
-                written = count
-            return written
-
-        @_ffi.callback("sf_vio_tell")
-        def vio_tell(user_data):
-            return file.tell()
-
-        # Note: the callback functions must be kept alive!
-        self._virtual_io = {'get_filelen': vio_get_filelen,
-                            'seek': vio_seek,
-                            'read': vio_read,
-                            'write': vio_write,
-                            'tell': vio_tell}
-
-        return _ffi.new("SF_VIRTUAL_IO*", self._virtual_io)
-
-    def _getAttributeNames(self):
-        """Return all attributes used in __setattr__ and __getattr__.
-
-        This is useful for auto-completion (e.g. IPython).
-
-        """
-        return _str_types
-
-    def _check_if_closed(self):
-        """Check if the file is closed and raise an error if it is.
-
-        This should be used in every method that uses self._file.
-
-        """
-        if self.closed:
-            raise SoundFileRuntimeError("I/O operation on closed file")
 
     def _check_frames(self, frames, fill_value):
         """Reduce frames to no more than are available in the file."""
@@ -1127,18 +754,7 @@ class SoundFile:
             raise ValueError("frames must be specified for non-seekable files")
         return frames
 
-    def _check_buffer(self, data, ctype):
-        """Convert buffer to cdata and check for valid size."""
-        assert ctype in _ffi_types.values()
-        if not isinstance(data, bytes):
-            data = _ffi.from_buffer(data)
-        frames, remainder = divmod(len(data),
-                                   self.channels * _ffi.sizeof(ctype))
-        if remainder:
-            raise ValueError("Data size must be a multiple of frame size")
-        return data, frames
-
-    def _create_empty_array(self, frames, always_2d, dtype):
+    def _create_empty_array(self, frames, always_2d, dtype): # todo remove
         """Create an empty array with appropriate shape."""
         import numpy as np
         if always_2d or self.channels > 1:
@@ -1171,7 +787,6 @@ class SoundFile:
     def _cdata_io(self, action, data, ctype, frames):
         """Call one of libsndfile's read/write functions."""
         assert ctype in _ffi_types.values()
-        self._check_if_closed()
         curr = 0
         if self.seekable():
             curr = self.tell()
@@ -1181,15 +796,6 @@ class SoundFile:
         if self.seekable():
             self.seek(curr + frames, SEEK_SET)  # Update read & write position
         return frames
-
-    def _update_frames(self, written):
-        """Update self.frames after writing."""
-        if self.seekable():
-            curr = self.tell()
-            self._info.frames = self.seek(0, SEEK_END)
-            self.seek(curr, SEEK_SET)
-        else:
-            self._info.frames += written
 
     def _prepare_read(self, start, stop, frames):
         """Seek to start frame and calculate length."""
@@ -1207,85 +813,10 @@ class SoundFile:
             self.seek(start, SEEK_SET)
         return frames
 
-    def copy_metadata(self) -> dict[str, str]:
-        """Get all metadata present in this SoundFile
-
-        Returns
-        -------
-
-        metadata: dict[str, str]
-            A dict with all metadata. Possible keys are: 'title', 'copyright',
-            'software', 'artist', 'comment', 'date', 'album', 'license',
-            'tracknumber' and 'genre'.
-        """
-        strs = {}
-        for strtype, strid in _str_types.items():
-            data = _snd.sf_get_string(self._file, strid)
-            if data:
-                strs[strtype] = _ffi.string(data).decode('utf-8', 'replace')
-        return strs
-
-    def _set_bitrate_mode(self, bitrate_mode):
-        """Call libsndfile's set bitrate mode function."""
-        assert bitrate_mode in _bitrate_modes
-
-        pointer_bitrate_mode = _ffi.new("int[1]")
-        pointer_bitrate_mode[0] = _bitrate_modes[bitrate_mode]
-        err = _snd.sf_command(self._file, _snd.SFC_SET_BITRATE_MODE, pointer_bitrate_mode, _ffi.sizeof(pointer_bitrate_mode))
-        if err != _snd.SF_TRUE:
-            err = _snd.sf_error(self._file)
-            raise LibsndfileError(err, f"Error set bitrate mode {bitrate_mode}")
-
-
-    def _set_compression_level(self, compression_level):
-        """Call libsndfile's set compression level function."""
-        if not (0 <= compression_level <= 1):
-            raise ValueError("Compression level must be in range [0..1]")
-
-        pointer_compression_level = _ffi.new("double[1]")
-        pointer_compression_level[0] = compression_level
-        err = _snd.sf_command(self._file, _snd.SFC_SET_COMPRESSION_LEVEL, pointer_compression_level, _ffi.sizeof(pointer_compression_level))
-        if err != _snd.SF_TRUE:
-            err = _snd.sf_error(self._file)
-            raise LibsndfileError(err, f"Error set compression level {compression_level}")
-
-
 def _error_check(err, prefix=""):
     """Raise LibsndfileError if there is an error."""
     if err != 0:
         raise LibsndfileError(err, prefix=prefix)
-
-
-def _format_int(format, subtype, endian):
-    """Return numeric ID for given format|subtype|endian combo."""
-    result = _check_format(format)
-    if subtype is None:
-        subtype = default_subtype(format)
-        if subtype is None:
-            raise TypeError(
-                f"No default subtype for major format {format!r}")
-    elif not isinstance(subtype, str):
-        raise TypeError(f"Invalid subtype: {subtype!r}")
-    try:
-        result |= _subtypes[subtype.upper()]
-    except KeyError:
-        raise ValueError(f"Unknown subtype: {subtype!r}")
-    if endian is None:
-        endian = 'FILE'
-    elif not isinstance(endian, str):
-        raise TypeError(f"Invalid endian-ness: {endian!r}")
-    try:
-        result |= _endians[endian.upper()]
-    except KeyError:
-        raise ValueError(f"Unknown endian-ness: {endian!r}")
-
-    info = _ffi.new("SF_INFO*")
-    info.format = result
-    info.channels = 1
-    if _snd.sf_format_check(info) == _snd.SF_FALSE:
-        raise ValueError(
-            "Invalid combination of format, subtype and endian")
-    return result
 
 
 def _check_mode(mode):
@@ -1356,47 +887,3 @@ def _get_format_from_filename(file, mode):
         raise TypeError(f"No format specified and unable to get format from "
                         f"file extension: {file!r}")
     return format
-
-
-def _format_str(format_int):
-    """Return the string representation of a given numeric format."""
-    for dictionary in _formats, _subtypes, _endians:
-        for k, v in dictionary.items():
-            if v == format_int:
-                return k
-    else:
-        return 'n/a'
-
-
-def _format_info(format_int, format_flag=_snd.SFC_GET_FORMAT_INFO):
-    """Return the ID and short description of a given format."""
-    format_info = _ffi.new("SF_FORMAT_INFO*")
-    format_info.format = format_int
-    _snd.sf_command(_ffi.NULL, format_flag, format_info,
-                    _ffi.sizeof("SF_FORMAT_INFO"))
-    name = format_info.name
-    return (_format_str(format_info.format),
-            _ffi.string(name).decode('utf-8', 'replace') if name else "")
-
-
-def _check_format(format_str):
-    """Check if `format_str` is valid and return format ID."""
-    if not isinstance(format_str, str):
-        raise TypeError(f"Invalid format: {format_str!r}")
-    try:
-        format_int = _formats[format_str.upper()]
-    except KeyError:
-        raise ValueError(f"Unknown format: {format_str!r}")
-    return format_int
-
-
-def _has_virtual_io_attrs(file, mode_int):
-    """Check if file has all the necessary attributes for virtual IO."""
-    readonly = mode_int == _snd.SFM_READ
-    writeonly = mode_int == _snd.SFM_WRITE
-    return all([
-        hasattr(file, 'seek'),
-        hasattr(file, 'tell'),
-        hasattr(file, 'write') or readonly,
-        hasattr(file, 'read') or hasattr(file, 'readinto') or writeonly,
-    ])
