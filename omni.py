@@ -3,7 +3,6 @@ import math
 import os
 import re
 from typing import List, Optional, Union
-import itertools
 import pickle
 
 import numpy as np
@@ -259,7 +258,7 @@ class OmniVoice(PreTrainedModel):
         ).to(self.device)  # [1, C, N1]
 
         # Build text tokens
-        full_text = _combine_text(ref_text=ref_text, text=text)
+        full_text = ref_text.strip() + " " + text.strip()
         wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
         text_tokens = (
             self.text_tokenizer(wrapped_text, return_tensors="pt").input_ids.repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
@@ -406,21 +405,4 @@ _NONVERBAL_PATTERN = re.compile(
     r"question-ei|question-yi|surprise-ah|surprise-oh|surprise-wa|"
     r"surprise-yo|dissatisfaction-hnn)\]"
 )
-
-def _combine_text(text, ref_text: Optional[str] = None) -> str:
-    full_text = ref_text.strip() + " " + text.strip()
-    # filter out newline / carriage-return characters
-    full_text = re.sub(r"[\r\n]+", "", full_text)
-
-    # replace Chinese parentheses with English ones
-    full_text = full_text.replace("\uff08", "(").replace("\uff09", ")")
-
-    # collapse consecutive spaces / tabs into a single space
-    full_text = re.sub(r"[ \t]+", " ", full_text)
-
-    # remove spaces around chinese characters
-    chinese_range = r"[\u4e00-\u9fff]"
-    pattern = rf"(?<={chinese_range})\s+|\s+(?={chinese_range})"
-    full_text = re.sub(pattern, "", full_text)
-
-    return full_text
+ 
