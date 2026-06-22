@@ -47,24 +47,6 @@ def read(file: FileDescriptorOrPath, frames: int = -1, start: int = 0, stop: int
         f._array_io('read', data, frames)
     return data, f.samplerate
 
-
-
-def write(file: FileDescriptorOrPath, data: AudioData, samplerate: int,
-          subtype: str | None = None, endian: str | None = None,
-          format: str | None = None, closefd: bool = True,
-          compression_level: float | None = None,
-          bitrate_mode: str | None = None) -> None:
-
-    import numpy as np
-    data = np.asarray(data)
-    if data.ndim == 1:
-        channels = 1
-    else:
-        channels = data.shape[1]
-    with SoundFile(file, 'w', samplerate, channels,
-                   subtype, endian, format, closefd,
-                   compression_level, bitrate_mode) as f: f.write(data)
-
 class SoundFile:
     def __init__(self, file: FileDescriptorOrPath, mode: str | None = 'r',
                  samplerate: int | None = None, channels: int | None = None,
@@ -76,11 +58,6 @@ class SoundFile:
         if isinstance(file, os.PathLike):
             file = os.fspath(file)
         self._name = file
-        if mode is None:
-            mode = getattr(file, 'mode', None)
-            if mode is None:
-                raise TypeError("Can not get `mode` from file. provided `mode` is None.") # Raises ValueError explicitly for type checking.
-        self._mode = mode
         self._compression_level = compression_level
         self._bitrate_mode = bitrate_mode
         self._info = _ffi.new("SF_INFO*")
@@ -100,8 +77,6 @@ class SoundFile:
 
     name = property(lambda self: self._name)
     """The file name of the sound file."""
-    mode = property(lambda self: self._mode)
-    """The open mode the sound file was opened with."""
     samplerate = property(lambda self: self._info.samplerate)
     """The sample rate of the sound file."""
     frames = property(lambda self: self._info.frames)
