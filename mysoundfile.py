@@ -42,7 +42,9 @@ def read(file: FileDescriptorOrPath, frames: int = -1, start: int = 0, stop: int
     with SoundFile(file, 'r', samplerate, channels,
                    subtype, endian, format, closefd) as f:
         frames = f._prepare_read(start, stop, frames)
-        data = f.read(frames, dtype)
+
+        data = np.empty((frames, f.channels), dtype, order='C')
+        f._array_io('read', data, frames)
     return data, f.samplerate
 
 
@@ -78,12 +80,11 @@ class SoundFile:
             mode = getattr(file, 'mode', None)
             if mode is None:
                 raise TypeError("Can not get `mode` from file. provided `mode` is None.") # Raises ValueError explicitly for type checking.
-        mode_int = _check_mode(mode)
         self._mode = mode
         self._compression_level = compression_level
         self._bitrate_mode = bitrate_mode
         self._info = _ffi.new("SF_INFO*")
-        self._file = self._open(file, mode_int, closefd)
+        self._file = self._open(file)
         if set(mode).issuperset('r+'):
             # Move write position to 0 (like in Python file objects)
             self.seek(0)
@@ -106,24 +107,6 @@ class SoundFile:
     frames = property(lambda self: self._info.frames)
     """The number of frames in the sound file."""
     channels = property(lambda self: self._info.channels)
-    """The number of channels in the sound file."""
-    format = property(
-        lambda self: _format_str(self._info.format & _snd.SF_FORMAT_TYPEMASK))
-    """The major format of the sound file."""
-    subtype = property(
-        lambda self: _format_str(self._info.format & _snd.SF_FORMAT_SUBMASK))
-    """The subtype of data in the the sound file."""
-    endian = property(
-        lambda self: _format_str(self._info.format & _snd.SF_FORMAT_ENDMASK))
-    """The endian-ness of the data in the sound file."""
-    format_info = property(
-        lambda self: _format_info(self._info.format &
-                                  _snd.SF_FORMAT_TYPEMASK)[1])
-    """A description of the major format of the sound file."""
-    subtype_info = property(
-        lambda self: _format_info(self._info.format &
-                                  _snd.SF_FORMAT_SUBMASK)[1])
-    """A description of the subtype of the sound file."""
     sections = property(lambda self: self._info.sections)
     """The number of sections of the sound file."""
     closed = property(lambda self: self._file is None)
@@ -158,21 +141,15 @@ class SoundFile:
 
     def __del__(self) -> None: return
 
-    def __enter__(self) -> Self:
-        return self
+    def __enter__(self) -> Self: return self
 
     def __exit__(self, *args: Any) -> None: return
 
     def seek(self, frames: int, whence: int = SEEK_SET) -> int: return _snd.sf_seek(self._file, frames, whence)
 
-    def read(self, frames, dtype):
-        out = np.empty((frames, self.channels), dtype, order='C')
-        frames = self._array_io('read', out, frames)
-        return out
-
-    def _open(self, file, mode_int, closefd):
+    def _open(self, file):
         file = file.encode(_sys.getfilesystemencoding())
-        return _snd.sf_open(file, mode_int, self._info)
+        return _snd.sf_open(file, 16, self._info)
 
     def _array_io(self, action, array, frames):
         ctype = _ffi_types[array.dtype.name]
@@ -182,33 +159,8 @@ class SoundFile:
     def _cdata_io(self, action, data, ctype, frames):
         func = getattr(_snd, 'sf_' + action + 'f_' + ctype)
         frames = func(self._file, data, frames)
-        self.seek(frames, 0)
         return frames
 
     def _prepare_read(self, start, stop, frames):
         start, stop, _ = slice(start, stop).indices(self.frames)
-        if stop < start:
-            stop = start
-        if frames < 0:
-            frames = stop - start
-        self.seek(start, 0)
-        return frames
-
-def _check_mode(mode):
-    """Check if mode is valid and return its integer representation."""
-    if not isinstance(mode, str):
-        raise TypeError(f"Invalid mode: {mode!r}")
-    mode_set = set(mode)
-    if mode_set.difference('xrwb+') or len(mode) > len(mode_set):
-        raise ValueError(f"Invalid mode: {mode!r}")
-    if len(mode_set.intersection('xrw')) != 1:
-        raise ValueError("mode must contain exactly one of 'xrw'")
-
-    if '+' in mode_set:
-        mode_int = _snd.SFM_RDWR
-    elif 'r' in mode_set:
-        mode_int = _snd.SFM_READ
-    else:
-        mode_int = _snd.SFM_WRITE
-    return mode_int
-
+        return stop - start
