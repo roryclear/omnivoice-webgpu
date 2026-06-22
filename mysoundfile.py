@@ -5,7 +5,6 @@ from os import SEEK_SET
 from typing import Any, BinaryIO, Final, Literal, TypeAlias
 
 import numpy
-from typing_extensions import Self
 import numpy as np
 
 from _soundfile import ffi as _ffi
@@ -41,10 +40,8 @@ def read(file: FileDescriptorOrPath, frames: int = -1, start: int = 0, stop: int
         endian: str | None = None, closefd: bool = True) -> tuple[AudioData | AudioData_2d, int]:
     with SoundFile(file, 'r', samplerate, channels,
                    subtype, endian, format, closefd) as f:
-        frames = f._prepare_read(start, stop, frames)
-
-        data = np.empty((frames, f.channels), dtype, order='C')
-        f._array_io('read', data, frames)
+        data = np.empty((f.frames, f.channels), dtype, order='C')
+        f._array_io('read', data, f.frames)
     return data, f.samplerate
 
 class SoundFile:
@@ -61,9 +58,6 @@ class SoundFile:
         self._bitrate_mode = bitrate_mode
         self._info = _ffi.new("SF_INFO*")
         self._file = self._open(file)
-        if set(mode).issuperset('r+'):
-            # Move write position to 0 (like in Python file objects)
-            self.seek(0)
         _snd.sf_command(self._file, _snd.SFC_SET_CLIPPING, _ffi.NULL,
                         _snd.SF_TRUE)
 
@@ -79,8 +73,6 @@ class SoundFile:
     def __enter__(self): return self
     def __exit__(self, *args): return
 
-    def seek(self, frames: int, whence: int = SEEK_SET) -> int: return _snd.sf_seek(self._file, frames, whence)
-
     def _open(self, file):
         file = file.encode(_sys.getfilesystemencoding())
         return _snd.sf_open(file, 16, self._info)
@@ -88,13 +80,9 @@ class SoundFile:
     def _array_io(self, action, array, frames):
         ctype = _ffi_types[array.dtype.name]
         cdata = _ffi.cast(ctype + '*', array.__array_interface__['data'][0])
-        return self._cdata_io(action, cdata, ctype, frames)
+        self._cdata_io(action, cdata, ctype, frames)
 
     def _cdata_io(self, action, data, ctype, frames):
         func = getattr(_snd, 'sf_' + action + 'f_' + ctype)
-        frames = func(self._file, data, frames)
-        return frames
+        func(self._file, data, frames)
 
-    def _prepare_read(self, start, stop, frames):
-        start, stop, _ = slice(start, stop).indices(self.frames)
-        return stop - start
