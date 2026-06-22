@@ -8,7 +8,7 @@ import pickle
 import numpy as np
 import torch
 import torchaudio
-torch.manual_seed(42)
+torch.manual_seed(4)
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -26,8 +26,6 @@ from omnivoice.utils.audio import (
     cross_fade_chunks,
     remove_silence,
 )
-from omnivoice.utils.text import chunk_text_punctuation
-
 
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
@@ -303,11 +301,20 @@ class OmniVoice(PreTrainedModel):
     ) -> List[List[torch.Tensor]]:
         avg_tokens_per_char = target_length / len(text)
         text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
-        chunks = chunk_text_punctuation(text=text, chunk_len=text_chunk_len, min_chunk_len=3,)
 
-        max_num_chunks = len(chunks)
+        chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
+        chunks = [""]
+        j = 0
+        for i in range(len(chunks_small)):
+            if chunks_small[i][0] == " ": chunks_small[i] = chunks_small[i][1:]
+            if len(chunks[j]) < text_chunk_len + len(chunks_small[i]):
+                chunks[j] += chunks_small[i]
+            else:
+                chunks.append(chunks_small[i])
+                j+=1
+
         chunk_results = []
-        for i in range(max_num_chunks):
+        for i in range(len(chunks)):
             target_length = self._estimate_target_tokens(chunks[i], ref_text, ref_audio_tokens.size(-1))
             chunk_results.append(self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens))
 
