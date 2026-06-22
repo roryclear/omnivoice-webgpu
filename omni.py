@@ -65,9 +65,9 @@ SAMPLING_RATE = 24000
 # saved from getting all chars with https://github.com/k2-fsa/OmniVoice/blob/9948396864cb713b0c2f92495cf4449bd8717127/omnivoice/utils/duration.py#L204
 CHAR_WEIGHTS = pickle.load(open('char_weights.pkl', 'rb'))
 
-import soundfile as sf
+from mysoundfile import read
 def load_waveform(audio_path: str):
-    data, sr = sf.read(audio_path, dtype="float32", always_2d=True)
+    data, sr = read(audio_path, dtype="float32", always_2d=True)
     return data.T, sr  # (T, C) → (C, T)
 
 def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
