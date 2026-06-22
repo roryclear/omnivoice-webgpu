@@ -9,7 +9,7 @@ import pickle
 import numpy as np
 import torch
 import torchaudio
-torch.manual_seed(4)
+torch.manual_seed(420)
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -206,14 +206,6 @@ class OmniVoice(PreTrainedModel):
         ref_rms = float(np.sqrt(np.mean(ref_wav**2)))
         if 0 < ref_rms < 0.1:
             ref_wav = ref_wav * 0.1 / ref_rms
-
-        ref_wav = remove_silence(
-            ref_wav,
-            SAMPLING_RATE,
-            mid_sil=200,
-            lead_sil=100,
-            trail_sil=200,
-        )
 
         ref_duration = ref_wav.shape[-1] / SAMPLING_RATE
         if ref_duration > 20.0: # todo just limit it to 20s on front end?

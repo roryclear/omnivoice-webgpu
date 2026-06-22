@@ -1,7 +1,7 @@
 from omni import OmniVoice
 import soundfile as sf
 import torch
-torch.manual_seed(4)
+torch.manual_seed(420)
 import pickle
 import numpy as np
 
