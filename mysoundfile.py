@@ -21,6 +21,7 @@ from typing import Any, BinaryIO, Final, Literal, TypeAlias
 
 import numpy
 from typing_extensions import Self
+import numpy as np
 
 from _soundfile import ffi as _ffi
 
@@ -262,7 +263,7 @@ def read(file: FileDescriptorOrPath, frames: int = -1, start: int = 0, stop: int
     with SoundFile(file, 'r', samplerate, channels,
                    subtype, endian, format, closefd) as f:
         frames = f._prepare_read(start, stop, frames)
-        data = f.read(frames, dtype, always_2d, fill_value, out)
+        data = f.read(frames, dtype)
     return data, f.samplerate
 
 
@@ -581,99 +582,11 @@ class SoundFile:
         return self.seek(0, SEEK_CUR)
 
 
-    def read(self, frames: int = -1, dtype: dtype_str = 'float64',
-            always_2d: bool = False, fill_value: float | None = None,
-            out: AudioData | AudioData_2d | None = None) -> AudioData | AudioData_2d:
-        """Read from the file and return data as NumPy array.
-
-        Reads the given number of frames in the given data format
-        starting at the current read/write position.  This advances the
-        read/write position by the same number of frames.
-        By default, all frames from the current read/write position to
-        the end of the file are returned.
-        Use `seek()` to move the current read/write position.
-
-        Parameters
-        ----------
-        frames : int, optional
-            The number of frames to read. If ``frames < 0``, the whole
-            rest of the file is read.
-        dtype : {'float64', 'float32', 'int32', 'int16'}, optional
-            Data type of the returned array, by default ``'float64'``.
-            Floating point audio data is typically in the range from
-            ``-1.0`` to ``1.0``. Integer data is in the range from
-            ``-2**15`` to ``2**15-1`` for ``'int16'`` and from
-            ``-2**31`` to ``2**31-1`` for ``'int32'``.
-
-            .. note:: Reading int values from a float file will *not*
-                scale the data to [-1.0, 1.0). If the file contains
-                ``np.array([42.6], dtype='float32')``, you will read
-                ``np.array([43], dtype='int32')`` for
-                ``dtype='int32'``.
-
-        Returns
-        -------
-        audiodata : `numpy.ndarray` or type(out)
-            A two-dimensional NumPy (frames x channels) array is
-            returned. If the sound file has only one channel, a
-            one-dimensional array is returned. Use ``always_2d=True``
-            to return a two-dimensional array anyway.
-
-            If *out* was specified, it is returned. If *out* has more
-            frames than available in the file (or if *frames* is
-            smaller than the length of *out*) and no *fill_value* is
-            given, then only a part of *out* is overwritten and a view
-            containing all valid frames is returned.
-
-        Other Parameters
-        ----------------
-        always_2d : bool, optional
-            By default, reading a mono sound file will return a
-            one-dimensional array. With ``always_2d=True``, audio data
-            is always returned as a two-dimensional array, even if the
-            audio file has only one channel.
-        fill_value : float, optional
-            If more frames are requested than available in the file,
-            the rest of the output is be filled with *fill_value*. If
-            *fill_value* is not specified, a smaller array is
-            returned.
-        out : `numpy.ndarray` or subclass, optional
-            If *out* is specified, the data is written into the given
-            array instead of creating a new array. In this case, the
-            arguments *dtype* and *always_2d* are silently ignored! If
-            *frames* is not given, it is obtained from the length of
-            *out*.
-
-        Examples
-        --------
-        >>> from soundfile import SoundFile
-        >>> myfile = SoundFile('stereo_file.wav')
-
-        Reading 3 frames from a stereo file:
-
-        >>> myfile.read(3)
-        array([[ 0.71329652,  0.06294799],
-               [-0.26450912, -0.38874483],
-               [ 0.67398441, -0.11516333]])
-        >>> myfile.close()
-
-        See Also
-        --------
-        buffer_read, .write
-
-        """
-        if out is None:
-            frames = self._check_frames(frames, fill_value)
-            out = self._create_empty_array(frames, always_2d, dtype)
-        else:
-            if frames < 0 or frames > len(out):
-                frames = len(out)
+    def read(self, frames, dtype):
+   
+        out = np.empty((frames, self.channels), dtype, order='C')
         frames = self._array_io('read', out, frames)
-        if len(out) > frames:
-            if fill_value is None:
-                out = out[:frames]
-            else:
-                out[frames:] = fill_value
+
         return out
 
     def flush(self) -> None:
@@ -741,27 +654,6 @@ class SoundFile:
             # This is not necessary for "normal" files (because
             # frames == 0 in this case), but it doesn't hurt, either.
         return file_ptr
-
-
-    def _check_frames(self, frames, fill_value):
-        """Reduce frames to no more than are available in the file."""
-        if self.seekable():
-            remaining_frames = self.frames - self.tell()
-            if frames < 0 or (frames > remaining_frames and
-                              fill_value is None):
-                frames = remaining_frames
-        elif frames < 0:
-            raise ValueError("frames must be specified for non-seekable files")
-        return frames
-
-    def _create_empty_array(self, frames, always_2d, dtype): # todo remove
-        """Create an empty array with appropriate shape."""
-        import numpy as np
-        if always_2d or self.channels > 1:
-            shape = frames, self.channels
-        else:
-            shape = frames,
-        return np.empty(shape, dtype, order='C')
 
     def _check_dtype(self, dtype):
         """Check if dtype string is valid and return ctype string."""
