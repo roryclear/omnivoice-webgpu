@@ -73,42 +73,11 @@ class SoundFile:
     frames = property(lambda self: self._info.frames)
     """The number of frames in the sound file."""
     channels = property(lambda self: self._info.channels)
-    sections = property(lambda self: self._info.sections)
-    """The number of sections of the sound file."""
-    closed = property(lambda self: self._file is None)
-    """Whether the sound file is closed or not."""
-    _errorcode = property(lambda self: _snd.sf_error(self._file))
-    """A pending sndfile error code."""
 
-    bitrate_mode = property(lambda self: self._bitrate_mode)
-    """The bitrate mode on 'write()'"""
-
-    @property
-    def extra_info(self):
-        """Retrieve the log string generated when opening the file."""
-        info = _ffi.new("char[]", 2**14)
-        _snd.sf_command(self._file, _snd.SFC_GET_LOG_INFO,
-                        info, _ffi.sizeof(info))
-        return _ffi.string(info).decode('utf-8', 'replace')
-
-    # avoid confusion if something goes wrong before assigning self._file:
-    _file = None
-
-    def __repr__(self) -> str:
-        compression_setting = (f", compression_level={self.compression_level}"
-                               if self.compression_level is not None else "")
-        compression_setting += (f", bitrate_mode='{self.bitrate_mode}'"
-                                if self.bitrate_mode is not None else "")
-        return (f"SoundFile({self.name!r}, mode={self.mode!r}, "
-                f"samplerate={self.samplerate}, channels={self.channels}, "
-                f"format={self.format!r}, subtype={self.subtype!r}, "
-                f"endian={self.endian!r}{compression_setting})")
-
-    def __del__(self) -> None: return
-
-    def __enter__(self) -> Self: return self
-
-    def __exit__(self, *args: Any) -> None: return
+    def __repr__(self): return
+    def __del__(self): return
+    def __enter__(self): return self
+    def __exit__(self, *args): return
 
     def seek(self, frames: int, whence: int = SEEK_SET) -> int: return _snd.sf_seek(self._file, frames, whence)
 
