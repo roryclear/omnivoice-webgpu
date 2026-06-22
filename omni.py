@@ -22,10 +22,7 @@ from transformers import (
 )
 from transformers.models.auto import CONFIG_MAPPING, AutoConfig
 
-from omnivoice.utils.audio import (
-    cross_fade_chunks,
-    remove_silence,
-)
+from omnivoice.utils.audio import remove_silence
 
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
@@ -406,6 +403,36 @@ class OmniVoice(PreTrainedModel):
         confidence_scores = log_probs.max(dim=-1)[0]
 
         return pred_tokens, confidence_scores
+
+def cross_fade_chunks(
+    chunks: list[np.ndarray],
+    sample_rate: int,
+    silence_duration: float = 0.3,
+) -> np.ndarray:
+    if len(chunks) == 1:
+        return chunks[0]
+
+    total_n = int(silence_duration * sample_rate)
+    fade_n = total_n // 3
+    silence_n = fade_n
+    merged = chunks[0].copy()
+
+    for chunk in chunks[1:]:
+        parts = [merged]
+
+        fout_n = min(fade_n, merged.shape[-1])
+        if fout_n > 0:
+            w_out = np.linspace(1, 0, fout_n, dtype=np.float32)[np.newaxis, :]
+            parts[-1][..., -fout_n:] *= w_out
+        parts.append(np.zeros((chunks[0].shape[0], silence_n), dtype=np.float32))
+        fade_in = chunk.copy()
+        fin_n = min(fade_n, fade_in.shape[-1])
+        if fin_n > 0:
+            w_in = np.linspace(0, 1, fin_n, dtype=np.float32)[np.newaxis, :]
+            fade_in[..., :fin_n] *= w_in
+        parts.append(fade_in)
+        merged = np.concatenate(parts, axis=-1)
+    return merged
 
 def _gumbel_sample(logits: torch.Tensor, temperature: float) -> torch.Tensor:
     scaled_logits = logits / temperature
