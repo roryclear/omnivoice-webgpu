@@ -15,14 +15,6 @@ AudioData_2d: TypeAlias = numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float
 dtype_str: TypeAlias = Literal['float64', 'float32', 'int32', 'int16']
 _snd: Any
 
-
-_ffi_types: Final[dict[str, str]] = {
-    'float64': 'double',
-    'float32': 'float',
-    'int32': 'int',
-    'int16': 'short'
-}
-
 if _sys.platform == 'darwin':
     from platform import machine as _machine
     _packaged_libname = 'libsndfile_' + _machine() + '.dylib'
@@ -78,9 +70,8 @@ class SoundFile:
         return _snd.sf_open(file, 16, self._info)
 
     def _array_io(self, action, array, frames):
-        ctype = _ffi_types[array.dtype.name]
-        cdata = _ffi.cast(ctype + '*', array.__array_interface__['data'][0])
-        self._cdata_io(action, cdata, ctype, frames)
+        cdata = _ffi.cast("float" + '*', array.__array_interface__['data'][0])
+        self._cdata_io(action, cdata, "float", frames)
 
     def _cdata_io(self, action, data, ctype, frames):
         func = getattr(_snd, 'sf_' + action + 'f_' + ctype)
