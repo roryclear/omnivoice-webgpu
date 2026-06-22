@@ -131,15 +131,7 @@ class OmniVoice(PreTrainedModel):
 
         # higgs-audio-v2-tokenizer does not support MPS
         # (output channels > 65536)
-        tokenizer_device = (
-            "cpu" if str(model.device).startswith("mps") else model.device
-        )
-        model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(
-            audio_tokenizer_path, device_map=tokenizer_device
-        )
-        model.feature_extractor = AutoFeatureExtractor.from_pretrained(
-            audio_tokenizer_path
-        )
+        model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(audio_tokenizer_path, device_map="mps")
 
         return model
 
@@ -228,7 +220,7 @@ class OmniVoice(PreTrainedModel):
         clip_size = int(ref_wav.shape[-1] % chunk_size)
         ref_wav = ref_wav[:, :-clip_size] if clip_size > 0 else ref_wav
         # numpy → torch at tokenizer boundary
-        ref_wav_tensor = torch.from_numpy(ref_wav).to(self.audio_tokenizer.device)
+        ref_wav_tensor = torch.from_numpy(ref_wav).to("mps")
         ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).audio_codes.squeeze(0)  # (C, T)
 
 
@@ -238,8 +230,7 @@ class OmniVoice(PreTrainedModel):
         self,
         tokens: Union[torch.Tensor, List[torch.Tensor]],
     ) -> np.ndarray:
-        tokenizer_device = self.audio_tokenizer.device
-        chunk_audios = [self.audio_tokenizer.decode(t.to(tokenizer_device).unsqueeze(0)).audio_values[0].cpu().numpy() for t in tokens]
+        chunk_audios = [self.audio_tokenizer.decode(t.to("mps").unsqueeze(0)).audio_values[0].cpu().numpy() for t in tokens]
         audio_waveform = np.concatenate(chunk_audios, axis=-1)
         return audio_waveform.squeeze(0)
 
