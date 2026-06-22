@@ -57,7 +57,6 @@ class SoundFile:
 
         if isinstance(file, os.PathLike):
             file = os.fspath(file)
-        self._name = file
         self._compression_level = compression_level
         self._bitrate_mode = bitrate_mode
         self._info = _ffi.new("SF_INFO*")
@@ -68,15 +67,7 @@ class SoundFile:
         _snd.sf_command(self._file, _snd.SFC_SET_CLIPPING, _ffi.NULL,
                         _snd.SF_TRUE)
 
-        # set compression setting
-        if self._compression_level is not None:
-            # needs to be called before set_bitrate_mode
-            self._set_compression_level(self._compression_level)
-            if self._bitrate_mode is not None:
-                self._set_bitrate_mode(self._bitrate_mode)
 
-    name = property(lambda self: self._name)
-    """The file name of the sound file."""
     samplerate = property(lambda self: self._info.samplerate)
     """The sample rate of the sound file."""
     frames = property(lambda self: self._info.frames)
@@ -88,8 +79,7 @@ class SoundFile:
     """Whether the sound file is closed or not."""
     _errorcode = property(lambda self: _snd.sf_error(self._file))
     """A pending sndfile error code."""
-    compression_level = property(lambda self: self._compression_level)
-    """The compression level on 'write()'"""
+
     bitrate_mode = property(lambda self: self._bitrate_mode)
     """The bitrate mode on 'write()'"""
 
