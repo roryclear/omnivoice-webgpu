@@ -34,11 +34,13 @@ if __name__ == "__main__":
   exp = pickle.load(open("long.pkl", "rb"))
   sf.write("out_long.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  
 
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  #pickle.dump(audio, open("short2.pkl", "wb"))
+  exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
+  np.testing.assert_allclose(exp, audio, rtol=1e-5)
