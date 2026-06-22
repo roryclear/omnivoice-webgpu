@@ -3,6 +3,7 @@ import math
 import os
 import re
 from typing import List, Optional, Union
+import pickle
 
 import numpy as np
 import torch
@@ -25,7 +26,6 @@ from omnivoice.utils.audio import (
     cross_fade_chunks,
     remove_silence,
 )
-from omnivoice.utils.duration import RuleDurationEstimator
 from omnivoice.utils.text import chunk_text_punctuation
 
 
@@ -68,6 +68,8 @@ AUDIO_VOCAB_SIZE = 1025
 AUDIO_CODEBOOK_WEIGHTS = [8, 8, 6, 6, 4, 4, 2, 2]
 AUDIO_MASK_ID = 1024
 SAMPLING_RATE = 24000
+# saved from getting all chars with https://github.com/k2-fsa/OmniVoice/blob/9948396864cb713b0c2f92495cf4449bd8717127/omnivoice/utils/duration.py#L204
+CHAR_WEIGHTS = pickle.load(open('char_weights.pkl', 'rb'))
 
 import soundfile as sf
 def load_waveform(audio_path: str):
@@ -137,8 +139,6 @@ class OmniVoice(PreTrainedModel):
             audio_tokenizer_path
         )
 
-        model.duration_estimator = RuleDurationEstimator()
-
         return model
 
     def _prepare_embed_inputs(
@@ -200,19 +200,14 @@ class OmniVoice(PreTrainedModel):
         ref_audio=None,
     ) -> list[np.ndarray]:
         self.eval()
-        ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text,)
+        ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
         num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
 
         result = self._generate_chunked(target_length=num_target_tokens, text=text,\
             ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
         return self._decode_and_post_process(result)    
 
-    def create_voice_clone_prompt(
-        self,
-        ref_audio: Union[str, tuple[torch.Tensor, int]],
-        ref_text: Optional[str] = None,
-    ):
-
+    def create_voice_clone_prompt(self, ref_audio: Union[str, tuple[torch.Tensor, int]],):
         ref_wav = load_audio(ref_audio, SAMPLING_RATE)
         ref_rms = float(np.sqrt(np.mean(ref_wav**2)))
         if 0 < ref_rms < 0.1:
@@ -255,9 +250,9 @@ class OmniVoice(PreTrainedModel):
         return audio_waveform.squeeze(0)
 
     def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
-        ref_weight = self.duration_estimator.calculate_total_weight(ref_text)
+        ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
         speed_factor = ref_weight / num_ref_audio_tokens
-        target_weight = self.duration_estimator.calculate_total_weight(text)
+        target_weight = sum(CHAR_WEIGHTS[ord(c)] for c in text)
         estimated_duration = target_weight / speed_factor
         return int(estimated_duration)
 
