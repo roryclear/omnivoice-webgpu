@@ -160,67 +160,15 @@ _bitrate_modes: Final[dict[str, int]] = {
     'VARIABLE': 2,
 }
 
-try:  # packaged lib (in _soundfile_data which should be on python path)
-    if _sys.platform == 'darwin':
-        from platform import machine as _machine
-        _packaged_libname = 'libsndfile_' + _machine() + '.dylib'
-    elif _sys.platform == 'win32':
-        import sysconfig as _sysconfig
+if _sys.platform == 'darwin':
+    from platform import machine as _machine
+    _packaged_libname = 'libsndfile_' + _machine() + '.dylib'
 
-        _win_machine = _sysconfig.get_platform()
-        if _win_machine == 'win-arm64':
-            _packaged_libname = 'libsndfile_arm64.dll'
-        elif _win_machine == 'win-amd64':
-            _packaged_libname = 'libsndfile_x64.dll'
-        elif _win_machine == 'win32':
-            _packaged_libname = 'libsndfile_x86.dll'
-        else:
-            raise OSError(f'no packaged library for Windows {_win_machine}')
-    elif _sys.platform == 'linux':
-        from platform import machine as _machine
-        if _machine() in ["aarch64", "aarch64_be", "armv8b", "armv8l"]:
-            _packaged_libname = 'libsndfile_arm64.so'
-        else:
-            _packaged_libname = 'libsndfile_' + _machine() + '.so'
-    else:
-        raise OSError('no packaged library for this platform')
 
-    import _soundfile_data  # ImportError if this doesn't exist
-    _path = _os.path.dirname(_soundfile_data.__file__)  # TypeError if __file__ is None
-    _full_path = _os.path.join(_path, _packaged_libname)
-    _snd = _ffi.dlopen(_full_path)  # OSError if file doesn't exist or can't be loaded
-
-except (OSError, ImportError, TypeError):
-    try:  # system-wide libsndfile:
-        _libname = _find_library('sndfile')
-        if _libname is None:
-            raise OSError('sndfile library not found using ctypes.util.find_library')
-        _snd = _ffi.dlopen(_libname)
-
-    except OSError:
-        # Try explicit file name, if the general does not work (e.g. on nixos)
-        if _sys.platform == 'darwin':
-            _explicit_libname = 'libsndfile.dylib'
-        elif _sys.platform == 'win32':
-            _explicit_libname = 'libsndfile.dll'
-        elif _sys.platform == 'linux':
-            _explicit_libname = 'libsndfile.so'
-        else:
-            raise
-
-        # Homebrew on Apple M1 uses a `/opt/homebrew/lib` instead of
-        # `/usr/local/lib`. We are making sure we pick that up.
-        from platform import machine as _machine
-        if _sys.platform == 'darwin' and _machine() == 'arm64':
-            _hbrew_path = '/opt/homebrew/lib/' if _os.path.isdir('/opt/homebrew/lib/') \
-                else '/usr/local/lib/'
-            _snd = _ffi.dlopen(_os.path.join(_hbrew_path, _explicit_libname))
-        else:
-            _snd = _ffi.dlopen(_explicit_libname)
-
-__libsndfile_version__ = _ffi.string(_snd.sf_version_string()).decode('utf-8', 'replace')
-if __libsndfile_version__.startswith('libsndfile-'):
-    __libsndfile_version__ = __libsndfile_version__[len('libsndfile-'):]
+import _soundfile_data  # ImportError if this doesn't exist
+_path = _os.path.dirname(_soundfile_data.__file__)  # TypeError if __file__ is None
+_full_path = _os.path.join(_path, _packaged_libname)
+_snd = _ffi.dlopen(_full_path)  # OSError if file doesn't exist or can't be loaded
 
 
 def read(file: FileDescriptorOrPath, frames: int = -1, start: int = 0, stop: int | None = None, dtype: dtype_str = 'float64',
@@ -375,211 +323,7 @@ def write(file: FileDescriptorOrPath, data: AudioData, samplerate: int,
         channels = data.shape[1]
     with SoundFile(file, 'w', samplerate, channels,
                    subtype, endian, format, closefd,
-                   compression_level, bitrate_mode) as f:
-        f.write(data)
-
-def blocks(file: FileDescriptorOrPath, blocksize: int | None = None,
-           overlap: int = 0, frames: int = -1, start: int = 0,
-           stop: int | None = None, dtype: dtype_str = 'float64',
-           always_2d: bool = False, fill_value: float | None = None,
-           out: AudioData | AudioData_2d | None = None, samplerate: int | None = None,
-           channels: int | None = None, format: str | None = None,
-           subtype: str | None = None, endian: str | None = None,
-           closefd: bool = True) -> Generator[AudioData, None, None] | Generator[AudioData_2d, None, None]:
-    """Return a generator for block-wise reading.
-
-    By default, iteration starts at the beginning and stops at the end
-    of the file.  Use *start* to start at a later position and *frames*
-    or *stop* to stop earlier.
-
-    If you stop iterating over the generator before it's exhausted,
-    the sound file is not closed. This is normally not a problem
-    because the file is opened in read-only mode. To close the file
-    properly, the generator's ``close()`` method can be called.
-
-    Parameters
-    ----------
-    file : str or int or file-like object
-        The file to read from.  See `SoundFile` for details.
-    blocksize : int
-        The number of frames to read per block.
-        Either this or *out* must be given.
-    overlap : int, optional
-        The number of frames to rewind between each block.
-
-    Yields
-    ------
-    `numpy.ndarray` or type(out)
-        Blocks of audio data.
-        If *out* was given, and the requested frames are not an integer
-        multiple of the length of *out*, and no *fill_value* was given,
-        the last block will be a smaller view into *out*.
-
-    Other Parameters
-    ----------------
-    frames, start, stop
-        See `read()`.
-    dtype : {'float64', 'float32', 'int32', 'int16'}, optional
-        See `read()`.
-    always_2d, fill_value, out
-        See `read()`.
-    samplerate, channels, format, subtype, endian, closefd
-        See `SoundFile`.
-
-    Examples
-    --------
-    >>> import soundfile as sf
-    >>> for block in sf.blocks('stereo_file.wav', blocksize=1024):
-    >>>     pass  # do something with 'block'
-
-    """
-    with SoundFile(file, 'r', samplerate, channels,
-                   subtype, endian, format, closefd) as f:
-        frames = f._prepare_read(start, stop, frames)
-        yield from f.blocks(blocksize, overlap, frames, dtype, always_2d, fill_value, out)
-
-
-class _SoundFileInfo:
-    """Information about a SoundFile"""
-
-    def __init__(self, file, verbose):
-        self.verbose: bool = verbose
-        with SoundFile(file) as f:
-            self.name: str | int | Any = f.name
-            self.samplerate: int = f.samplerate
-            self.channels: int = f.channels
-            self.frames: int = f.frames
-            self.duration: float = float(self.frames)/f.samplerate
-            self.format: str = f.format
-            self.subtype: str = f.subtype
-            self.endian: str = f.endian
-            self.format_info: str = f.format_info
-            self.subtype_info: str = f.subtype_info
-            self.sections: int = f.sections
-            self.extra_info: str = f.extra_info
-
-    @property
-    def _duration_str(self):
-        hours, rest = divmod(self.duration, 3600)
-        minutes, seconds = divmod(rest, 60)
-        if hours >= 1:
-            duration = f"{hours:.0g}:{minutes:02.0g}:{seconds:05.3f} h"
-        elif minutes >= 1:
-            duration = f"{minutes:02.0g}:{seconds:05.3f} min"
-        elif seconds <= 1:
-            duration = f"{self.frames:d} samples"
-        else:
-            duration = f"{seconds:.3f} s"
-        return duration
-
-    def __repr__(self):
-        info = "\n".join(
-            [f"{self.name}",
-             f"samplerate: {self.samplerate} Hz",
-             f"channels: {self.channels}",
-             f"duration: {self._duration_str}",
-             f"format: {self.format_info} [{self.format}]",
-             f"subtype: {self.subtype_info} [{self.subtype}]"])
-        if self.verbose:
-            indented_extra_info = ("\n"+" "*4).join(self.extra_info.split("\n"))
-            info += "\n".join(
-                [f"\nendian: {self.endian}",
-                 f"sections: {self.sections}",
-                 f"frames: {self.frames}",
-                 'extra_info: """',
-                 f'    {indented_extra_info}"""'])
-        return info
-
-
-def info(file: FileDescriptorOrPath, verbose: bool = False) -> _SoundFileInfo:
-    """Returns an object with information about a `SoundFile`.
-
-    Parameters
-    ----------
-    verbose : bool
-        Whether to print additional information.
-    """
-    return _SoundFileInfo(file, verbose)
-
-
-def available_formats() -> dict[str, str]:
-    """Return a dictionary of available major formats.
-
-    Examples
-    --------
-    >>> import soundfile as sf
-    >>> sf.available_formats()
-    {'FLAC': 'FLAC (FLAC Lossless Audio Codec)',
-     'OGG': 'OGG (OGG Container format)',
-     'WAV': 'WAV (Microsoft)',
-     'AIFF': 'AIFF (Apple/SGI)',
-     ...
-     'WAVEX': 'WAVEX (Microsoft)',
-     'RAW': 'RAW (header-less)',
-     'MAT5': 'MAT5 (GNU Octave 2.1 / Matlab 5.0)'}
-
-    """
-    return dict(_available_formats_helper(_snd.SFC_GET_FORMAT_MAJOR_COUNT,
-                                          _snd.SFC_GET_FORMAT_MAJOR))
-
-
-def available_subtypes(format: str | None = None) -> dict[str, str]:
-    """Return a dictionary of available subtypes.
-
-    Parameters
-    ----------
-    format : str
-        If given, only compatible subtypes are returned.
-
-    Examples
-    --------
-    >>> import soundfile as sf
-    >>> sf.available_subtypes('FLAC')
-    {'PCM_24': 'Signed 24 bit PCM',
-     'PCM_16': 'Signed 16 bit PCM',
-     'PCM_S8': 'Signed 8 bit PCM'}
-
-    """
-    subtypes = _available_formats_helper(_snd.SFC_GET_FORMAT_SUBTYPE_COUNT,
-                                         _snd.SFC_GET_FORMAT_SUBTYPE)
-    return {subtype: name for subtype, name in subtypes
-                if format is None or check_format(format, subtype)}
-
-
-def check_format(format: str, subtype: str | None = None,
-                 endian: str | None = None) -> bool:
-    """Check if the combination of format/subtype/endian is valid.
-
-    Examples
-    --------
-    >>> import soundfile as sf
-    >>> sf.check_format('WAV', 'PCM_24')
-    True
-    >>> sf.check_format('FLAC', 'VORBIS')
-    False
-
-    """
-    try:
-        return bool(_format_int(format, subtype, endian))
-    except (ValueError, TypeError):
-        return False
-
-
-def default_subtype(format: str) -> str | None:
-    """Return the default subtype for a given format.
-
-    Examples
-    --------
-    >>> import soundfile as sf
-    >>> sf.default_subtype('WAV')
-    'PCM_16'
-    >>> sf.default_subtype('MAT5')
-    'DOUBLE'
-
-    """
-    _check_format(format)
-    return _default_subtypes.get(format.upper())
-
+                   compression_level, bitrate_mode) as f: f.write(data)
 
 class SoundFile:
     """A sound file.
@@ -1635,14 +1379,6 @@ def _format_info(format_int, format_flag=_snd.SFC_GET_FORMAT_INFO):
             _ffi.string(name).decode('utf-8', 'replace') if name else "")
 
 
-def _available_formats_helper(count_flag, format_flag):
-    """Helper for available_formats() and available_subtypes()."""
-    count = _ffi.new("int*")
-    _snd.sf_command(_ffi.NULL, count_flag, count, _ffi.sizeof("int"))
-    for format_int in range(count[0]):
-        yield _format_info(format_int, format_flag)
-
-
 def _check_format(format_str):
     """Check if `format_str` is valid and return format ID."""
     if not isinstance(format_str, str):
@@ -1664,43 +1400,3 @@ def _has_virtual_io_attrs(file, mode_int):
         hasattr(file, 'write') or readonly,
         hasattr(file, 'read') or hasattr(file, 'readinto') or writeonly,
     ])
-
-
-class SoundFileError(Exception):
-    """Base class for all soundfile-specific errors."""
-    pass
-
-class SoundFileRuntimeError(SoundFileError, RuntimeError):
-    """soundfile module runtime error.
-
-    Errors that used to be `RuntimeError`."""
-    pass
-
-class LibsndfileError(SoundFileRuntimeError):
-    """libsndfile errors.
-
-
-    Attributes
-    ----------
-    code
-        libsndfile internal error number.
-    """
-    def __init__(self, code: int, prefix: str = "") -> None:
-        SoundFileRuntimeError.__init__(self, code, prefix)
-        self.code = code
-        self.prefix = prefix
-
-    @property
-    def error_string(self) -> str:
-        """Raw libsndfile error message."""
-        if self.code:
-            err_str = _snd.sf_error_number(self.code)
-            return _ffi.string(err_str).decode('utf-8', 'replace')
-        else:
-            # Due to race conditions, if used concurrently, sf_error() may
-            # return 0 (= no error) even if an error has happened.
-            # See https://github.com/erikd/libsndfile/issues/610 for details.
-            return "(Garbled error message from libsndfile)"
-
-    def __str__(self) -> str:
-        return self.prefix + self.error_string
