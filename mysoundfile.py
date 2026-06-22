@@ -1,22 +1,7 @@
 # https://github.com/bastibe/python-soundfile/tree/6511532a7d65ff21caf1e7793e31c39f7ed95100 BSD-3-Clause license
-"""python-soundfile is an audio library based on libsndfile, CFFI and NumPy.
-
-Sound files can be read or written directly using the functions
-`read()` and `write()`.
-To read a sound file in a block-wise fashion, use `blocks()`.
-Alternatively, sound files can be opened as `SoundFile` objects.
-
-For further information, see https://python-soundfile.readthedocs.io/.
-
-"""
-__version__ = "0.14.0"
-
-import os as _os
+import os
 import sys as _sys
-import threading as _threading
-from collections.abc import Generator
-from ctypes.util import find_library as _find_library
-from os import SEEK_CUR, SEEK_END, SEEK_SET
+from os import SEEK_SET
 from typing import Any, BinaryIO, Final, Literal, TypeAlias
 
 import numpy
@@ -25,7 +10,7 @@ import numpy as np
 
 from _soundfile import ffi as _ffi
 
-FileDescriptorOrPath: TypeAlias = str | int | BinaryIO | _os.PathLike[Any]
+FileDescriptorOrPath: TypeAlias = str | int | BinaryIO | os.PathLike[Any]
 AudioData: TypeAlias = numpy.ndarray[tuple[int, ...], numpy.dtype[numpy.float32 | numpy.float64 | numpy.int32 | numpy.int16]]
 AudioData_2d: TypeAlias = numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float32 | numpy.float64 | numpy.int32 | numpy.int16]]
 dtype_str: TypeAlias = Literal['float64', 'float32', 'int32', 'int16']
@@ -45,8 +30,8 @@ if _sys.platform == 'darwin':
 
 
 import _soundfile_data  # ImportError if this doesn't exist
-_path = _os.path.dirname(_soundfile_data.__file__)  # TypeError if __file__ is None
-_full_path = _os.path.join(_path, _packaged_libname)
+_path = os.path.dirname(_soundfile_data.__file__)  # TypeError if __file__ is None
+_full_path = os.path.join(_path, _packaged_libname)
 _snd = _ffi.dlopen(_full_path)  # OSError if file doesn't exist or can't be loaded
 
 
@@ -86,8 +71,8 @@ class SoundFile:
                  compression_level: float | None = None,
                  bitrate_mode: str | None = None) -> None:
 
-        if isinstance(file, _os.PathLike):
-            file = _os.fspath(file)
+        if isinstance(file, os.PathLike):
+            file = os.fspath(file)
         self._name = file
         if mode is None:
             mode = getattr(file, 'mode', None)
@@ -178,13 +163,7 @@ class SoundFile:
 
     def __exit__(self, *args: Any) -> None: return
 
-    def seek(self, frames: int, whence: int = SEEK_SET) -> int:
-        position = _snd.sf_seek(self._file, frames, whence)
-        return position
-
-    def tell(self) -> int:
-        """Return the current read/write position."""
-        return self.seek(0, SEEK_CUR)
+    def seek(self, frames: int, whence: int = SEEK_SET) -> int: return _snd.sf_seek(self._file, frames, whence)
 
     def read(self, frames, dtype):
         out = np.empty((frames, self.channels), dtype, order='C')
@@ -192,37 +171,8 @@ class SoundFile:
         return out
 
     def _open(self, file, mode_int, closefd):
-        """Call the appropriate sf_open*() function from libsndfile."""
-        if isinstance(file, (str, bytes)):
-            if _os.path.isfile(file):
-                if 'x' in self.mode:
-                    raise OSError(f"File exists: {self.name!r}")
-                elif set(self.mode).issuperset('w+'):
-                    # truncate the file, because SFM_RDWR doesn't:
-                    _os.close(_os.open(file, _os.O_WRONLY | _os.O_TRUNC))
-            openfunction = _snd.sf_open
-            if isinstance(file, str):
-                if _sys.platform == 'win32':
-                    openfunction = _snd.sf_wchar_open
-                else:
-                    file = file.encode(_sys.getfilesystemencoding())
-        elif isinstance(file, int):
-            openfunction = lambda file, mode_int, info: _snd.sf_open_fd(file, mode_int, info, closefd)
-        elif _has_virtual_io_attrs(file, mode_int):
-            openfunction = lambda file, mode_int, info: _snd.sf_open_virtual(self._init_virtual_io(file),
-                                            mode_int, info, _ffi.NULL)
-        else:
-            raise TypeError(f"Invalid file: {self.name!r}")
-
-        file_ptr = openfunction(file, mode_int, self._info)
-        if mode_int == _snd.SFM_WRITE:
-            # Due to a bug in libsndfile version <= 1.0.25, frames != 0
-            # when opening a named pipe in SFM_WRITE mode.
-            # See http://github.com/erikd/libsndfile/issues/77.
-            self._info.frames = 0
-            # This is not necessary for "normal" files (because
-            # frames == 0 in this case), but it doesn't hurt, either.
-        return file_ptr
+        file = file.encode(_sys.getfilesystemencoding())
+        return _snd.sf_open(file, mode_int, self._info)
 
     def _array_io(self, action, array, frames):
         ctype = _ffi_types[array.dtype.name]
@@ -230,11 +180,9 @@ class SoundFile:
         return self._cdata_io(action, cdata, ctype, frames)
 
     def _cdata_io(self, action, data, ctype, frames):
-        curr = 0
-        curr = self.tell()
         func = getattr(_snd, 'sf_' + action + 'f_' + ctype)
         frames = func(self._file, data, frames)
-        self.seek(curr + frames, SEEK_SET)  # Update read & write position
+        self.seek(frames, 0)
         return frames
 
     def _prepare_read(self, start, stop, frames):
@@ -243,7 +191,7 @@ class SoundFile:
             stop = start
         if frames < 0:
             frames = stop - start
-        self.seek(start, SEEK_SET)
+        self.seek(start, 0)
         return frames
 
 def _check_mode(mode):
