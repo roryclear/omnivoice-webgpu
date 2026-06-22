@@ -30,135 +30,13 @@ AudioData: TypeAlias = numpy.ndarray[tuple[int, ...], numpy.dtype[numpy.float32 
 AudioData_2d: TypeAlias = numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float32 | numpy.float64 | numpy.int32 | numpy.int16]]
 dtype_str: TypeAlias = Literal['float64', 'float32', 'int32', 'int16']
 _snd: Any
-_ffi: Any
 
-_str_types: Final[dict[str, int]] = {
-    'title':       0x01,
-    'copyright':   0x02,
-    'software':    0x03,
-    'artist':      0x04,
-    'comment':     0x05,
-    'date':        0x06,
-    'album':       0x07,
-    'license':     0x08,
-    'tracknumber': 0x09,
-    'genre':       0x10,
-}
-
-_formats: Final[dict[str, int]] = {
-    'WAV':   0x010000,  # Microsoft WAV format (little endian default).
-    'AIFF':  0x020000,  # Apple/SGI AIFF format (big endian).
-    'AU':    0x030000,  # Sun/NeXT AU format (big endian).
-    'RAW':   0x040000,  # RAW PCM data.
-    'PAF':   0x050000,  # Ensoniq PARIS file format.
-    'SVX':   0x060000,  # Amiga IFF / SVX8 / SV16 format.
-    'NIST':  0x070000,  # Sphere NIST format.
-    'VOC':   0x080000,  # VOC files.
-    'IRCAM': 0x0A0000,  # Berkeley/IRCAM/CARL
-    'W64':   0x0B0000,  # Sonic Foundry's 64 bit RIFF/WAV
-    'MAT4':  0x0C0000,  # Matlab (tm) V4.2 / GNU Octave 2.0
-    'MAT5':  0x0D0000,  # Matlab (tm) V5.0 / GNU Octave 2.1
-    'PVF':   0x0E0000,  # Portable Voice Format
-    'XI':    0x0F0000,  # Fasttracker 2 Extended Instrument
-    'HTK':   0x100000,  # HMM Tool Kit format
-    'SDS':   0x110000,  # Midi Sample Dump Standard
-    'AVR':   0x120000,  # Audio Visual Research
-    'WAVEX': 0x130000,  # MS WAVE with WAVEFORMATEX
-    'SD2':   0x160000,  # Sound Designer 2
-    'FLAC':  0x170000,  # FLAC lossless file format
-    'CAF':   0x180000,  # Core Audio File format
-    'WVE':   0x190000,  # Psion WVE format
-    'OGG':   0x200000,  # Xiph OGG container
-    'MPC2K': 0x210000,  # Akai MPC 2000 sampler
-    'RF64':  0x220000,  # RF64 WAV file
-    'MP3':   0x230000,  # MPEG-1/2 audio stream
-}
-
-_subtypes: Final[dict[str, int]] = {
-    'PCM_S8':         0x0001,  # Signed 8 bit data
-    'PCM_16':         0x0002,  # Signed 16 bit data
-    'PCM_24':         0x0003,  # Signed 24 bit data
-    'PCM_32':         0x0004,  # Signed 32 bit data
-    'PCM_U8':         0x0005,  # Unsigned 8 bit data (WAV and RAW only)
-    'FLOAT':          0x0006,  # 32 bit float data
-    'DOUBLE':         0x0007,  # 64 bit float data
-    'ULAW':           0x0010,  # U-Law encoded.
-    'ALAW':           0x0011,  # A-Law encoded.
-    'IMA_ADPCM':      0x0012,  # IMA ADPCM.
-    'MS_ADPCM':       0x0013,  # Microsoft ADPCM.
-    'GSM610':         0x0020,  # GSM 6.10 encoding.
-    'VOX_ADPCM':      0x0021,  # OKI / Dialogix ADPCM
-    'NMS_ADPCM_16':   0x0022,  # 16kbs NMS G721-variant encoding.
-    'NMS_ADPCM_24':   0x0023,  # 24kbs NMS G721-variant encoding.
-    'NMS_ADPCM_32':   0x0024,  # 32kbs NMS G721-variant encoding.
-    'G721_32':        0x0030,  # 32kbs G721 ADPCM encoding.
-    'G723_24':        0x0031,  # 24kbs G723 ADPCM encoding.
-    'G723_40':        0x0032,  # 40kbs G723 ADPCM encoding.
-    'DWVW_12':        0x0040,  # 12 bit Delta Width Variable Word encoding.
-    'DWVW_16':        0x0041,  # 16 bit Delta Width Variable Word encoding.
-    'DWVW_24':        0x0042,  # 24 bit Delta Width Variable Word encoding.
-    'DWVW_N':         0x0043,  # N bit Delta Width Variable Word encoding.
-    'DPCM_8':         0x0050,  # 8 bit differential PCM (XI only)
-    'DPCM_16':        0x0051,  # 16 bit differential PCM (XI only)
-    'VORBIS':         0x0060,  # Xiph Vorbis encoding.
-    'OPUS':           0x0064,  # Xiph/Skype Opus encoding.
-    'ALAC_16':        0x0070,  # Apple Lossless Audio Codec (16 bit).
-    'ALAC_20':        0x0071,  # Apple Lossless Audio Codec (20 bit).
-    'ALAC_24':        0x0072,  # Apple Lossless Audio Codec (24 bit).
-    'ALAC_32':        0x0073,  # Apple Lossless Audio Codec (32 bit).
-    'MPEG_LAYER_I':   0x0080,  # MPEG-1 Audio Layer I.
-    'MPEG_LAYER_II':  0x0081,  # MPEG-1 Audio Layer II.
-    'MPEG_LAYER_III': 0x0082,  # MPEG-2 Audio Layer III.
-}
-
-_endians: Final[dict[str, int]] = {
-    'FILE':   0x00000000,  # Default file endian-ness.
-    'LITTLE': 0x10000000,  # Force little endian-ness.
-    'BIG':    0x20000000,  # Force big endian-ness.
-    'CPU':    0x30000000,  # Force CPU endian-ness.
-}
-
-# libsndfile doesn't specify default subtypes, these are somehow arbitrary:
-_default_subtypes: Final[dict[str, str]] = {
-    'WAV':   'PCM_16',
-    'AIFF':  'PCM_16',
-    'AU':    'PCM_16',
-    # 'RAW':  # subtype must be explicit!
-    'PAF':   'PCM_16',
-    'SVX':   'PCM_16',
-    'NIST':  'PCM_16',
-    'VOC':   'PCM_16',
-    'IRCAM': 'PCM_16',
-    'W64':   'PCM_16',
-    'MAT4':  'DOUBLE',
-    'MAT5':  'DOUBLE',
-    'PVF':   'PCM_16',
-    'XI':    'DPCM_16',
-    'HTK':   'PCM_16',
-    'SDS':   'PCM_16',
-    'AVR':   'PCM_16',
-    'WAVEX': 'PCM_16',
-    'SD2':   'PCM_16',
-    'FLAC':  'PCM_16',
-    'CAF':   'PCM_16',
-    'WVE':   'ALAW',
-    'OGG':   'VORBIS',
-    'MPC2K': 'PCM_16',
-    'RF64':  'PCM_16',
-    'MP3':   'MPEG_LAYER_III',
-}
 
 _ffi_types: Final[dict[str, str]] = {
     'float64': 'double',
     'float32': 'float',
     'int32': 'int',
     'int16': 'short'
-}
-
-_bitrate_modes: Final[dict[str, int]] = {
-    'CONSTANT': 0,
-    'AVERAGE': 1,
-    'VARIABLE': 2,
 }
 
 if _sys.platform == 'darwin':
@@ -449,8 +327,7 @@ class SoundFile:
         self._mode = mode
         self._compression_level = compression_level
         self._bitrate_mode = bitrate_mode
-        self._info = _create_info_struct(file, mode, samplerate, channels,
-                                         format, subtype, endian)
+        self._info = _ffi.new("SF_INFO*")
         self._file = self._open(file, mode_int, closefd)
         if set(mode).issuperset('r+') and self.seekable():
             # Move write position to 0 (like in Python file objects)
@@ -655,24 +532,8 @@ class SoundFile:
             # frames == 0 in this case), but it doesn't hurt, either.
         return file_ptr
 
-    def _check_dtype(self, dtype):
-        """Check if dtype string is valid and return ctype string."""
-        try:
-            return _ffi_types[dtype]
-        except KeyError:
-            raise ValueError(f"dtype must be one of {sorted(_ffi_types.keys())!r} and not {dtype!r}")
-
     def _array_io(self, action, array, frames):
-        """Check array and call low-level IO function."""
-        if array.ndim not in (1,2):
-            raise ValueError(f"Invalid shape: {array.shape!r} ({'0 dimensions not supported' if array.ndim < 1 else 'too many dimensions'})")
-        array_channels = 1 if array.ndim == 1 else array.shape[1]
-        if array_channels != self.channels:
-            raise ValueError(f"Invalid shape: {array.shape!r} (Expected {self.channels} channels, got {array_channels})")
-        if not array.flags.c_contiguous:
-            raise ValueError("Data must be C-contiguous")
-        ctype = self._check_dtype(array.dtype.name)
-        assert array.dtype.itemsize == _ffi.sizeof(ctype)
+        ctype = _ffi_types[array.dtype.name]
         cdata = _ffi.cast(ctype + '*', array.__array_interface__['data'][0])
         return self._cdata_io(action, cdata, ctype, frames)
 
@@ -729,53 +590,3 @@ def _check_mode(mode):
         mode_int = _snd.SFM_WRITE
     return mode_int
 
-
-def _create_info_struct(file, mode, samplerate, channels,
-                        format, subtype, endian):
-    """Check arguments and create SF_INFO struct."""
-    original_format = format
-    if format is None:
-        format = _get_format_from_filename(file, mode)
-        assert isinstance(format, str)
-    else:
-        _check_format(format)
-
-    info = _ffi.new("SF_INFO*")
-    if 'r' not in mode or format.upper() == 'RAW':
-        if samplerate is None:
-            raise TypeError("samplerate must be specified")
-        info.samplerate = samplerate
-        if channels is None:
-            raise TypeError("channels must be specified")
-        info.channels = channels
-        info.format = _format_int(format, subtype, endian)
-    else:
-        if any(arg is not None for arg in (
-                samplerate, channels, original_format, subtype, endian)):
-            raise TypeError("Not allowed for existing files (except 'RAW'): "
-                            "samplerate, channels, format, subtype, endian")
-    return info
-
-
-def _get_format_from_filename(file, mode):
-    """Return a format string obtained from file (or file.name).
-
-    If file already exists (= read mode), an empty string is returned on
-    error.  If not, an exception is raised.
-    The return type will always be str or unicode (even if
-    file/file.name is a bytes object).
-
-    """
-    format = ''
-    file = getattr(file, 'name', file)
-    try:
-        # This raises an exception if file is not a (Unicode/byte) string:
-        format = _os.path.splitext(file)[-1][1:]
-        # Convert bytes to unicode (raises AttributeError on Python 3 str):
-        format = format.decode('utf-8', 'replace')
-    except Exception:
-        pass
-    if format.upper() not in _formats and 'r' not in mode:
-        raise TypeError(f"No format specified and unable to get format from "
-                        f"file extension: {file!r}")
-    return format
