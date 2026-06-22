@@ -8,7 +8,7 @@ import pickle
 import numpy as np
 import torch
 import torchaudio
-torch.manual_seed(420)
+torch.manual_seed(0)
 import torch.nn as nn
 import torch.nn.functional as F
 
