@@ -22,8 +22,6 @@ from transformers import (
 )
 from transformers.models.auto import CONFIG_MAPPING, AutoConfig
 
-from omnivoice.utils.audio import remove_silence
-
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 NUM_STEPS = 32
@@ -403,6 +401,72 @@ class OmniVoice(PreTrainedModel):
         confidence_scores = log_probs.max(dim=-1)[0]
 
         return pred_tokens, confidence_scores
+
+from pydub import AudioSegment # todo?
+from pydub.silence import split_on_silence, detect_leading_silence
+
+def numpy_to_audiosegment(audio: np.ndarray, sample_rate: int):
+    """Convert a numpy float32 array of shape (C, T) to a pydub AudioSegment."""
+    audio_int = (audio * 32768.0).clip(-32768, 32767).astype(np.int16)
+    if audio_int.shape[0] > 1:
+        audio_int = audio_int.T.flatten()  # interleave channels
+    return AudioSegment(
+        data=audio_int.tobytes(),
+        sample_width=2,
+        frame_rate=sample_rate,
+        channels=audio.shape[0],
+    )
+
+def remove_silence(
+    audio: np.ndarray,
+    sampling_rate: int,
+    mid_sil: int = 300,
+    lead_sil: int = 100,
+    trail_sil: int = 300,
+) -> np.ndarray:
+    wave = numpy_to_audiosegment(audio, sampling_rate)
+
+    if mid_sil > 0:
+        non_silent_segs = split_on_silence(
+            wave,
+            min_silence_len=mid_sil,
+            silence_thresh=-50,
+            keep_silence=mid_sil,
+            seek_step=10,
+        )
+        wave = AudioSegment.silent(duration=0)
+        for seg in non_silent_segs:
+            wave += seg
+
+    wave = remove_silence_edges(wave, lead_sil, trail_sil, -50)
+
+    return audiosegment_to_numpy(wave)
+
+def audiosegment_to_numpy(aseg: AudioSegment) -> np.ndarray:
+    """Convert a pydub AudioSegment to a numpy float32 array of shape (C, T)."""
+    data = np.array(aseg.get_array_of_samples()).astype(np.float32) / 32768.0
+    if aseg.channels == 1:
+        return data[np.newaxis, :]
+    return data.reshape(-1, aseg.channels).T
+
+def remove_silence_edges(
+    audio: AudioSegment,
+    lead_sil: int = 100,
+    trail_sil: int = 300,
+    silence_threshold: float = -50,
+) -> AudioSegment:
+    """Remove edge silences, keeping *lead_sil* / *trail_sil* ms."""
+    start_idx = detect_leading_silence(audio, silence_threshold=silence_threshold)
+    start_idx = max(0, start_idx - lead_sil)
+    audio = audio[start_idx:]
+
+    audio = audio.reverse()
+    start_idx = detect_leading_silence(audio, silence_threshold=silence_threshold)
+    start_idx = max(0, start_idx - trail_sil)
+    audio = audio[start_idx:]
+    audio = audio.reverse()
+
+    return audio
 
 def cross_fade_chunks(
     chunks: list[np.ndarray],
