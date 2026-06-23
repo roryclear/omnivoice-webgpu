@@ -304,13 +304,26 @@ _NONVERBAL_PATTERN = re.compile(
     r"surprise-yo|dissatisfaction-hnn)\]"
 )
 
+class Qwen3RMSNorm:
+  def __init__(self, norm):
+    self.variance_epsilon = norm.variance_epsilon
+    self.weight = norm.weight
+  
+  def __call__(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    input_dtype = hidden_states.dtype
+    hidden_states = hidden_states.to(torch.float32)
+    variance = hidden_states.pow(2).mean(-1, keepdim=True)
+    hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+    return self.weight * hidden_states.to(input_dtype)
+
 class llm:
   def __init__(self, llm):
-    self.embed_tokens = llm.embed_tokens
+    self.embed_tokens = nn.Embedding(151676, 1024)
+    self.embed_tokens.weight = llm.embed_tokens.weight
+    self.norm = Qwen3RMSNorm(llm.norm)
     self.config = llm.config
     self.rotary_emb = llm.rotary_emb
     self.layers = llm.layers
-    self.norm = llm.norm
 
   def __call__(
     self,
@@ -805,7 +818,6 @@ if __name__ == "__main__":
 
   #weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
   #for w in weights.keys(): print(w, type(weights[w]))
-
 
   torch.manual_seed(0)
   audio = model.generate(
