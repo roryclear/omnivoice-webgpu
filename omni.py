@@ -306,9 +306,24 @@ _NONVERBAL_PATTERN = re.compile(
     r"surprise-yo|dissatisfaction-hnn)\]"
 )
 
+class tiny_audio_tokenizer:
+   def __init__(self, tok):
+      self.config = tok.config
+      self.semantic_model = tok.semantic_model
+      self.encoder_semantic = tok.encoder_semantic
+      self.acoustic_encoder = tok.acoustic_encoder
+      self.acoustic_decoder = tok.acoustic_decoder
+      self.quantizer = tok.quantizer
+      self.fc = nn.Linear(1024, 1024)
+      self.fc.weight = tok.fc.weight
+      self.fc.bias = tok.fc.bias
+      self.fc2 = nn.Linear(1024, 256)
+      self.fc2.weight = tok.fc2.weight
+      self.fc2.bias = tok.fc2.bias
+
 class tiny_omni:
   def __init__(self, model):
-    self.audio_tokenizer = model.audio_tokenizer
+    self.audio_tokenizer = tiny_audio_tokenizer(model.audio_tokenizer)
     self.device = model.device
     self.llm = model.llm
     self.codebook_layer_offsets = (torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE).to(self.device)
