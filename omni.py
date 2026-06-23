@@ -350,13 +350,7 @@ class HubertModel:
 
       hidden_states = self.feature_projection(extract_features)
 
-      encoder_outputs = self.encoder(
-          hidden_states,
-          attention_mask=None,
-          output_attentions=None,
-          output_hidden_states=True,
-          return_dict=True,
-      )
+      encoder_outputs = self.encoder(hidden_states)
 
       return encoder_outputs
 
@@ -370,26 +364,11 @@ class HubertEncoder:
     self.training = enc.training
     self.layers = enc.layers
   
-  def __call__(
-    self,
-    hidden_states: torch.tensor,
-    attention_mask: torch.Tensor | None = None,
-    output_attentions: bool = False,
-    output_hidden_states: bool = False,
-    return_dict: bool = True,
-):
-    all_hidden_states = () if output_hidden_states else None
-    all_self_attentions = () if output_attentions else None
-
-    if attention_mask is not None:
-        # make sure padded tokens output 0
-        expand_attention_mask = attention_mask.unsqueeze(-1).repeat(1, 1, hidden_states.shape[2])
-        hidden_states[~expand_attention_mask] = 0
-
+  def __call__(self, hidden_states: torch.tensor):
     attention_mask = create_bidirectional_mask(
         config=self.config,
         inputs_embeds=hidden_states,
-        attention_mask=attention_mask,
+        attention_mask=None,
     )
 
     position_embeddings = self.pos_conv_embed(hidden_states)
@@ -397,34 +376,15 @@ class HubertEncoder:
     hidden_states = self.layer_norm(hidden_states)
     hidden_states = self.dropout(hidden_states)
 
-    synced_gpus = False
-
+    all_hidden_states = ()
     for layer in self.layers:
-        if output_hidden_states:
-            all_hidden_states = all_hidden_states + (hidden_states,)
-
-        # add LayerDrop (see https://huggingface.co/papers/1909.11556 for description)
-        dropout_probability = torch.rand([])
-
-        skip_the_layer = self.training and dropout_probability < self.config.layerdrop
-        if not skip_the_layer or synced_gpus:
-            # under fsdp or deepspeed zero3 all gpus must run in sync
-            layer_outputs = layer(
-                hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
-            )
-            hidden_states = layer_outputs[0]
-
-        if skip_the_layer:
-            layer_outputs = (None, None)
-
-        if output_attentions:
-            all_self_attentions = all_self_attentions + (layer_outputs[1],)
-
-    if output_hidden_states:
         all_hidden_states = all_hidden_states + (hidden_states,)
 
-    if not return_dict:
-        return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
+        layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=False)
+        hidden_states = layer_outputs[0]
+
+    all_hidden_states = all_hidden_states + (hidden_states,)
+
     return all_hidden_states
 
 class HubertFeatureProjection:
