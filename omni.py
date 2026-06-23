@@ -158,8 +158,7 @@ def _extract_semantic_features(tok, input_values: torch.FloatTensor) -> torch.Fl
     # input_values = F.pad(input_values, (self.pad, self.pad))
     input_values = F.pad(input_values, (160, 160))
     with torch.no_grad():
-        outputs = tok.semantic_model(input_values, output_hidden_states=True)
-        hidden_states = outputs.hidden_states
+        hidden_states = tok.semantic_model(input_values)
 
     stacked = torch.stack([h.to(input_values.device) for h in hidden_states], dim=1)
     semantic_features = stacked.mean(dim=1)
@@ -339,10 +338,36 @@ class tiny_llm:
 
       return self.norm(hidden_states)
 
+class tiny_HubertModel:
+  def __init__(self, model):
+    self.config = model.config
+    self.feature_extractor = model.feature_extractor
+    self.feature_projection = model.feature_projection
+    self._mask_hidden_states = model._mask_hidden_states
+    self.encoder = model.encoder
+
+  def __call__(self, input_values: torch.Tensor | None,):
+      extract_features = self.feature_extractor(input_values)
+      extract_features = extract_features.transpose(1, 2)
+
+      hidden_states = self.feature_projection(extract_features)
+      hidden_states = self._mask_hidden_states(hidden_states, mask_time_indices=None)
+
+      encoder_outputs = self.encoder(
+          hidden_states,
+          attention_mask=None,
+          output_attentions=None,
+          output_hidden_states=True,
+          return_dict=True,
+      )
+
+      return encoder_outputs.hidden_states
+
+
 class tiny_audio_tokenizer:
    def __init__(self, tok):
       self.config = tok.config
-      self.semantic_model = tok.semantic_model
+      self.semantic_model = tiny_HubertModel(tok.semantic_model)
       self.encoder_semantic = tok.encoder_semantic
       self.acoustic_encoder = tok.acoustic_encoder
       self.acoustic_decoder = tok.acoustic_decoder
