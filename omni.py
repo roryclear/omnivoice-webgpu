@@ -251,7 +251,6 @@ class OmniVoice(PreTrainedModel):
 
         self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
         self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
-        self.register_buffer("codebook_layer_offsets", torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE,)
 
         # todo, breaks without this
         self.all_tied_weights_keys = {}
@@ -312,7 +311,7 @@ class tiny_omni:
     self.audio_tokenizer = model.audio_tokenizer
     self.device = model.device
     self.llm = model.llm
-    self.codebook_layer_offsets = model.codebook_layer_offsets
+    self.codebook_layer_offsets = (torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE).to(self.device)
     self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
     self.audio_embeddings.weight = model.audio_embeddings.weight
     self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
