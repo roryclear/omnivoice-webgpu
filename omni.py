@@ -342,7 +342,7 @@ class HubertModel:
     self.config = model.config
     self.feature_extractor = HubertFeatureEncoder(model.feature_extractor)
     self.feature_projection = HubertFeatureProjection(model.feature_projection)
-    self.encoder = model.encoder
+    self.encoder = HubertEncoder(model.encoder)
 
   def __call__(self, input_values: torch.Tensor | None,):
       extract_features = self.feature_extractor(input_values)
@@ -358,7 +358,74 @@ class HubertModel:
           return_dict=True,
       )
 
-      return encoder_outputs.hidden_states
+      return encoder_outputs
+
+from transformers.masking_utils import create_bidirectional_mask
+class HubertEncoder:
+  def __init__(self, enc):
+    self.config = enc.config
+    self.pos_conv_embed = enc.pos_conv_embed
+    self.layer_norm = enc.layer_norm
+    self.dropout = enc.dropout # todo
+    self.training = enc.training
+    self.layers = enc.layers
+  
+  def __call__(
+    self,
+    hidden_states: torch.tensor,
+    attention_mask: torch.Tensor | None = None,
+    output_attentions: bool = False,
+    output_hidden_states: bool = False,
+    return_dict: bool = True,
+):
+    all_hidden_states = () if output_hidden_states else None
+    all_self_attentions = () if output_attentions else None
+
+    if attention_mask is not None:
+        # make sure padded tokens output 0
+        expand_attention_mask = attention_mask.unsqueeze(-1).repeat(1, 1, hidden_states.shape[2])
+        hidden_states[~expand_attention_mask] = 0
+
+    attention_mask = create_bidirectional_mask(
+        config=self.config,
+        inputs_embeds=hidden_states,
+        attention_mask=attention_mask,
+    )
+
+    position_embeddings = self.pos_conv_embed(hidden_states)
+    hidden_states = hidden_states + position_embeddings.to(hidden_states.device)
+    hidden_states = self.layer_norm(hidden_states)
+    hidden_states = self.dropout(hidden_states)
+
+    synced_gpus = False
+
+    for layer in self.layers:
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
+
+        # add LayerDrop (see https://huggingface.co/papers/1909.11556 for description)
+        dropout_probability = torch.rand([])
+
+        skip_the_layer = self.training and dropout_probability < self.config.layerdrop
+        if not skip_the_layer or synced_gpus:
+            # under fsdp or deepspeed zero3 all gpus must run in sync
+            layer_outputs = layer(
+                hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
+            )
+            hidden_states = layer_outputs[0]
+
+        if skip_the_layer:
+            layer_outputs = (None, None)
+
+        if output_attentions:
+            all_self_attentions = all_self_attentions + (layer_outputs[1],)
+
+    if output_hidden_states:
+        all_hidden_states = all_hidden_states + (hidden_states,)
+
+    if not return_dict:
+        return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
+    return all_hidden_states
 
 class HubertFeatureProjection:
   def __init__(self, proj):
