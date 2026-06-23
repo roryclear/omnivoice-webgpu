@@ -248,23 +248,9 @@ class OmniVoice(PreTrainedModel):
         
         self.llm = AutoModel.from_config(self.config.llm_config)
 
-        self.audio_embeddings = nn.Embedding(
-            NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE,
-            HIDDEN_SIZE,
-        )
-        self.register_buffer(
-            "codebook_layer_offsets",
-            torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE,
-        )
-
-        self.audio_heads = nn.Linear(
-            HIDDEN_SIZE,
-            NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE,
-            bias=False,
-        )
-
-        self.normalized_audio_codebook_weights = [w / sum(AUDIO_CODEBOOK_WEIGHTS) for w in AUDIO_CODEBOOK_WEIGHTS]
-
+        self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
+        self.register_buffer("codebook_layer_offsets", torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE,)
+        self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
         self.post_init()
 
     @classmethod
@@ -324,25 +310,10 @@ class tiny_omni:
     self.device = model.device
     self.llm = model.llm
     self.codebook_layer_offsets = model.codebook_layer_offsets
-    self.audio_embeddings = model.audio_embeddings
-    self.audio_heads = model.audio_heads
-
-  @classmethod
-  def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-      logging.disable(logging.INFO)
-
-      # Resolve to local path first; download only if not already cached
-      resolved_path = _resolve_model_path(pretrained_model_name_or_path)
-      model = super().from_pretrained(resolved_path, *args, **kwargs)
-
-      audio_tokenizer_path = os.path.join(resolved_path, "audio_tokenizer")
-
-      # higgs-audio-v2-tokenizer does not support MPS
-      # (output channels > 65536)
-      model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(audio_tokenizer_path, device_map="mps")
-      model.audio_tokenizer.config.semantic_sample_rate = SAMPLING_RATE
-
-      return model
+    self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
+    self.audio_embeddings.weight = model.audio_embeddings.weight
+    self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
+    self.audio_heads.weight = model.audio_heads.weight
 
   def _prepare_embed_inputs(
       self, input_ids: torch.Tensor, audio_mask: torch.Tensor
