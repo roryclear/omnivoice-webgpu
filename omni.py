@@ -252,9 +252,9 @@ class OmniVoice(PreTrainedModel):
         self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
         self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
         self.register_buffer("codebook_layer_offsets", torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE,)
-        # todo?
-        self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(all_submodels=False)
-        
+
+        # todo, breaks without this
+        self.all_tied_weights_keys = {}
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
