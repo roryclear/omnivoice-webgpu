@@ -339,7 +339,7 @@ class tiny_omni:
       Prepares embeddings from input_ids of shape (batch_size, layers, seq_length).
       Embedding shape is (batch_size, seq_length, hidden_size).
       """
-      text_embeds = self.llm.get_input_embeddings()(input_ids[:, 0, :])
+      text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
 
       # Apply shift to audio IDs based on codebook layer
       # audio_ids: [Batch, 8, Seq]
@@ -588,7 +588,6 @@ import pickle
 
 if __name__ == "__main__":
   model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="mps:0", dtype=torch.float16)
-
   tiny_model = tiny_omni(model)
 
   torch.manual_seed(0)
