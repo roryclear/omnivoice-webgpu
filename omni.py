@@ -315,29 +315,27 @@ class tiny_llm:
     self.norm = llm.norm
 
   def __call__(
-      self,
-      attention_mask: torch.Tensor | None = None,
-      position_ids: torch.LongTensor | None = None,
-      past_key_values=None,
-      inputs_embeds: torch.FloatTensor | None = None,
-      use_cache: bool | None = None,
+    self,
+    attention_mask: torch.Tensor | None = None,
+    position_ids: torch.LongTensor | None = None,
+    past_key_values=None,
+    inputs_embeds: torch.FloatTensor | None = None,
   ):
-      past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-      position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device) + past_seen_tokens
+      position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device)
       position_ids = position_ids.unsqueeze(0)
 
       hidden_states = inputs_embeds
       position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-      for i, decoder_layer in enumerate(self.layers[: self.config.num_hidden_layers]):
-          hidden_states = decoder_layer(
-              hidden_states,
-              attention_mask=attention_mask,
-              position_embeddings=position_embeddings,
-              position_ids=position_ids,
-              past_key_values=past_key_values,
-              use_cache=use_cache
-          )
+      for decoder_layer in self.layers:
+        hidden_states = decoder_layer(
+          hidden_states,
+          attention_mask=attention_mask,
+          position_embeddings=position_embeddings,
+          position_ids=position_ids,
+          past_key_values=past_key_values,
+          use_cache=None
+        )
 
       return self.norm(hidden_states)
 
