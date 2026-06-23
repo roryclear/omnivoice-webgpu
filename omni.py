@@ -103,6 +103,22 @@ class SimpleTokenizer:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
 
+# https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
+def encode(
+    tok,
+    input_values: torch.Tensor,
+    bandwidth: float | None = None,
+) -> torch.Tensor:
+    bandwidth = tok.config.target_bandwidths[-1]
+    e_semantic_input = tok._extract_semantic_features(input_values).detach()
+    e_semantic = tok.encoder_semantic(e_semantic_input.transpose(1, 2))
+    e_acoustic = tok.acoustic_encoder(input_values)
+    embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
+    embeddings = tok.fc(embeddings.transpose(1, 2)).transpose(1, 2)
+    audio_codes = tok.quantizer.encode(embeddings, bandwidth)
+    audio_codes = audio_codes.transpose(0, 1)
+    return audio_codes
+
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 NUM_STEPS = 32
@@ -304,7 +320,7 @@ class OmniVoice(PreTrainedModel):
         ref_wav = ref_wav[:, :-clip_size] if clip_size > 0 else ref_wav
         # numpy → torch at tokenizer boundary
         ref_wav_tensor = torch.from_numpy(ref_wav).to("mps")
-        ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).audio_codes.squeeze(0)  # (C, T)
+        ref_audio_tokens = encode(self.audio_tokenizer, ref_wav_tensor.unsqueeze(0),).squeeze(0)
 
         return ref_audio_tokens
 
