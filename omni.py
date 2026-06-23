@@ -236,7 +236,6 @@ def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
     data = torchaudio.functional.resample(torch.from_numpy(data), orig_freq=sr, new_freq=sampling_rate).numpy()
     return data
 
-import inspect
 class OmniVoice(PreTrainedModel):
     _supports_flex_attn = True
     _supports_flash_attn_2 = True
@@ -421,6 +420,9 @@ class DacDecoder:
 
       return hidden_state
 
+class HiggsAudioV2TokenizerResidualVectorQuantization:
+   def __init__(self, q):
+    self.quantizers = q.quantizers
 
 class audio_tokenizer:
    def __init__(self, tok):
@@ -429,7 +431,7 @@ class audio_tokenizer:
       self.encoder_semantic = SemanticEncoder(tok.encoder_semantic)
       self.acoustic_encoder = DacEncoder(tok.acoustic_encoder)
       self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
-      self.quantizer = tok.quantizer
+      self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization(tok.quantizer)
       self.fc = nn.Linear(1024, 1024)
       self.fc.weight = tok.fc.weight
       self.fc.bias = tok.fc.bias
