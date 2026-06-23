@@ -793,10 +793,19 @@ class omni:
 
 import soundfile as sf
 import pickle
+from tinygrad.helpers import fetch
+from tinygrad.nn.state import safe_load
+
+
+def to_torch(x): return torch.Tensor(x.numpy())
 
 if __name__ == "__main__":
   model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="mps:0", dtype=torch.float16)
   model = omni(model)
+
+  #weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
+  #for w in weights.keys(): print(w, type(weights[w]))
+
 
   torch.manual_seed(0)
   audio = model.generate(
