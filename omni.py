@@ -15,7 +15,6 @@ import torch.nn.functional as F
 
 from transformers import (
     AutoModel,
-    AutoTokenizer,
     HiggsAudioV2TokenizerModel,
     PretrainedConfig,
     PreTrainedModel,
@@ -211,8 +210,6 @@ class OmniVoice(PreTrainedModel):
         resolved_path = _resolve_model_path(pretrained_model_name_or_path)
         model = super().from_pretrained(resolved_path, *args, **kwargs)
 
-
-        model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path)
         audio_tokenizer_path = os.path.join(resolved_path, "audio_tokenizer")
 
         # higgs-audio-v2-tokenizer does not support MPS
@@ -340,9 +337,7 @@ class OmniVoice(PreTrainedModel):
         # Build text tokens
         full_text = ref_text.strip() + " " + text.strip()
         wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
-        text_tokens = (
-            self.text_tokenizer(wrapped_text, return_tensors="pt").input_ids.repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
-        ).to(self.device)  # [1, C, N2]
+        text_tokens = (torch.tensor([tok.encode(wrapped_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)).to(self.device)  # [1, C, N2]
 
         # Target: all MASK
         target_audio_tokens = torch.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=torch.long, device=self.device)
