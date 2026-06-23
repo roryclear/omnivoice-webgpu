@@ -114,16 +114,24 @@ def encode(tok, input_values: torch.Tensor) -> torch.Tensor:
     audio_codes = audio_codes.transpose(0, 1)
     return audio_codes
    
-def quantizer_encode(encoder, embeddings: torch.Tensor) -> torch.Tensor:
+def quantizer_encode(quantizer, embeddings: torch.Tensor) -> torch.Tensor:
     residual = embeddings
     all_indices = []
-    for quantizer in encoder.quantizers:
+    for q in quantizer.quantizers:
         hidden_states = residual.permute(0, 2, 1)
-        hidden_states = quantizer.project_in(hidden_states)
-        indices = quantizer.codebook.encode(hidden_states)
+        hidden_states = q.project_in(hidden_states)
 
-        quantized = quantizer.codebook.decode(indices)
-        quantized = quantizer.project_out(quantized)
+        shape = hidden_states.shape
+        hidden_states = hidden_states.reshape((-1, shape[-1]))
+
+        embed = q.codebook.embed.t()
+        scaled_states = hidden_states.pow(2).sum(1, keepdim=True)
+        dist = -(scaled_states - 2 * hidden_states @ embed + embed.pow(2).sum(0, keepdim=True))
+        indices = dist.max(dim=-1).indices
+
+        indices = indices.view(*shape[:-1])
+        quantized = F.embedding(indices, q.codebook.embed)
+        quantized = q.project_out(quantized)
         quantized = quantized.permute(0, 2, 1)
 
         residual = residual - quantized
@@ -139,14 +147,10 @@ def semantic_encode(encoder, hidden_state: torch.Tensor) -> torch.Tensor:
 
 def acoustic_encode(encoder, hidden_state):
     hidden_state = encoder.conv1(hidden_state)
-
     for module in encoder.block:
         hidden_state = module(hidden_state)
-
     hidden_state = encoder.snake1(hidden_state)
-    hidden_state = encoder.conv2(hidden_state)
-
-    return hidden_state
+    return encoder.conv2(hidden_state)
 
 def _extract_semantic_features(tok, input_values: torch.FloatTensor) -> torch.FloatTensor:
     if tok.config.sample_rate != tok.config.semantic_sample_rate: # todo change earlier!
