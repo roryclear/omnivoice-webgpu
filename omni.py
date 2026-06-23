@@ -389,8 +389,12 @@ class HubertEncoder:
 
 class HubertFeatureProjection:
   def __init__(self, proj):
-    self.layer_norm = proj.layer_norm
-    self.projection = proj.projection
+    self.layer_norm = nn.LayerNorm((512,), eps=1e-05, elementwise_affine=True, bias=True)
+    self.layer_norm.weight = proj.layer_norm.weight
+    self.layer_norm.bias = proj.layer_norm.bias
+    self.projection = nn.Linear(in_features=512, out_features=768, bias=True)
+    self.projection.weight = proj.projection.weight
+    self.projection.bias = proj.projection.bias
 
   def __call__(self, hidden_states):
       hidden_states = self.layer_norm(hidden_states)
@@ -398,9 +402,10 @@ class HubertFeatureProjection:
 
 class HubertGroupNormConvLayer:
   def __init__(self, layer):
-    self.conv = layer.conv
+    self.conv = nn.Conv1d(1, 512, kernel_size=(10,), stride=(5,), bias=False)
+    self.conv.weight = layer.conv.weight
+    self.activation = nn.GELU()
     self.layer_norm = layer.layer_norm
-    self.activation = layer.activation
   
   def __call__(self, hidden_states):
     hidden_states = self.conv(hidden_states)
