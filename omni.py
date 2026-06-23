@@ -434,9 +434,24 @@ class HubertFeatureEncoder:
       hidden_states = conv_layer(hidden_states)
     return hidden_states
 
+class HiggsAudioV2TokenizerResidualUnit:
+  def __init__(self, unit):
+    self.activation = nn.ELU(alpha=1.0)
+    self.conv1 = nn.Conv1d(768, 768, kernel_size=(3,), stride=(1,), padding=(1,), bias=False)
+    self.conv1.weight = unit.conv1.weight
+    self.conv2 = nn.Conv1d(768, 768, kernel_size=(1,), stride=(1,), bias=False)
+    self.conv2.weight = unit.conv2.weight
+
+  def __call__(self, hidden_state: torch.Tensor) -> torch.Tensor:
+    output_tensor = self.activation(hidden_state)
+    output_tensor = self.conv1(output_tensor)
+    output_tensor = self.activation(output_tensor)
+    output_tensor = self.conv2(output_tensor)
+    return hidden_state + output_tensor
+
 class HiggsAudioV2TokenizerSemanticEncoderBlock:
   def __init__(self, block):
-    self.res_units = block.res_units
+    self.res_units = [HiggsAudioV2TokenizerResidualUnit(block.res_units[0]), HiggsAudioV2TokenizerResidualUnit(block.res_units[1])]
     self.conv = nn.Conv1d(768, 768, kernel_size=(3,), stride=(1,), padding=(1,))
     self.conv.weight = block.conv.weight
     self.conv.bias = block.conv.bias
