@@ -397,14 +397,38 @@ class tiny_DacEncoder:
 
     return hidden_state
   
+class tiny_DacDecoder:
+  def __init__(self, dec):
+    self.conv1 = nn.Conv1d(256, 1024, kernel_size=(7,), stride=(1,), padding=(3,))
+    self.conv1.weight = dec.conv1.weight
+    self.conv1.bias = dec.conv1.bias
+    self.conv2 = nn.Conv1d(32, 1, kernel_size=(7,), stride=(1,), padding=(3,))
+    self.conv2.weight = dec.conv2.weight
+    self.conv2.bias = dec.conv2.bias
+    self.block = dec.block
+    self.snake1 = dec.snake1
+    self.tanh = dec.tanh
   
+  def __call__(self, hidden_state):
+      hidden_state = self.conv1(hidden_state)
+
+      for layer in self.block:
+          hidden_state = layer(hidden_state)
+
+      hidden_state = self.snake1(hidden_state)
+      hidden_state = self.conv2(hidden_state)
+      hidden_state = self.tanh(hidden_state)
+
+      return hidden_state
+
+
 class tiny_audio_tokenizer:
    def __init__(self, tok):
       self.config = tok.config
       self.semantic_model = tiny_HubertModel(tok.semantic_model)
       self.encoder_semantic = tiny_SemanticEncoder(tok.encoder_semantic)
       self.acoustic_encoder = tiny_DacEncoder(tok.acoustic_encoder)
-      self.acoustic_decoder = tok.acoustic_decoder
+      self.acoustic_decoder = tiny_DacDecoder(tok.acoustic_decoder)
       self.quantizer = tok.quantizer
       self.fc = nn.Linear(1024, 1024)
       self.fc.weight = tok.fc.weight
