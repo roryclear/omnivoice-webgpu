@@ -111,13 +111,30 @@ def encode(
 ) -> torch.Tensor:
     bandwidth = tok.config.target_bandwidths[-1]
     e_semantic_input = _extract_semantic_features(tok, input_values).detach()
-    e_semantic = tok.encoder_semantic(e_semantic_input.transpose(1, 2))
-    e_acoustic = tok.acoustic_encoder(input_values)
+    e_semantic = semantic_encode(tok.encoder_semantic, e_semantic_input.transpose(1, 2))
+    e_acoustic = acoustic_encode(tok.acoustic_encoder, input_values)
     embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
     embeddings = tok.fc(embeddings.transpose(1, 2)).transpose(1, 2)
     audio_codes = tok.quantizer.encode(embeddings, bandwidth)
     audio_codes = audio_codes.transpose(0, 1)
     return audio_codes
+
+def semantic_encode(encoder, hidden_state: torch.Tensor) -> torch.Tensor:
+    hidden_state = encoder.conv(hidden_state)
+    for block in encoder.conv_blocks:
+        hidden_state = block(hidden_state)
+    return hidden_state
+
+def acoustic_encode(encoder, hidden_state):
+    hidden_state = encoder.conv1(hidden_state)
+
+    for module in encoder.block:
+        hidden_state = module(hidden_state)
+
+    hidden_state = encoder.snake1(hidden_state)
+    hidden_state = encoder.conv2(hidden_state)
+
+    return hidden_state
 
 def _extract_semantic_features(tok, input_values: torch.FloatTensor) -> torch.FloatTensor:
     if tok.config.sample_rate != tok.config.semantic_sample_rate: # todo change earlier!
