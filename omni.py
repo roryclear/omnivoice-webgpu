@@ -19,6 +19,8 @@ from transformers import (
     PretrainedConfig,
     PreTrainedModel,
 )
+from transformers.masking_utils import create_causal_mask
+
 from transformers.models.auto import CONFIG_MAPPING, AutoConfig
 
 from tinygrad.helpers import partition
@@ -306,6 +308,72 @@ _NONVERBAL_PATTERN = re.compile(
     r"surprise-yo|dissatisfaction-hnn)\]"
 )
 
+class tiny_llm:
+  def __init__(self, llm):
+    self.embed_tokens = llm.embed_tokens
+    self.config = llm.config
+    self.has_sliding_layers = llm.has_sliding_layers
+    self.rotary_emb = llm.rotary_emb
+    self.layers = llm.layers
+    self.norm = llm.norm
+
+  def __call__(
+      self,
+      input_ids: torch.LongTensor | None = None,
+      attention_mask: torch.Tensor | None = None,
+      position_ids: torch.LongTensor | None = None,
+      past_key_values=None,
+      inputs_embeds: torch.FloatTensor | None = None,
+      use_cache: bool | None = None,
+  ):
+      if (input_ids is None) ^ (inputs_embeds is not None):
+          raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+
+      if inputs_embeds is None:
+          inputs_embeds = self.embed_tokens(input_ids)
+
+      if use_cache and past_key_values is None:
+          past_key_values = DynamicCache(config=self.config)
+
+      if position_ids is None:
+          past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+          position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device) + past_seen_tokens
+          position_ids = position_ids.unsqueeze(0)
+
+      # It may already have been prepared by e.g. `generate`
+      if not isinstance(causal_mask_mapping := attention_mask, dict):
+          # Prepare mask arguments
+          mask_kwargs = {
+              "config": self.config,
+              "inputs_embeds": inputs_embeds,
+              "attention_mask": attention_mask,
+              "past_key_values": past_key_values,
+              "position_ids": position_ids,
+          }
+          # Create the masks
+          causal_mask_mapping = {
+              "full_attention": create_causal_mask(**mask_kwargs),
+          }
+          # The sliding window alternating layers are not always activated depending on the config
+          if self.has_sliding_layers:
+              causal_mask_mapping["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs)
+
+      hidden_states = inputs_embeds
+      position_embeddings = self.rotary_emb(hidden_states, position_ids)
+
+      for i, decoder_layer in enumerate(self.layers[: self.config.num_hidden_layers]):
+          hidden_states = decoder_layer(
+              hidden_states,
+              attention_mask=causal_mask_mapping[self.config.layer_types[i]],
+              position_embeddings=position_embeddings,
+              position_ids=position_ids,
+              past_key_values=past_key_values,
+              use_cache=use_cache
+          )
+
+      hidden_states = self.norm(hidden_states)
+      return hidden_states
+
 class tiny_audio_tokenizer:
    def __init__(self, tok):
       self.config = tok.config
@@ -325,7 +393,7 @@ class tiny_omni:
   def __init__(self, model):
     self.audio_tokenizer = tiny_audio_tokenizer(model.audio_tokenizer)
     self.device = model.device
-    self.llm = model.llm
+    self.llm = tiny_llm(model.llm)
     self.codebook_layer_offsets = (torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE).to(self.device)
     self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
     self.audio_embeddings.weight = model.audio_embeddings.weight
@@ -364,12 +432,11 @@ class tiny_omni:
       inputs_embeds = self._prepare_embed_inputs(input_ids, audio_mask)
       
 
-      llm_outputs = self.llm(
+      hidden_states = self.llm(
           inputs_embeds=inputs_embeds,
           attention_mask=attention_mask,
           position_ids=position_ids,
       )
-      hidden_states = llm_outputs[0]
 
       # Shape: [B, S, C * Vocab]
       batch_size, seq_len, _ = hidden_states.shape
