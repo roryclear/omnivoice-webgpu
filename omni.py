@@ -363,12 +363,23 @@ class tiny_HubertModel:
 
       return encoder_outputs.hidden_states
 
+class tiny_SemanticEncoder:
+  def __init__(self, enc):
+     self.conv = nn.Conv1d(768, 768, kernel_size=(3,), stride=(1,), padding=(1,), bias=False)
+     self.conv.weight = enc.conv.weight
+     self.conv_blocks = enc.conv_blocks
+   
+  def __call__(self, hidden_state: torch.Tensor) -> torch.Tensor:
+    hidden_state = self.conv(hidden_state)
+    for block in self.conv_blocks:
+        hidden_state = block(hidden_state)
+    return hidden_state
 
 class tiny_audio_tokenizer:
    def __init__(self, tok):
       self.config = tok.config
       self.semantic_model = tiny_HubertModel(tok.semantic_model)
-      self.encoder_semantic = tok.encoder_semantic
+      self.encoder_semantic = tiny_SemanticEncoder(tok.encoder_semantic)
       self.acoustic_encoder = tok.acoustic_encoder
       self.acoustic_decoder = tok.acoustic_decoder
       self.quantizer = tok.quantizer
