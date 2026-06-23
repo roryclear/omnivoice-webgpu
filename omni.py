@@ -341,7 +341,7 @@ class HubertModel:
   def __init__(self, model):
     self.config = model.config
     self.feature_extractor = HubertFeatureEncoder(model.feature_extractor)
-    self.feature_projection = model.feature_projection
+    self.feature_projection = HubertFeatureProjection(model.feature_projection)
     self._mask_hidden_states = model._mask_hidden_states
     self.encoder = model.encoder
 
@@ -361,6 +361,19 @@ class HubertModel:
       )
 
       return encoder_outputs.hidden_states
+
+class HubertFeatureProjection:
+  def __init__(self, proj):
+    self.feat_proj_layer_norm = proj.feat_proj_layer_norm
+    self.layer_norm = proj.layer_norm
+    self.projection = proj.projection
+    self.dropout = proj.dropout
+
+  def __call__(self, hidden_states):
+      if self.feat_proj_layer_norm: hidden_states = self.layer_norm(hidden_states)
+      hidden_states = self.projection(hidden_states)
+      hidden_states = self.dropout(hidden_states)
+      return hidden_states
 
 class HubertFeatureEncoder:
   def __init__(self, enc):
