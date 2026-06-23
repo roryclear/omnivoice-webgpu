@@ -414,8 +414,9 @@ class HubertGroupNormConvLayer:
 
 class HubertNoLayerNormConvLayer:
   def __init__(self, layer):
-    self.activation = layer.activation
-    self.conv = layer.conv
+    self.activation = nn.GELU()
+    self.conv = nn.Conv1d(512, 512, kernel_size=(3,), stride=(2,), bias=False)
+    self.conv.weight = layer.conv.weight
   
   def __call__(self, hidden_states):
     hidden_states = self.conv(hidden_states)
