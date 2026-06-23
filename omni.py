@@ -380,9 +380,10 @@ class OmniVoice(PreTrainedModel):
         self,
         tokens: Union[torch.Tensor, List[torch.Tensor]],
     ) -> np.ndarray:
-        chunk_audios = [self.audio_tokenizer.decode(t.to("mps").unsqueeze(0)).audio_values[0].cpu().numpy() for t in tokens]
+        chunk_audios = [decode(self.audio_tokenizer, t.to("mps").unsqueeze(0))[0].cpu().numpy() for t in tokens]
         audio_waveform = np.concatenate(chunk_audios, axis=-1)
         return audio_waveform.squeeze(0)
+        
 
     def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
         ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
@@ -536,7 +537,29 @@ class OmniVoice(PreTrainedModel):
         confidence_scores = log_probs.max(dim=-1)[0]
 
         return pred_tokens, confidence_scores
-    
+
+def decode(decoder, audio_codes: torch.Tensor,):
+    audio_codes = audio_codes.transpose(0, 1)
+    quantized_out = torch.tensor(0.0)
+    for i, indices in enumerate(audio_codes):
+        quantizer = decoder.quantizer.quantizers[i]
+        quantized = F.embedding(indices, quantizer.codebook.embed)
+        quantized = quantizer.project_out(quantized)
+        quantized = quantized.permute(0, 2, 1)
+        quantized_out = quantized_out + quantized
+    quantized = quantized_out
+    quantized_acoustic = decoder.fc2(quantized.transpose(1, 2)).transpose(1, 2)
+    hidden_state = decoder.acoustic_decoder.conv1(quantized_acoustic)
+
+    for layer in decoder.acoustic_decoder.block:
+        hidden_state = layer(hidden_state)
+
+    hidden_state = decoder.acoustic_decoder.snake1(hidden_state)
+    hidden_state = decoder.acoustic_decoder.conv2(hidden_state)
+    hidden_state = decoder.acoustic_decoder.tanh(hidden_state)
+
+    return hidden_state
+
 def _gumbel_sample(logits: torch.Tensor, temperature: float) -> torch.Tensor:
     scaled_logits = logits / temperature
     u = torch.rand_like(scaled_logits)
