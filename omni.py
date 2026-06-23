@@ -389,16 +389,12 @@ class HubertEncoder:
 
 class HubertFeatureProjection:
   def __init__(self, proj):
-    self.feat_proj_layer_norm = proj.feat_proj_layer_norm
     self.layer_norm = proj.layer_norm
     self.projection = proj.projection
-    self.dropout = proj.dropout
 
   def __call__(self, hidden_states):
-      if self.feat_proj_layer_norm: hidden_states = self.layer_norm(hidden_states)
-      hidden_states = self.projection(hidden_states)
-      hidden_states = self.dropout(hidden_states)
-      return hidden_states
+      hidden_states = self.layer_norm(hidden_states)
+      return self.projection(hidden_states)
 
 class HubertFeatureEncoder:
   def __init__(self, enc):
