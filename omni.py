@@ -305,7 +305,7 @@ _NONVERBAL_PATTERN = re.compile(
     r"surprise-yo|dissatisfaction-hnn)\]"
 )
 
-class tiny_llm:
+class llm:
   def __init__(self, llm):
     self.embed_tokens = llm.embed_tokens
     self.config = llm.config
@@ -338,7 +338,7 @@ class tiny_llm:
 
       return self.norm(hidden_states)
 
-class tiny_HubertModel:
+class HubertModel:
   def __init__(self, model):
     self.config = model.config
     self.feature_extractor = model.feature_extractor
@@ -363,7 +363,7 @@ class tiny_HubertModel:
 
       return encoder_outputs.hidden_states
 
-class tiny_SemanticEncoder:
+class SemanticEncoder:
   def __init__(self, enc):
      self.conv = nn.Conv1d(768, 768, kernel_size=(3,), stride=(1,), padding=(1,), bias=False)
      self.conv.weight = enc.conv.weight
@@ -375,7 +375,7 @@ class tiny_SemanticEncoder:
         hidden_state = block(hidden_state)
     return hidden_state
 
-class tiny_DacEncoder:
+class DacEncoder:
   def __init__(self, enc):
     self.conv1 = nn.Conv1d(1, 64, kernel_size=(7,), stride=(1,), padding=(3,))
     self.conv1.weight = enc.conv1.weight
@@ -397,7 +397,7 @@ class tiny_DacEncoder:
 
     return hidden_state
   
-class tiny_DacDecoder:
+class DacDecoder:
   def __init__(self, dec):
     self.conv1 = nn.Conv1d(256, 1024, kernel_size=(7,), stride=(1,), padding=(3,))
     self.conv1.weight = dec.conv1.weight
@@ -422,13 +422,13 @@ class tiny_DacDecoder:
       return hidden_state
 
 
-class tiny_audio_tokenizer:
+class audio_tokenizer:
    def __init__(self, tok):
       self.config = tok.config
-      self.semantic_model = tiny_HubertModel(tok.semantic_model)
-      self.encoder_semantic = tiny_SemanticEncoder(tok.encoder_semantic)
-      self.acoustic_encoder = tiny_DacEncoder(tok.acoustic_encoder)
-      self.acoustic_decoder = tiny_DacDecoder(tok.acoustic_decoder)
+      self.semantic_model = HubertModel(tok.semantic_model)
+      self.encoder_semantic = SemanticEncoder(tok.encoder_semantic)
+      self.acoustic_encoder = DacEncoder(tok.acoustic_encoder)
+      self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
       self.quantizer = tok.quantizer
       self.fc = nn.Linear(1024, 1024)
       self.fc.weight = tok.fc.weight
@@ -437,11 +437,11 @@ class tiny_audio_tokenizer:
       self.fc2.weight = tok.fc2.weight
       self.fc2.bias = tok.fc2.bias
 
-class tiny_omni:
+class omni:
   def __init__(self, model):
-    self.audio_tokenizer = tiny_audio_tokenizer(model.audio_tokenizer)
+    self.audio_tokenizer = audio_tokenizer(model.audio_tokenizer)
     self.device = model.device
-    self.llm = tiny_llm(model.llm)
+    self.llm = llm(model.llm)
     self.codebook_layer_offsets = (torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE).to(self.device)
     self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
     self.audio_embeddings.weight = model.audio_embeddings.weight
@@ -703,10 +703,10 @@ import pickle
 
 if __name__ == "__main__":
   model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="mps:0", dtype=torch.float16)
-  tiny_model = tiny_omni(model)
+  model = omni(model)
 
   torch.manual_seed(0)
-  audio = tiny_model.generate(
+  audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
@@ -717,7 +717,7 @@ if __name__ == "__main__":
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
   '''
   torch.manual_seed(0)
-  audio = tiny_model.generate(
+  audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black. That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
@@ -729,7 +729,7 @@ if __name__ == "__main__":
   '''
 
   torch.manual_seed(0)
-  audio = tiny_model.generate(
+  audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
