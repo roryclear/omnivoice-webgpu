@@ -398,7 +398,9 @@ class HubertFeatureProjection:
 
 class HubertFeatureEncoder:
   def __init__(self, enc):
-    self.conv_layers = enc.conv_layers
+    self.conv_layers = []
+    for i in range(7):
+       self.conv_layers.append(enc.conv_layers[i])
   
   def __call__(self, input_values):
     hidden_states = input_values[:, None]
