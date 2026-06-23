@@ -342,7 +342,6 @@ class HubertModel:
     self.config = model.config
     self.feature_extractor = HubertFeatureEncoder(model.feature_extractor)
     self.feature_projection = HubertFeatureProjection(model.feature_projection)
-    self._mask_hidden_states = model._mask_hidden_states
     self.encoder = model.encoder
 
   def __call__(self, input_values: torch.Tensor | None,):
@@ -350,7 +349,6 @@ class HubertModel:
       extract_features = extract_features.transpose(1, 2)
 
       hidden_states = self.feature_projection(extract_features)
-      hidden_states = self._mask_hidden_states(hidden_states, mask_time_indices=None)
 
       encoder_outputs = self.encoder(
           hidden_states,
