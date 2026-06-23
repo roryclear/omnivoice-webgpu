@@ -153,11 +153,6 @@ def acoustic_encode(encoder, hidden_state):
     return encoder.conv2(hidden_state)
 
 def _extract_semantic_features(tok, input_values: torch.FloatTensor) -> torch.FloatTensor:
-    if tok.config.sample_rate != tok.config.semantic_sample_rate: # todo change earlier!
-        input_values = torchaudio.functional.resample(
-            input_values, tok.config.sample_rate, tok.config.semantic_sample_rate
-        )
-
     input_values = input_values[:, 0, :]
     # TODO: there is a diff here with original codebase https://github.com/boson-ai/higgs-audio/blob/f644b62b855ba2b938896436221e01efadcc76ca/boson_multimodal/audio_processing/higgs_audio_v2_tokenizer.py#L173-L174
     # input_values = F.pad(input_values, (self.pad, self.pad))
@@ -283,6 +278,7 @@ class OmniVoice(PreTrainedModel):
         # higgs-audio-v2-tokenizer does not support MPS
         # (output channels > 65536)
         model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(audio_tokenizer_path, device_map="mps")
+        model.audio_tokenizer.config.semantic_sample_rate = SAMPLING_RATE
 
         return model
 
