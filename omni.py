@@ -237,6 +237,7 @@ def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
     data = torchaudio.functional.resample(torch.from_numpy(data), orig_freq=sr, new_freq=sampling_rate).numpy()
     return data
 
+import inspect
 class OmniVoice(PreTrainedModel):
     _supports_flex_attn = True
     _supports_flash_attn_2 = True
@@ -249,9 +250,11 @@ class OmniVoice(PreTrainedModel):
         self.llm = AutoModel.from_config(self.config.llm_config)
 
         self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
-        self.register_buffer("codebook_layer_offsets", torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE,)
         self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
-        self.post_init()
+        self.register_buffer("codebook_layer_offsets", torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE,)
+        # todo?
+        self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(all_submodels=False)
+        
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
