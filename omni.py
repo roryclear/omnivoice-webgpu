@@ -396,11 +396,31 @@ class HubertFeatureProjection:
       hidden_states = self.layer_norm(hidden_states)
       return self.projection(hidden_states)
 
+class HubertGroupNormConvLayer:
+  def __init__(self, layer):
+    self.conv = layer.conv
+    self.layer_norm = layer.layer_norm
+    self.activation = layer.activation
+  
+  def __call__(self, hidden_states):
+    hidden_states = self.conv(hidden_states)
+    hidden_states = self.layer_norm(hidden_states)
+    return self.activation(hidden_states)
+
+class HubertNoLayerNormConvLayer:
+  def __init__(self, layer):
+    self.activation = layer.activation
+    self.conv = layer.conv
+  
+  def __call__(self, hidden_states):
+    hidden_states = self.conv(hidden_states)
+    return self.activation(hidden_states)
+
 class HubertFeatureEncoder:
   def __init__(self, enc):
-    self.conv_layers = []
-    for i in range(7):
-       self.conv_layers.append(enc.conv_layers[i])
+    self.conv_layers = [HubertGroupNormConvLayer(enc.conv_layers[0])]
+    for i in range(1,7):
+      self.conv_layers.append(HubertNoLayerNormConvLayer(enc.conv_layers[i]))
   
   def __call__(self, input_values):
     hidden_states = input_values[:, None]
