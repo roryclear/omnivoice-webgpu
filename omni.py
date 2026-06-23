@@ -110,7 +110,7 @@ def encode(
     bandwidth: float | None = None,
 ) -> torch.Tensor:
     bandwidth = tok.config.target_bandwidths[-1]
-    e_semantic_input = tok._extract_semantic_features(input_values).detach()
+    e_semantic_input = _extract_semantic_features(tok, input_values).detach()
     e_semantic = tok.encoder_semantic(e_semantic_input.transpose(1, 2))
     e_acoustic = tok.acoustic_encoder(input_values)
     embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
@@ -118,6 +118,25 @@ def encode(
     audio_codes = tok.quantizer.encode(embeddings, bandwidth)
     audio_codes = audio_codes.transpose(0, 1)
     return audio_codes
+
+def _extract_semantic_features(tok, input_values: torch.FloatTensor) -> torch.FloatTensor:
+    if tok.config.sample_rate != tok.config.semantic_sample_rate: # todo change earlier!
+        input_values = torchaudio.functional.resample(
+            input_values, tok.config.sample_rate, tok.config.semantic_sample_rate
+        )
+
+    input_values = input_values[:, 0, :]
+    # TODO: there is a diff here with original codebase https://github.com/boson-ai/higgs-audio/blob/f644b62b855ba2b938896436221e01efadcc76ca/boson_multimodal/audio_processing/higgs_audio_v2_tokenizer.py#L173-L174
+    # input_values = F.pad(input_values, (self.pad, self.pad))
+    input_values = F.pad(input_values, (160, 160))
+    with torch.no_grad():
+        outputs = tok.semantic_model(input_values, output_hidden_states=True)
+        hidden_states = outputs.hidden_states
+
+    stacked = torch.stack([h.to(input_values.device) for h in hidden_states], dim=1)
+    semantic_features = stacked.mean(dim=1)
+    semantic_features = semantic_features[:, :: tok.config.semantic_downsample_factor, :]
+    return semantic_features
 
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
