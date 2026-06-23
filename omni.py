@@ -118,8 +118,14 @@ def quantizer_encode(encoder, embeddings: torch.Tensor) -> torch.Tensor:
     residual = embeddings
     all_indices = []
     for quantizer in encoder.quantizers:
-        indices = quantizer.encode(residual) # todo
-        quantized = quantizer.decode(indices)
+        hidden_states = residual.permute(0, 2, 1)
+        hidden_states = quantizer.project_in(hidden_states)
+        indices = quantizer.codebook.encode(hidden_states)
+
+        quantized = quantizer.codebook.decode(indices)
+        quantized = quantizer.project_out(quantized)
+        quantized = quantized.permute(0, 2, 1)
+
         residual = residual - quantized
         all_indices.append(indices)
     out_indices = torch.stack(all_indices)
