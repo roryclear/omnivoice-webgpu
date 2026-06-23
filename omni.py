@@ -318,7 +318,6 @@ class tiny_llm:
 
   def __call__(
       self,
-      input_ids: torch.LongTensor | None = None,
       attention_mask: torch.Tensor | None = None,
       position_ids: torch.LongTensor | None = None,
       past_key_values=None,
@@ -329,17 +328,8 @@ class tiny_llm:
       position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device) + past_seen_tokens
       position_ids = position_ids.unsqueeze(0)
 
-      mask_kwargs = {
-          "config": self.config,
-          "inputs_embeds": inputs_embeds,
-          "attention_mask": attention_mask,
-          "past_key_values": past_key_values,
-          "position_ids": position_ids,
-      }
-      # Create the masks
-      causal_mask_mapping = {
-          "full_attention": create_causal_mask(**mask_kwargs),
-      }
+      mask = create_causal_mask(config=self.config, inputs_embeds=inputs_embeds, attention_mask=attention_mask
+        ,past_key_values=past_key_values, position_ids=position_ids)
 
       hidden_states = inputs_embeds
       position_embeddings = self.rotary_emb(hidden_states, position_ids)
@@ -347,7 +337,7 @@ class tiny_llm:
       for i, decoder_layer in enumerate(self.layers[: self.config.num_hidden_layers]):
           hidden_states = decoder_layer(
               hidden_states,
-              attention_mask=causal_mask_mapping[self.config.layer_types[i]],
+              attention_mask=mask,
               position_embeddings=position_embeddings,
               position_ids=position_ids,
               past_key_values=past_key_values,
