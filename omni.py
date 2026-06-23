@@ -340,7 +340,7 @@ class llm:
 class HubertModel:
   def __init__(self, model):
     self.config = model.config
-    self.feature_extractor = model.feature_extractor
+    self.feature_extractor = HubertFeatureEncoder(model.feature_extractor)
     self.feature_projection = model.feature_projection
     self._mask_hidden_states = model._mask_hidden_states
     self.encoder = model.encoder
@@ -361,6 +361,16 @@ class HubertModel:
       )
 
       return encoder_outputs.hidden_states
+
+class HubertFeatureEncoder:
+  def __init__(self, enc):
+    self.conv_layers = enc.conv_layers
+  
+  def __call__(self, input_values):
+    hidden_states = input_values[:, None]
+    for conv_layer in self.conv_layers:
+      hidden_states = conv_layer(hidden_states)
+    return hidden_states
 
 class SemanticEncoder:
   def __init__(self, enc):
