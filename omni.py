@@ -354,7 +354,6 @@ class HubertModel:
 
       return encoder_outputs
 
-from transformers.masking_utils import create_bidirectional_mask
 class HubertEncoder:
   def __init__(self, enc):
     self.config = enc.config
@@ -365,12 +364,6 @@ class HubertEncoder:
     self.layers = enc.layers
   
   def __call__(self, hidden_states: torch.tensor):
-    attention_mask = create_bidirectional_mask(
-        config=self.config,
-        inputs_embeds=hidden_states,
-        attention_mask=None,
-    )
-
     position_embeddings = self.pos_conv_embed(hidden_states)
     hidden_states = hidden_states + position_embeddings.to(hidden_states.device)
     hidden_states = self.layer_norm(hidden_states)
@@ -379,10 +372,8 @@ class HubertEncoder:
     all_hidden_states = ()
     for layer in self.layers:
         all_hidden_states = all_hidden_states + (hidden_states,)
-
-        layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=False)
+        layer_outputs = layer(hidden_states, attention_mask=None, output_attentions=False)
         hidden_states = layer_outputs[0]
-
     all_hidden_states = all_hidden_states + (hidden_states,)
 
     return all_hidden_states
