@@ -312,7 +312,6 @@ class tiny_llm:
   def __init__(self, llm):
     self.embed_tokens = llm.embed_tokens
     self.config = llm.config
-    self.has_sliding_layers = llm.has_sliding_layers
     self.rotary_emb = llm.rotary_emb
     self.layers = llm.layers
     self.norm = llm.norm
@@ -326,37 +325,21 @@ class tiny_llm:
       inputs_embeds: torch.FloatTensor | None = None,
       use_cache: bool | None = None,
   ):
-      if (input_ids is None) ^ (inputs_embeds is not None):
-          raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+      past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+      position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device) + past_seen_tokens
+      position_ids = position_ids.unsqueeze(0)
 
-      if inputs_embeds is None:
-          inputs_embeds = self.embed_tokens(input_ids)
-
-      if use_cache and past_key_values is None:
-          past_key_values = DynamicCache(config=self.config)
-
-      if position_ids is None:
-          past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-          position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device) + past_seen_tokens
-          position_ids = position_ids.unsqueeze(0)
-
-      # It may already have been prepared by e.g. `generate`
-      if not isinstance(causal_mask_mapping := attention_mask, dict):
-          # Prepare mask arguments
-          mask_kwargs = {
-              "config": self.config,
-              "inputs_embeds": inputs_embeds,
-              "attention_mask": attention_mask,
-              "past_key_values": past_key_values,
-              "position_ids": position_ids,
-          }
-          # Create the masks
-          causal_mask_mapping = {
-              "full_attention": create_causal_mask(**mask_kwargs),
-          }
-          # The sliding window alternating layers are not always activated depending on the config
-          if self.has_sliding_layers:
-              causal_mask_mapping["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs)
+      mask_kwargs = {
+          "config": self.config,
+          "inputs_embeds": inputs_embeds,
+          "attention_mask": attention_mask,
+          "past_key_values": past_key_values,
+          "position_ids": position_ids,
+      }
+      # Create the masks
+      causal_mask_mapping = {
+          "full_attention": create_causal_mask(**mask_kwargs),
+      }
 
       hidden_states = inputs_embeds
       position_embeddings = self.rotary_emb(hidden_states, position_ids)
@@ -371,8 +354,7 @@ class tiny_llm:
               use_cache=use_cache
           )
 
-      hidden_states = self.norm(hidden_states)
-      return hidden_states
+      return self.norm(hidden_states)
 
 class tiny_audio_tokenizer:
    def __init__(self, tok):
