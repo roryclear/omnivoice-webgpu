@@ -330,25 +330,16 @@ def rotate_half(x):
     return tiny_Tensor.cat(-x2, x1, dim=-1)
 
 class Qwen3Attention:
-  def __init__(self, atn):
+  def __init__(self):
     self.head_dim = 128
     self.q_norm = Qwen3RMSNorm()
     self.k_norm = Qwen3RMSNorm()
     self.q_proj = tiny_nn.Linear(in_features=1024, out_features=2048, bias=False)
-    self.q_proj.weight = to_tiny(atn.q_proj.weight)
     self.k_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
-    self.k_proj.weight = to_tiny(atn.k_proj.weight)
     self.v_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
-    self.v_proj.weight = to_tiny(atn.v_proj.weight)
     self.o_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
-    self.o_proj.weight = to_tiny(atn.o_proj.weight)
-    self.config = atn.config
     self.scaling = 0.08838834764831845
-    self.sliding_window = atn.sliding_window
-    self.layer_idx = atn.layer_idx
-    self.is_causal = atn.is_causal
-    self.layer_type = atn.layer_type
-    self.num_key_value_groups = atn.num_key_value_groups
+    self.num_key_value_groups = 2
 
   def __call__(self, hidden_states, position_embeddings, attention_mask):
       hidden_states = to_tiny(hidden_states)
@@ -417,7 +408,7 @@ class Qwen3MLP():
 class Qwen3DecoderLayer:
   def __init__(self, layer):
     self.input_layernorm = Qwen3RMSNorm()
-    self.self_attn = Qwen3Attention(layer.self_attn)
+    self.self_attn = Qwen3Attention()
     self.post_attention_layernorm = layer.post_attention_layernorm
     self.mlp = Qwen3MLP()
   
@@ -1042,6 +1033,10 @@ if __name__ == "__main__":
     model.llm.layers[i].mlp.down_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.down_proj.weight"].numpy())
     model.llm.layers[i].mlp.gate_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.gate_proj.weight"].numpy())
     model.llm.layers[i].mlp.up_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.up_proj.weight"].numpy())
+    model.llm.layers[i].self_attn.q_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.q_proj.weight"].numpy())
+    model.llm.layers[i].self_attn.k_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.k_proj.weight"].numpy())
+    model.llm.layers[i].self_attn.v_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.v_proj.weight"].numpy())
+    model.llm.layers[i].self_attn.o_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.o_proj.weight"].numpy())
   model.llm.norm.weight = tiny_Tensor(weights[f"llm.norm.weight"].numpy())
 
   #from urllib.request import urlopen
