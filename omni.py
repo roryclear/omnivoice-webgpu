@@ -312,7 +312,7 @@ class Qwen3RMSNorm:
     hidden_states = (hidden_states * tiny_Tensor.rsqrt(variance + self.variance_epsilon)).cast(input_dtype)
     return to_torch(self.weight * hidden_states)
   
-def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
+def repeat_kv(hidden_states, n_rep: int):
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
@@ -327,7 +327,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
 def rotate_half(x):
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return torch.cat((-x2, x1), dim=-1)
+    return tiny_Tensor.cat(-x2, x1, dim=-1)
 
 class Qwen3Attention:
   def __init__(self, atn):
@@ -350,23 +350,24 @@ class Qwen3Attention:
     self.layer_type = atn.layer_type
     self.num_key_value_groups = atn.num_key_value_groups
 
-  def __call__(
-      self,
-      hidden_states: torch.Tensor,
-      position_embeddings: tuple[torch.Tensor, torch.Tensor],
-      attention_mask: torch.Tensor | None
-  ) -> tuple[torch.Tensor, torch.Tensor | None]:
+  def __call__(self, hidden_states, position_embeddings, attention_mask):
       hidden_states = to_tiny(hidden_states)
+      attention_mask = to_tiny(attention_mask)
+      position_embeddings = to_tiny(position_embeddings)
+
       input_shape = hidden_states.shape[:-1]
       hidden_shape = (*input_shape, -1, self.head_dim)
 
       x = self.q_proj(hidden_states).view(hidden_shape)
 
       query_states = self.q_norm(x).transpose(1, 2)
+      query_states = to_tiny(query_states)
+
       x = self.k_proj(hidden_states).view(hidden_shape)
 
-
       key_states = self.k_norm(x).transpose(1, 2)
+      key_states = to_tiny(key_states)
+
       value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
 
       cos, sin = position_embeddings
@@ -375,20 +376,14 @@ class Qwen3Attention:
       key_states = repeat_kv(key_states, self.num_key_value_groups)
       value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-      value_states = to_torch(value_states)
-
-      attn_output = torch.nn.functional.scaled_dot_product_attention(
+      attn_output = tiny_Tensor.scaled_dot_product_attention(
             query_states,
             key_states,
             value_states,
-            attn_mask=attention_mask,
-            dropout_p=0,
-            scale=self.scaling,
-            is_causal=False
+            attn_mask=attention_mask
         ).transpose(1, 2).contiguous()
-
+      
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-      attn_output = to_tiny(attn_output)
       attn_output = self.o_proj(attn_output)
       return to_torch(attn_output)
 
@@ -1029,6 +1024,7 @@ def to_torch(x):
   return torch.Tensor(x.numpy()).to("mps")
 
 def to_tiny(x):
+  if type(x) == tuple: return tuple(to_tiny(y) for y in x)
   if type(x) == tiny_Tensor: return x
   return tiny_Tensor(x.cpu().detach().numpy())
 
