@@ -302,15 +302,16 @@ _NONVERBAL_PATTERN = re.compile(
 )
 
 class Qwen3RMSNorm:
-  def __init__(self): self.variance_epsilon = 1e-6
+  def __init__(self, norm):
+    self.variance_epsilon = norm.variance_epsilon
+    self.weight = norm.weight
   
   def __call__(self, hidden_states: torch.Tensor) -> torch.Tensor:
-    hidden_states = to_tiny(hidden_states)
     input_dtype = hidden_states.dtype
-    hidden_states = hidden_states.cast(dtypes.float32)
+    hidden_states = hidden_states.to(torch.float32)
     variance = hidden_states.pow(2).mean(-1, keepdim=True)
-    hidden_states = (hidden_states * tiny_Tensor.rsqrt(variance + self.variance_epsilon)).cast(input_dtype)
-    return to_torch(self.weight * hidden_states)
+    hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+    return self.weight * hidden_states.to(input_dtype)
   
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
@@ -332,8 +333,8 @@ def rotate_half(x):
 class Qwen3Attention:
   def __init__(self, atn):
     self.head_dim = 128
-    self.q_norm = Qwen3RMSNorm()
-    self.k_norm = Qwen3RMSNorm()
+    self.q_norm = Qwen3RMSNorm(atn.q_norm)
+    self.k_norm = Qwen3RMSNorm(atn.k_norm)
     self.q_proj = nn.Linear(in_features=1024, out_features=2048, bias=False)
     self.q_proj.weight = atn.q_proj.weight
     self.k_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
@@ -400,7 +401,7 @@ class Qwen3RotaryEmbedding:
 
 class Qwen3DecoderLayer:
   def __init__(self, layer):
-    self.input_layernorm = Qwen3RMSNorm()
+    self.input_layernorm = Qwen3RMSNorm(layer.input_layernorm)
     self.self_attn = Qwen3Attention(layer.self_attn)
     self.post_attention_layernorm = layer.post_attention_layernorm
     self.mlp = layer.mlp
@@ -429,7 +430,7 @@ class llm:
   def __init__(self, llm):
     self.embed_tokens = nn.Embedding(151676, 1024)
     self.embed_tokens.weight = llm.embed_tokens.weight
-    self.norm = Qwen3RMSNorm()
+    self.norm = Qwen3RMSNorm(llm.norm)
     self.rotary_emb = Qwen3RotaryEmbedding(llm.rotary_emb)
     self.layers = []
     for i in range(28):
@@ -1001,32 +1002,25 @@ import soundfile as sf
 import pickle
 from tinygrad.helpers import fetch
 from tinygrad.nn.state import safe_load
-from tinygrad import Tensor as tiny_Tensor, dtypes
 
-def to_torch(x): return torch.Tensor(x.numpy()).to("mps")
 
-def to_tiny(x): return tiny_Tensor(x.cpu().detach().numpy())
+def to_torch(x): return torch.Tensor(x.numpy())
 
 if __name__ == "__main__":
   model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="mps:0", dtype=torch.float16)
   model = omni(model)
 
-  weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
-  for w in weights.keys(): print(w, type(weights[w]))
+  #weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
+  #for w in weights.keys(): print(w, type(weights[w]))
 
-  for i in range(len(model.llm.layers)):
-    model.llm.layers[i].input_layernorm.weight = tiny_Tensor(weights[f"llm.layers.{i}.input_layernorm.weight"].numpy())
-    model.llm.layers[i].self_attn.q_norm.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.q_norm.weight"].numpy())
-    model.llm.layers[i].self_attn.k_norm.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.k_norm.weight"].numpy())
-  model.llm.norm.weight = tiny_Tensor(weights[f"llm.norm.weight"].numpy())
 
-  #from urllib.request import urlopen
-  #from safetensors.torch import load_file
-  #state_dict = load_file("model.safetensors")
+  from urllib.request import urlopen
+  from safetensors.torch import load_file
+  state_dict = load_file("model.safetensors")
 
   #for k in state_dict.keys(): model.k = state_dict[k]
   
-  tiny_Tensor.manual_seed(0)
+
   torch.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
@@ -1038,7 +1032,6 @@ if __name__ == "__main__":
   sf.write("out.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
   '''
-  tiny_Tensor.manual_seed(0)
   torch.manual_seed(0)
   audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black. That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
@@ -1050,7 +1043,6 @@ if __name__ == "__main__":
   sf.write("out_long.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
   '''
-  tiny_Tensor.manual_seed(0)
   torch.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
