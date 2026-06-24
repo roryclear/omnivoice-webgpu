@@ -385,21 +385,20 @@ class Qwen3Attention:
       return attn_output
 
 class Qwen3RotaryEmbedding:
-  def __init__(self, emb):
-    self.inv_freq = to_tiny(emb.inv_freq)
-    self.attention_scaling = emb.attention_scaling
+  def __init__(self):
+    self.attention_scaling = 1.0
+    #https://github.com/huggingface/transformers/blob/f73cc1b1fe0477053638fc929546bac8b3697007/src/transformers/models/qwen3/modeling_qwen3.py#L130-L132
+    self.inv_freq = 1.0 / (1000000 ** (tiny_Tensor.arange(0, 128, 2).cast(dtypes.float) / 128))
 
   def __call__(self, position_ids):
+    position_ids = to_tiny(position_ids)
     inv_freq_expanded = self.inv_freq[None, :, None].cast(dtypes.float).expand(position_ids.shape[0], -1, 1)
-
-    inv_freq_expanded = to_torch(inv_freq_expanded)
-
-    position_ids_expanded = position_ids[:, None, :].float()
-    freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
-    emb = torch.cat((freqs, freqs), dim=-1)
-    cos = emb.cos() * self.attention_scaling
-    sin = emb.sin() * self.attention_scaling
-    return cos.to(torch.float16), sin.to(torch.float16)
+    position_ids_expanded = position_ids[:, None, :].cast(dtypes.float)
+    freqs = (inv_freq_expanded @ position_ids_expanded).transpose(1, 2)
+    emb = tiny_Tensor.cat(freqs, freqs, dim=-1)
+    cos = (emb.cos() * self.attention_scaling).cast(dtypes.float16)
+    sin = (emb.sin() * self.attention_scaling).cast(dtypes.float16)
+    return to_torch(cos), to_torch(sin)
 
 class Qwen3DecoderLayer:
   def __init__(self, layer):
@@ -433,7 +432,7 @@ class llm:
     self.embed_tokens = nn.Embedding(151676, 1024)
     self.embed_tokens.weight = llm.embed_tokens.weight
     self.norm = Qwen3RMSNorm()
-    self.rotary_emb = Qwen3RotaryEmbedding(llm.rotary_emb)
+    self.rotary_emb = Qwen3RotaryEmbedding()
     self.layers = []
     for i in range(28):
       self.layers.append(Qwen3DecoderLayer(llm.layers[i]))
