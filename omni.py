@@ -427,13 +427,9 @@ class HubertModel:
       encoder_outputs = self.encoder(hidden_states)
       return encoder_outputs
 
-import torch.nn.utils.parametrize as parametrize
 class HubertPositionalConvEmbedding:
-  def __init__(self, em):
-    parametrize.remove_parametrizations(em.conv, 'weight', leave_parametrized=True)
+  def __init__(self):
     self.conv = tiny_nn.Conv1d(in_channels=768, out_channels=768, kernel_size=128, stride=1, padding=64, groups=16)
-    self.conv.weight = to_tiny(em.conv.weight)
-    self.conv.bias = to_tiny(em.conv.bias)
     self.activation = tiny_Tensor.gelu
   
   def __call__(self, hidden_states):
@@ -531,7 +527,7 @@ class HubertEncoderLayer:
 class HubertEncoder:
   def __init__(self, enc):
     self.config = enc.config
-    self.pos_conv_embed = HubertPositionalConvEmbedding(enc.pos_conv_embed)
+    self.pos_conv_embed = HubertPositionalConvEmbedding()
     self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
     self.layer_norm.weight = enc.layer_norm.weight
     self.layer_norm.bias = enc.layer_norm.bias
@@ -1023,6 +1019,7 @@ def to_tiny(x):
 
 if __name__ == "__main__":
   model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="mps:0", dtype=torch.float16)
+  tiny_Tensor.manual_seed(0)
   model = omni(model)
 
   weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
@@ -1051,6 +1048,7 @@ if __name__ == "__main__":
   model.audio_tokenizer.fc.bias = tiny_Tensor(weights["fc.bias"].numpy())
   model.audio_tokenizer.fc2.weight = tiny_Tensor(weights["fc2.weight"].numpy())
   model.audio_tokenizer.fc2.bias = tiny_Tensor(weights["fc2.bias"].numpy())
+  model.audio_tokenizer.semantic_model.encoder.pos_conv_embed.conv.bias = tiny_Tensor(weights["semantic_model.encoder.pos_conv_embed.conv.bias"].numpy())
 
   #from urllib.request import urlopen
   #from safetensors.torch import load_file
