@@ -469,10 +469,9 @@ class HubertAttention:
     self.v_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
     self.v_proj.weight = to_tiny(atn.v_proj.weight)
     self.v_proj.bias = to_tiny(atn.v_proj.bias)
-    self.out_proj = nn.Linear(in_features=768, out_features=768, bias=True)
-    self.out_proj.weight = atn.out_proj.weight
-    self.out_proj.bias = atn.out_proj.bias
-    self.config = atn.config
+    self.out_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
+    self.out_proj.weight = to_tiny(atn.out_proj.weight)
+    self.out_proj.bias = to_tiny(atn.out_proj.bias)
     self.scaling = 0.125
     self.is_causal = False
   
@@ -489,25 +488,16 @@ class HubertAttention:
       key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
       value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
       
-      hidden_states = to_torch(hidden_states)
-
-      query_states = to_torch(query_states)
-      value_states = to_torch(value_states)
-      key_states = to_torch(key_states)
-      attn_output = torch.nn.functional.scaled_dot_product_attention(
+      attn_output = tiny_Tensor.scaled_dot_product_attention(
               query_states,
               key_states,
               value_states,
-              attn_mask=None,
-              dropout_p=0,
-              scale=self.scaling,
-              is_causal=False
           ).transpose(1, 2).contiguous()
 
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
       attn_output = self.out_proj(attn_output)
 
-      return attn_output, None, None
+      return to_torch(attn_output), None, None
 
 class HubertEncoderLayer:
   def __init__(self, layer):
