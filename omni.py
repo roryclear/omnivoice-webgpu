@@ -425,8 +425,8 @@ class HubertModel:
 class HubertPositionalConvEmbedding:
   def __init__(self, em):
     self.conv = em.conv
+    self.activation = nn.GELU()
     self.padding = em.padding
-    self.activation = em.activation
   
   def __call__(self, hidden_states):
     hidden_states = hidden_states.transpose(1, 2)
