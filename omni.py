@@ -351,20 +351,18 @@ class Qwen3Attention:
       cos, sin = position_embeddings
       query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-      attn_output, attn_weights = sdpa_attention_forward(
+      attn_output = sdpa_attention_forward(
           self,
           query_states,
           key_states,
           value_states,
           attention_mask,
-          dropout=0.0,
-          scaling=self.scaling,
-          sliding_window=self.sliding_window,  # diff with Llama
+          scaling=self.scaling
       )
 
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
       attn_output = self.o_proj(attn_output)
-      return attn_output, attn_weights
+      return attn_output
 
 class Qwen3RotaryEmbedding:
   def __init__(self, emb):
@@ -396,7 +394,7 @@ class Qwen3DecoderLayer:
       residual = hidden_states
       hidden_states = self.input_layernorm(hidden_states)
       # Self Attention
-      hidden_states, _ = self.self_attn(hidden_states=hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings)
+      hidden_states = self.self_attn(hidden_states=hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings)
       hidden_states = residual + hidden_states
 
       # Fully Connected
@@ -481,7 +479,7 @@ class HubertFeedForward:
     hidden_states = self.intermediate_act_fn(hidden_states)
     return self.output_dense(hidden_states)
 
-from transformers.integrations.sdpa_attention import sdpa_attention_forward
+
 class HubertAttention:
   def __init__(self, atn):
     self.head_dim = 64
@@ -513,21 +511,19 @@ class HubertAttention:
       key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
       value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
 
-      attn_output, attn_weights = sdpa_attention_forward(
+      attn_output = sdpa_attention_forward(
           self,
           query_states,
           key_states,
           value_states,
           None,
-          dropout=0.0,
-          scaling=self.scaling,
-          output_attentions=False
+          scaling=self.scaling
       )
 
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
       attn_output = self.out_proj(attn_output)
 
-      return attn_output, attn_weights, None
+      return attn_output, None, None
 
 class HubertEncoderLayer:
   def __init__(self, layer):
@@ -732,6 +728,32 @@ class audio_tokenizer:
       self.fc2 = nn.Linear(1024, 256)
       self.fc2.weight = tok.fc2.weight
       self.fc2.bias = tok.fc2.bias
+
+from transformers.integrations.sdpa_attention import repeat_kv
+def sdpa_attention_forward(
+    module: torch.nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    scaling: float | None = None,
+) -> tuple[torch.Tensor, None]:
+    if hasattr(module, "num_key_value_groups"):
+      key = repeat_kv(key, module.num_key_value_groups)
+      value = repeat_kv(value, module.num_key_value_groups)
+
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+        query,
+        key,
+        value,
+        attn_mask=attention_mask,
+        dropout_p=0,
+        scale=scaling,
+        is_causal=False
+    )
+    attn_output = attn_output.transpose(1, 2).contiguous()
+
+    return attn_output
 
 class omni:
   def __init__(self, model):
