@@ -415,23 +415,20 @@ class HubertModel:
   def __call__(self, input_values: torch.Tensor | None,):
       extract_features = self.feature_extractor(input_values)
       extract_features = extract_features.transpose(1, 2)
-
       hidden_states = self.feature_projection(extract_features)
-
       encoder_outputs = self.encoder(hidden_states)
-
       return encoder_outputs
 
 class HubertPositionalConvEmbedding:
   def __init__(self, em):
     self.conv = em.conv
     self.activation = nn.GELU()
-    self.padding = em.padding
   
   def __call__(self, hidden_states):
     hidden_states = hidden_states.transpose(1, 2)
-    hidden_states = self.conv(hidden_states)
-    hidden_states = self.padding(hidden_states)
+    hidden_states = self.conv(hidden_states)    
+    #https://github.com/huggingface/transformers/blob/c5deba28c83d853a1f63a0ab589a4531346fbcb0/src/transformers/models/hubert/modeling_hubert.py#L102
+    hidden_states = hidden_states[:, :, : -1]
     hidden_states = self.activation(hidden_states)
     return hidden_states.transpose(1, 2)
 
