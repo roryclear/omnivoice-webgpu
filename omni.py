@@ -458,39 +458,20 @@ class HubertAttention:
     self.v_proj = atn.v_proj
     self.out_proj = atn.out_proj
     self.config = atn.config
-    self.training = atn.training
     self.scaling = atn.scaling
-    self.dropout = atn.dropout
     self.is_causal = atn.is_causal
   
   def __call__(
       self,
       hidden_states: torch.Tensor,
-      key_value_states: torch.Tensor | None = None,
-      attention_mask: torch.Tensor | None = None,
-      output_attentions: bool | None = False,
-      # TODO: we need a refactor so that the different attention modules can get their specific kwargs
-      # ATM, we have mixed things encoder, decoder, and encoder-decoder attn
-      **kwargs,
   ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
-      """Input shape: Batch x Time x Channel"""
-
-      # if key_value_states are provided this layer is used as a cross-attention layer
-      # for the decoder
-      is_cross_attention = key_value_states is not None
-
-      # determine input shapes
       input_shape = hidden_states.shape[:-1]
 
       hidden_shape = (*input_shape, -1, self.head_dim)
-
-      # get query proj
       query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-
-      current_states = key_value_states if is_cross_attention else hidden_states
-      kv_shape = (*current_states.shape[:-1], -1, self.head_dim)
-      key_states = self.k_proj(current_states).view(kv_shape).transpose(1, 2)
-      value_states = self.v_proj(current_states).view(kv_shape).transpose(1, 2)
+      kv_shape = (*hidden_states.shape[:-1], -1, self.head_dim)
+      key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
+      value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
 
       attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
           self.config._attn_implementation, eager_attention_forward
@@ -501,11 +482,10 @@ class HubertAttention:
           query_states,
           key_states,
           value_states,
-          attention_mask,
-          dropout=0.0 if not self.training else self.dropout,
+          None,
+          dropout=0.0,
           scaling=self.scaling,
-          output_attentions=output_attentions,
-          **kwargs,
+          output_attentions=False
       )
 
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
@@ -524,9 +504,9 @@ class HubertEncoderLayer:
     self.final_layer_norm.weight = layer.final_layer_norm.weight
     self.final_layer_norm.bias = layer.final_layer_norm.bias
 
-  def __call__(self, hidden_states, attention_mask=None, output_attentions=False):
+  def __call__(self, hidden_states):
     attn_residual = hidden_states
-    hidden_states, _, _ = self.attention(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
+    hidden_states, _, _ = self.attention(hidden_states)
     hidden_states = attn_residual + hidden_states
     hidden_states = self.layer_norm(hidden_states)
     hidden_states = hidden_states + self.feed_forward(hidden_states)
@@ -553,7 +533,7 @@ class HubertEncoder:
     all_hidden_states = ()
     for layer in self.layers:
         all_hidden_states = all_hidden_states + (hidden_states,)
-        layer_outputs = layer(hidden_states, attention_mask=None, output_attentions=False)
+        layer_outputs = layer(hidden_states)
         hidden_states = layer_outputs[0]
     all_hidden_states = all_hidden_states + (hidden_states,)
 
