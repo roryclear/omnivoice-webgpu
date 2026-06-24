@@ -416,9 +416,13 @@ class HubertModel:
       encoder_outputs = self.encoder(hidden_states)
       return encoder_outputs
 
+import torch.nn.utils.parametrize as parametrize
 class HubertPositionalConvEmbedding:
   def __init__(self, em):
-    self.conv = em.conv # todo
+    parametrize.remove_parametrizations(em.conv, 'weight', leave_parametrized=True)
+    self.conv = nn.Conv1d(768, 768, kernel_size=(128,), stride=(1,), padding=(64,), groups=16)
+    self.conv.weight = em.conv.weight
+    self.conv.bias = em.conv.bias
     self.activation = nn.GELU()
   
   def __call__(self, hidden_states):
