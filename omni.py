@@ -334,14 +334,14 @@ class Qwen3Attention:
     self.head_dim = 128
     self.q_norm = Qwen3RMSNorm()
     self.k_norm = Qwen3RMSNorm()
-    self.q_proj = nn.Linear(in_features=1024, out_features=2048, bias=False)
-    self.q_proj.weight = atn.q_proj.weight
-    self.k_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
-    self.k_proj.weight = atn.k_proj.weight
-    self.v_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
-    self.v_proj.weight = atn.v_proj.weight
-    self.o_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
-    self.o_proj.weight = atn.o_proj.weight
+    self.q_proj = tiny_nn.Linear(in_features=1024, out_features=2048, bias=False)
+    self.q_proj.weight = to_tiny(atn.q_proj.weight)
+    self.k_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.k_proj.weight = to_tiny(atn.k_proj.weight)
+    self.v_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.v_proj.weight = to_tiny(atn.v_proj.weight)
+    self.o_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.o_proj.weight = to_tiny(atn.o_proj.weight)
     self.config = atn.config
     self.scaling = 0.08838834764831845
     self.sliding_window = atn.sliding_window
@@ -356,11 +356,17 @@ class Qwen3Attention:
       position_embeddings: tuple[torch.Tensor, torch.Tensor],
       attention_mask: torch.Tensor | None
   ) -> tuple[torch.Tensor, torch.Tensor | None]:
+      hidden_states = to_tiny(hidden_states)
       input_shape = hidden_states.shape[:-1]
       hidden_shape = (*input_shape, -1, self.head_dim)
 
-      query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-      key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+      x = self.q_proj(hidden_states).view(hidden_shape)
+
+      query_states = self.q_norm(x).transpose(1, 2)
+      x = self.k_proj(hidden_states).view(hidden_shape)
+
+
+      key_states = self.k_norm(x).transpose(1, 2)
       value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
 
       cos, sin = position_embeddings
@@ -368,6 +374,8 @@ class Qwen3Attention:
 
       key_states = repeat_kv(key_states, self.num_key_value_groups)
       value_states = repeat_kv(value_states, self.num_key_value_groups)
+
+      value_states = to_torch(value_states)
 
       attn_output = torch.nn.functional.scaled_dot_product_attention(
             query_states,
@@ -379,10 +387,10 @@ class Qwen3Attention:
             is_causal=False
         ).transpose(1, 2).contiguous()
 
-
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+      attn_output = to_tiny(attn_output)
       attn_output = self.o_proj(attn_output)
-      return attn_output
+      return to_torch(attn_output)
 
 class Qwen3RotaryEmbedding:
   def __init__(self):
@@ -1081,4 +1089,5 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
+
 
