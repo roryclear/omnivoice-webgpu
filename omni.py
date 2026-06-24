@@ -704,12 +704,8 @@ class audio_tokenizer:
     self.acoustic_encoder = DacEncoder(tok.acoustic_encoder)
     self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
     self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization(tok.quantizer)
-    self.fc = nn.Linear(1024, 1024)
-    self.fc.weight = tok.fc.weight
-    self.fc.bias = tok.fc.bias
-    self.fc2 = nn.Linear(1024, 256)
-    self.fc2.weight = tok.fc2.weight
-    self.fc2.bias = tok.fc2.bias
+    self.fc = tiny_nn.Linear(1024, 1024)
+    self.fc2 = tiny_nn.Linear(1024, 256)
 
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values: torch.Tensor) -> torch.Tensor:
@@ -717,7 +713,9 @@ class audio_tokenizer:
     e_semantic = semantic_encode(self.encoder_semantic, e_semantic_input.transpose(1, 2))
     e_acoustic = acoustic_encode(self.acoustic_encoder, input_values)
     embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
+    embeddings = to_tiny(embeddings)
     embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
+    embeddings = to_torch(embeddings)
     audio_codes = quantizer_encode(self.quantizer, embeddings)
     audio_codes = audio_codes.transpose(0, 1)
     return audio_codes
@@ -743,7 +741,9 @@ class audio_tokenizer:
           quantized = quantized.permute(0, 2, 1)
           quantized_out = quantized_out + quantized
       quantized = quantized_out
+      quantized = to_tiny(quantized)
       quantized_acoustic = self.fc2(quantized.transpose(1, 2)).transpose(1, 2)
+      quantized_acoustic = to_torch(quantized_acoustic)
       hidden_state = self.acoustic_decoder.conv1(quantized_acoustic)
 
       for layer in self.acoustic_decoder.block:
@@ -1026,7 +1026,7 @@ if __name__ == "__main__":
   model = omni(model)
 
   weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
-  for w in weights.keys(): print(w, type(weights[w]))
+  #for w in weights.keys(): print(w, type(weights[w]))
 
   for i in range(len(model.llm.layers)):
     model.llm.layers[i].input_layernorm.weight = tiny_Tensor(weights[f"llm.layers.{i}.input_layernorm.weight"].numpy())
@@ -1043,6 +1043,14 @@ if __name__ == "__main__":
   model.llm.embed_tokens.weight = tiny_Tensor(weights["llm.embed_tokens.weight"].numpy()).cast(dtypes.float16)
   model.audio_heads.weight = tiny_Tensor(weights["audio_heads.weight"].numpy())
   model.audio_embeddings.weight = tiny_Tensor(weights["audio_embeddings.weight"].numpy())
+  
+  weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/audio_tokenizer/model.safetensors"))
+  for w in weights.keys(): print(w, type(weights[w]))
+
+  model.audio_tokenizer.fc.weight = tiny_Tensor(weights["fc.weight"].numpy())
+  model.audio_tokenizer.fc.bias = tiny_Tensor(weights["fc.bias"].numpy())
+  model.audio_tokenizer.fc2.weight = tiny_Tensor(weights["fc2.weight"].numpy())
+  model.audio_tokenizer.fc2.bias = tiny_Tensor(weights["fc2.bias"].numpy())
 
   #from urllib.request import urlopen
   #from safetensors.torch import load_file
