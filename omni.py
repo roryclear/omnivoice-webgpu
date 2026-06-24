@@ -434,8 +434,7 @@ class Qwen3DecoderLayer:
 
 class llm:
   def __init__(self, llm):
-    self.embed_tokens = nn.Embedding(151676, 1024)
-    self.embed_tokens.weight = llm.embed_tokens.weight
+    self.embed_tokens = tiny_nn.Embedding(151676, 1024)
     self.norm = Qwen3RMSNorm()
     self.rotary_emb = Qwen3RotaryEmbedding()
     self.layers = []
@@ -771,10 +770,14 @@ class omni:
   def _prepare_embed_inputs(
       self, input_ids: torch.Tensor, audio_mask: torch.Tensor
   ) -> torch.Tensor:
-      text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
-      shifted_ids = (
-          input_ids * audio_mask.unsqueeze(1)
-      ) + self.codebook_layer_offsets.view(1, -1, 1)
+      input_ids = to_tiny(input_ids)
+
+      text_embeds = self.llm.embed_tokens(to_tiny(input_ids)[:, 0, :])
+
+      text_embeds = to_torch(text_embeds)
+      input_ids = to_torch(input_ids)
+
+      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(dim=1)
       return torch.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
 
@@ -1012,6 +1015,8 @@ from tinygrad import Tensor as tiny_Tensor, dtypes, nn as tiny_nn
 
 def to_torch(x):
   if type(x) == torch.Tensor: return x
+  if x.dtype == dtypes.float16: return torch.Tensor(x.numpy()).to("mps").to(torch.float16)
+  if x.dtype == dtypes.int64: return torch.Tensor(x.numpy()).to("mps").to(torch.int64)
   return torch.Tensor(x.numpy()).to("mps")
 
 def to_tiny(x):
@@ -1038,6 +1043,7 @@ if __name__ == "__main__":
     model.llm.layers[i].self_attn.v_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.v_proj.weight"].numpy())
     model.llm.layers[i].self_attn.o_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.o_proj.weight"].numpy())
   model.llm.norm.weight = tiny_Tensor(weights[f"llm.norm.weight"].numpy())
+  model.llm.embed_tokens.weight = tiny_Tensor(weights["llm.embed_tokens.weight"].numpy()).cast(dtypes.float16)
 
   #from urllib.request import urlopen
   #from safetensors.torch import load_file
