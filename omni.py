@@ -461,6 +461,7 @@ class HubertAttention:
     self.training = atn.training
     self.scaling = atn.scaling
     self.dropout = atn.dropout
+    self.is_causal = atn.is_causal
   
   def __call__(
       self,
@@ -512,10 +513,9 @@ class HubertAttention:
 
       return attn_output, attn_weights, None
 
-
 class HubertEncoderLayer:
   def __init__(self, layer):
-    self.attention = layer.attention # todo
+    self.attention = HubertAttention(layer.attention) # todo
     self.feed_forward = HubertFeedForward(layer.feed_forward)
     self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
     self.layer_norm.weight = layer.layer_norm.weight
