@@ -313,8 +313,23 @@ class Qwen3RMSNorm:
     hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
     return self.weight * hidden_states.to(input_dtype)
   
-from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
-from transformers.integrations.sdpa_attention import repeat_kv
+def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+
+def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
+
+def rotate_half(x):
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
 class Qwen3Attention:
   def __init__(self, atn):
     self.head_dim = 128
@@ -750,21 +765,10 @@ class omni:
   def _prepare_embed_inputs(
       self, input_ids: torch.Tensor, audio_mask: torch.Tensor
   ) -> torch.Tensor:
-      """
-      Prepares embeddings from input_ids of shape (batch_size, layers, seq_length).
-      Embedding shape is (batch_size, seq_length, hidden_size).
-      """
       text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
-
-      # Apply shift to audio IDs based on codebook layer
-      # audio_ids: [Batch, 8, Seq]
-      # codebook_layer_offsets: [1, 8, 1]
-      # Result: Layer 0 ID Layer 1 ID + Layer 2 ID + 2050...
       shifted_ids = (
           input_ids * audio_mask.unsqueeze(1)
       ) + self.codebook_layer_offsets.view(1, -1, 1)
-
-      # input: [Batch, 8, Seq] -> output: [Batch, Seq, Hidden]
       audio_embeds = self.audio_embeddings(shifted_ids).sum(dim=1)
       return torch.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
 
@@ -775,10 +779,7 @@ class omni:
       attention_mask: Optional[torch.Tensor] = None,
       position_ids: Optional[torch.LongTensor] = None,
   ):
-
-      inputs_embeds = self._prepare_embed_inputs(input_ids, audio_mask)
-      
-
+      inputs_embeds = self._prepare_embed_inputs(input_ids, audio_mask)  
       hidden_states = self.llm(
           inputs_embeds=inputs_embeds,
           attention_mask=attention_mask,
