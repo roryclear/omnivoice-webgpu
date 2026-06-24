@@ -287,10 +287,7 @@ def decode(decoder, audio_codes: torch.Tensor,):
         hidden_state = layer(hidden_state)
 
     hidden_state = decoder.acoustic_decoder.snake1(hidden_state)
-    hidden_state = decoder.acoustic_decoder.conv2(hidden_state)
-    hidden_state = decoder.acoustic_decoder.tanh(hidden_state)
-
-    return hidden_state
+    return decoder.acoustic_decoder.conv2(hidden_state)
 
 def _gumbel_sample(logits: torch.Tensor, temperature: float) -> torch.Tensor:
     scaled_logits = logits / temperature
@@ -622,7 +619,6 @@ class DacDecoder:
     self.conv2.bias = dec.conv2.bias
     self.block = dec.block # todo
     self.snake1 = Snake1d(dec.snake1)
-    self.tanh = dec.tanh # todo
   
   def __call__(self, hidden_state):
       hidden_state = self.conv1(hidden_state)
@@ -631,10 +627,7 @@ class DacDecoder:
           hidden_state = layer(hidden_state)
 
       hidden_state = self.snake1(hidden_state)
-      hidden_state = self.conv2(hidden_state)
-      hidden_state = self.tanh(hidden_state)
-
-      return hidden_state
+      return self.conv2(hidden_state)
 
 class HiggsAudioV2TokenizerResidualVectorQuantization:
    def __init__(self, q):
@@ -953,7 +946,6 @@ if __name__ == "__main__":
   sf.write("out_long.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
   '''
-
   torch.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
