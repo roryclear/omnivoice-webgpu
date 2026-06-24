@@ -434,18 +434,19 @@ import torch.nn.utils.parametrize as parametrize
 class HubertPositionalConvEmbedding:
   def __init__(self, em):
     parametrize.remove_parametrizations(em.conv, 'weight', leave_parametrized=True)
-    self.conv = nn.Conv1d(768, 768, kernel_size=(128,), stride=(1,), padding=(64,), groups=16)
-    self.conv.weight = em.conv.weight
-    self.conv.bias = em.conv.bias
-    self.activation = nn.GELU()
+    self.conv = tiny_nn.Conv1d(in_channels=768, out_channels=768, kernel_size=128, stride=1, padding=64, groups=16)
+    self.conv.weight = to_tiny(em.conv.weight)
+    self.conv.bias = to_tiny(em.conv.bias)
+    self.activation = tiny_Tensor.gelu
   
   def __call__(self, hidden_states):
+    hidden_states = to_tiny(hidden_states)
     hidden_states = hidden_states.transpose(1, 2)
     hidden_states = self.conv(hidden_states)    
     #https://github.com/huggingface/transformers/blob/c5deba28c83d853a1f63a0ab589a4531346fbcb0/src/transformers/models/hubert/modeling_hubert.py#L102
     hidden_states = hidden_states[:, :, : -1]
-    hidden_states = self.activation(hidden_states)
-    return hidden_states.transpose(1, 2)
+    hidden_states = self.activation(hidden_states).transpose(1, 2)
+    return to_torch(hidden_states)
 
 class HubertFeedForward:
   def __init__(self, ff):
