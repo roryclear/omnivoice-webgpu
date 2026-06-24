@@ -422,20 +422,34 @@ class HubertModel:
 
       return encoder_outputs
 
+class HubertPositionalConvEmbedding:
+  def __init__(self, em):
+    self.conv = em.conv
+    self.padding = em.padding
+    self.activation = em.activation
+  
+  def __call__(self, hidden_states):
+    hidden_states = hidden_states.transpose(1, 2)
+    hidden_states = self.conv(hidden_states)
+    hidden_states = self.padding(hidden_states)
+    hidden_states = self.activation(hidden_states)
+    return hidden_states.transpose(1, 2)
+
 class HubertEncoder:
   def __init__(self, enc):
     self.config = enc.config
-    self.pos_conv_embed = enc.pos_conv_embed
-    self.layer_norm = enc.layer_norm
-    self.dropout = enc.dropout # todo
-    self.training = enc.training
+    self.pos_conv_embed = HubertPositionalConvEmbedding(enc.pos_conv_embed)
+    self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
+    self.layer_norm.weight = enc.layer_norm.weight
+    self.layer_norm.bias = enc.layer_norm.bias
+    self.dropout = 0
+    self.training = False
     self.layers = enc.layers
   
   def __call__(self, hidden_states: torch.tensor):
     position_embeddings = self.pos_conv_embed(hidden_states)
     hidden_states = hidden_states + position_embeddings.to(hidden_states.device)
     hidden_states = self.layer_norm(hidden_states)
-    hidden_states = self.dropout(hidden_states)
 
     all_hidden_states = ()
     for layer in self.layers:
