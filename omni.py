@@ -981,6 +981,13 @@ if __name__ == "__main__":
   #weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
   #for w in weights.keys(): print(w, type(weights[w]))
 
+
+  from urllib.request import urlopen
+  from safetensors.torch import load_file
+  state_dict = load_file("model.safetensors")
+
+  #for k in state_dict.keys(): print(k, type(state_dict[k]))
+
   torch.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
