@@ -316,14 +316,28 @@ class Qwen3RMSNorm:
     hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
     return self.weight * hidden_states.to(input_dtype)
 
+class Qwen3RotaryEmbedding:
+  def __init__(self, emb):
+    self.inv_freq = emb.inv_freq
+    self.attention_scaling = emb.attention_scaling
+
+  def __call__(self, x, position_ids):
+    inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)
+    position_ids_expanded = position_ids[:, None, :].float()
+    freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+    emb = torch.cat((freqs, freqs), dim=-1)
+    cos = emb.cos() * self.attention_scaling
+    sin = emb.sin() * self.attention_scaling
+    return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+
 class llm:
   def __init__(self, llm):
     self.embed_tokens = nn.Embedding(151676, 1024)
     self.embed_tokens.weight = llm.embed_tokens.weight
     self.norm = Qwen3RMSNorm(llm.norm)
-    self.config = llm.config
-    self.rotary_emb = llm.rotary_emb
+    self.rotary_emb = Qwen3RotaryEmbedding(llm.rotary_emb)
     self.layers = llm.layers
+    self.config = llm.config
 
   def __call__(
     self,
