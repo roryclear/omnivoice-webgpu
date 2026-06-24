@@ -448,6 +448,71 @@ class HubertFeedForward:
     hidden_states = self.intermediate_act_fn(hidden_states)
     return self.output_dense(hidden_states)
 
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+from transformers.models.hubert.modeling_hubert import eager_attention_forward
+class HubertAttention:
+  def __init__(self, atn):
+    self.head_dim = atn.head_dim
+    self.q_proj = atn.q_proj
+    self.k_proj = atn.k_proj
+    self.v_proj = atn.v_proj
+    self.out_proj = atn.out_proj
+    self.config = atn.config
+    self.training = atn.training
+    self.scaling = atn.scaling
+    self.dropout = atn.dropout
+  
+  def __call__(
+      self,
+      hidden_states: torch.Tensor,
+      key_value_states: torch.Tensor | None = None,
+      attention_mask: torch.Tensor | None = None,
+      output_attentions: bool | None = False,
+      # TODO: we need a refactor so that the different attention modules can get their specific kwargs
+      # ATM, we have mixed things encoder, decoder, and encoder-decoder attn
+      **kwargs,
+  ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
+      """Input shape: Batch x Time x Channel"""
+
+      # if key_value_states are provided this layer is used as a cross-attention layer
+      # for the decoder
+      is_cross_attention = key_value_states is not None
+
+      # determine input shapes
+      input_shape = hidden_states.shape[:-1]
+
+      hidden_shape = (*input_shape, -1, self.head_dim)
+
+      # get query proj
+      query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+
+      current_states = key_value_states if is_cross_attention else hidden_states
+      kv_shape = (*current_states.shape[:-1], -1, self.head_dim)
+      key_states = self.k_proj(current_states).view(kv_shape).transpose(1, 2)
+      value_states = self.v_proj(current_states).view(kv_shape).transpose(1, 2)
+
+      attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
+          self.config._attn_implementation, eager_attention_forward
+      )
+
+      attn_output, attn_weights = attention_interface(
+          self,
+          query_states,
+          key_states,
+          value_states,
+          attention_mask,
+          dropout=0.0 if not self.training else self.dropout,
+          scaling=self.scaling,
+          output_attentions=output_attentions,
+          **kwargs,
+      )
+
+      attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+      attn_output = self.out_proj(attn_output)
+
+      return attn_output, attn_weights, None
+
+
 class HubertEncoderLayer:
   def __init__(self, layer):
     self.attention = layer.attention # todo
@@ -960,3 +1025,4 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
+
