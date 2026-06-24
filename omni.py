@@ -324,8 +324,7 @@ class Qwen3Attention:
     self.v_proj = atn.v_proj
     self.o_proj = atn.o_proj
     self.config = atn.config
-    self.training = atn.training
-    self.scaling = atn.scaling
+    self.scaling = 0.08838834764831845
     self.sliding_window = atn.sliding_window
     self.layer_idx = atn.layer_idx
     self.is_causal = atn.is_causal
@@ -336,9 +335,7 @@ class Qwen3Attention:
       self,
       hidden_states: torch.Tensor,
       position_embeddings: tuple[torch.Tensor, torch.Tensor],
-      attention_mask: torch.Tensor | None,
-      past_key_values=None,
-      **kwargs,
+      attention_mask: torch.Tensor | None
   ) -> tuple[torch.Tensor, torch.Tensor | None]:
       input_shape = hidden_states.shape[:-1]
       hidden_shape = (*input_shape, -1, self.head_dim)
@@ -350,12 +347,7 @@ class Qwen3Attention:
       cos, sin = position_embeddings
       query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-      if past_key_values is not None:
-          key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
-
-      attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
-          self.config._attn_implementation, eager_attention_forward
-      )
+      attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(self.config._attn_implementation, eager_attention_forward)
 
       attn_output, attn_weights = attention_interface(
           self,
@@ -363,10 +355,9 @@ class Qwen3Attention:
           key_states,
           value_states,
           attention_mask,
-          dropout=0.0 if not self.training else self.attention_dropout,
+          dropout=0.0,
           scaling=self.scaling,
           sliding_window=self.sliding_window,  # diff with Llama
-          **kwargs,
       )
 
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
@@ -398,24 +389,12 @@ class Qwen3DecoderLayer:
       self,
       hidden_states: torch.Tensor,
       attention_mask: torch.Tensor | None = None,
-      position_ids: torch.LongTensor | None = None,
-      past_key_values=None,
-      use_cache: bool | None = False,
-      position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
-      **kwargs,
+      position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None
   ) -> torch.Tensor:
       residual = hidden_states
       hidden_states = self.input_layernorm(hidden_states)
       # Self Attention
-      hidden_states, _ = self.self_attn(
-          hidden_states=hidden_states,
-          attention_mask=attention_mask,
-          position_ids=position_ids,
-          past_key_values=past_key_values,
-          use_cache=use_cache,
-          position_embeddings=position_embeddings,
-          **kwargs,
-      )
+      hidden_states, _ = self.self_attn(hidden_states=hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings)
       hidden_states = residual + hidden_states
 
       # Fully Connected
@@ -441,7 +420,6 @@ class llm:
     self,
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.LongTensor | None = None,
-    past_key_values=None,
     inputs_embeds: torch.FloatTensor | None = None,
   ):
       position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device)
@@ -451,14 +429,7 @@ class llm:
       position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
       for decoder_layer in self.layers:
-        hidden_states = decoder_layer(
-          hidden_states,
-          attention_mask=attention_mask,
-          position_embeddings=position_embeddings,
-          position_ids=position_ids,
-          past_key_values=past_key_values,
-          use_cache=None
-        )
+        hidden_states = decoder_layer(hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings,)
 
       return self.norm(hidden_states)
 
