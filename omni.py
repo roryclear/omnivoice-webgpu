@@ -435,6 +435,23 @@ class HubertPositionalConvEmbedding:
     hidden_states = self.activation(hidden_states)
     return hidden_states.transpose(1, 2)
 
+class HubertEncoderLayer:
+  def __init__(self, layer):
+    self.attention = layer.attention
+    self.layer_norm = layer.layer_norm
+    self.feed_forward = layer.feed_forward
+    self.final_layer_norm = layer.final_layer_norm
+
+  def __call__(self, hidden_states, attention_mask=None, output_attentions=False):
+    attn_residual = hidden_states
+    hidden_states, _, _ = self.attention(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
+    hidden_states = attn_residual + hidden_states
+    hidden_states = self.layer_norm(hidden_states)
+    hidden_states = hidden_states + self.feed_forward(hidden_states)
+    hidden_states = self.final_layer_norm(hidden_states)
+    outputs = (hidden_states,)
+    return outputs
+
 class HubertEncoder:
   def __init__(self, enc):
     self.config = enc.config
@@ -442,9 +459,9 @@ class HubertEncoder:
     self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
     self.layer_norm.weight = enc.layer_norm.weight
     self.layer_norm.bias = enc.layer_norm.bias
-    self.dropout = 0
     self.training = False
-    self.layers = enc.layers
+    self.layers = []
+    for i in range(12): self.layers.append(HubertEncoderLayer(enc.layers[i]))
   
   def __call__(self, hidden_states: torch.tensor):
     position_embeddings = self.pos_conv_embed(hidden_states)
