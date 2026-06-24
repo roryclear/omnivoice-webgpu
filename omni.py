@@ -437,9 +437,13 @@ class HubertPositionalConvEmbedding:
 
 class HubertFeedForward:
   def __init__(self, ff):
-    self.intermediate_dense = ff.intermediate_dense
+    self.intermediate_dense = nn.Linear(in_features=768, out_features=3072, bias=True)
+    self.intermediate_dense.weight = ff.intermediate_dense.weight
+    self.intermediate_dense.bias = ff.intermediate_dense.bias
     self.intermediate_act_fn = nn.GELU()
-    self.output_dense = ff.output_dense
+    self.output_dense = nn.Linear(in_features=3072, out_features=768, bias=True)
+    self.output_dense.weight = ff.output_dense.weight
+    self.output_dense.bias = ff.output_dense.bias
 
   def __call__(self, hidden_states):
     hidden_states = self.intermediate_dense(hidden_states)
