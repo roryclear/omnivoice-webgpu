@@ -460,15 +460,15 @@ class HubertFeedForward:
 class HubertAttention:
   def __init__(self, atn):
     self.head_dim = 64
-    self.q_proj = nn.Linear(in_features=768, out_features=768, bias=True)
-    self.q_proj.weight = atn.q_proj.weight
-    self.q_proj.bias = atn.q_proj.bias
-    self.k_proj = nn.Linear(in_features=768, out_features=768, bias=True)
-    self.k_proj.weight = atn.k_proj.weight
-    self.k_proj.bias = atn.k_proj.bias
-    self.v_proj = nn.Linear(in_features=768, out_features=768, bias=True)
-    self.v_proj.weight = atn.v_proj.weight
-    self.v_proj.bias = atn.v_proj.bias
+    self.q_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
+    self.q_proj.weight = to_tiny(atn.q_proj.weight)
+    self.q_proj.bias = to_tiny(atn.q_proj.bias)
+    self.k_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
+    self.k_proj.weight = to_tiny(atn.k_proj.weight)
+    self.k_proj.bias = to_tiny(atn.k_proj.bias)
+    self.v_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
+    self.v_proj.weight = to_tiny(atn.v_proj.weight)
+    self.v_proj.bias = to_tiny(atn.v_proj.bias)
     self.out_proj = nn.Linear(in_features=768, out_features=768, bias=True)
     self.out_proj.weight = atn.out_proj.weight
     self.out_proj.bias = atn.out_proj.bias
@@ -480,6 +480,7 @@ class HubertAttention:
       self,
       hidden_states: torch.Tensor,
   ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
+      hidden_states = to_tiny(hidden_states)
       input_shape = hidden_states.shape[:-1]
 
       hidden_shape = (*input_shape, -1, self.head_dim)
@@ -487,7 +488,12 @@ class HubertAttention:
       kv_shape = (*hidden_states.shape[:-1], -1, self.head_dim)
       key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
       value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
+      
+      hidden_states = to_torch(hidden_states)
 
+      query_states = to_torch(query_states)
+      value_states = to_torch(value_states)
+      key_states = to_torch(key_states)
       attn_output = torch.nn.functional.scaled_dot_product_attention(
               query_states,
               key_states,
