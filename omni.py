@@ -313,6 +313,66 @@ class Qwen3RMSNorm:
     hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
     return self.weight * hidden_states.to(input_dtype)
 
+from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
+class Qwen3Attention:
+  def __init__(self, atn):
+    self.head_dim = atn.head_dim
+    self.q_norm = atn.q_norm
+    self.k_norm = atn.k_norm
+    self.q_proj = atn.q_proj
+    self.k_proj = atn.k_proj
+    self.v_proj = atn.v_proj
+    self.o_proj = atn.o_proj
+    self.config = atn.config
+    self.training = atn.training
+    self.scaling = atn.scaling
+    self.sliding_window = atn.sliding_window
+    self.layer_idx = atn.layer_idx
+    self.is_causal = atn.is_causal
+    self.layer_type = atn.layer_type
+    self.num_key_value_groups = atn.num_key_value_groups
+    
+  def __call__(
+      self,
+      hidden_states: torch.Tensor,
+      position_embeddings: tuple[torch.Tensor, torch.Tensor],
+      attention_mask: torch.Tensor | None,
+      past_key_values=None,
+      **kwargs,
+  ) -> tuple[torch.Tensor, torch.Tensor | None]:
+      input_shape = hidden_states.shape[:-1]
+      hidden_shape = (*input_shape, -1, self.head_dim)
+
+      query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+      key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+      value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+
+      cos, sin = position_embeddings
+      query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+      if past_key_values is not None:
+          key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+
+      attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
+          self.config._attn_implementation, eager_attention_forward
+      )
+
+      attn_output, attn_weights = attention_interface(
+          self,
+          query_states,
+          key_states,
+          value_states,
+          attention_mask,
+          dropout=0.0 if not self.training else self.attention_dropout,
+          scaling=self.scaling,
+          sliding_window=self.sliding_window,  # diff with Llama
+          **kwargs,
+      )
+
+      attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+      attn_output = self.o_proj(attn_output)
+      return attn_output, attn_weights
+
 class Qwen3RotaryEmbedding:
   def __init__(self, emb):
     self.inv_freq = emb.inv_freq
@@ -330,7 +390,7 @@ class Qwen3RotaryEmbedding:
 class Qwen3DecoderLayer:
   def __init__(self, layer):
     self.input_layernorm = Qwen3RMSNorm(layer.input_layernorm)
-    self.self_attn = layer.self_attn
+    self.self_attn = Qwen3Attention(layer.self_attn)
     self.post_attention_layernorm = layer.post_attention_layernorm
     self.mlp = layer.mlp
   
@@ -986,7 +1046,8 @@ if __name__ == "__main__":
   from safetensors.torch import load_file
   state_dict = load_file("model.safetensors")
 
-  #for k in state_dict.keys(): print(k, type(state_dict[k]))
+  #for k in state_dict.keys(): model.k = state_dict[k]
+  
 
   torch.manual_seed(0)
   audio = model.generate(
