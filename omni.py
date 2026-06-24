@@ -402,10 +402,13 @@ class Qwen3RotaryEmbedding:
 
 class Qwen3MLP():
   def __init__(self, m):
-    self.down_proj = m.down_proj
-    self.act_fn = m.act_fn
-    self.gate_proj = m.gate_proj
-    self.up_proj = m.up_proj
+    self.down_proj = nn.Linear(in_features=3072, out_features=1024, bias=False)
+    self.down_proj.weight = m.down_proj.weight
+    self.act_fn = nn.SiLU()
+    self.gate_proj = nn.Linear(in_features=1024, out_features=3072, bias=False)
+    self.gate_proj.weight = m.gate_proj.weight
+    self.up_proj = nn.Linear(in_features=1024, out_features=3072, bias=False)
+    self.up_proj.weight = m.up_proj.weight
   
   def __call__(self, x): return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
