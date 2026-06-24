@@ -314,6 +314,7 @@ class Qwen3RMSNorm:
     return self.weight * hidden_states.to(input_dtype)
   
 from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
+from transformers.integrations.sdpa_attention import repeat_kv
 class Qwen3Attention:
   def __init__(self, atn):
     self.head_dim = 128
@@ -334,7 +335,7 @@ class Qwen3Attention:
     self.is_causal = atn.is_causal
     self.layer_type = atn.layer_type
     self.num_key_value_groups = atn.num_key_value_groups
-    
+
   def __call__(
       self,
       hidden_states: torch.Tensor,
@@ -351,14 +352,19 @@ class Qwen3Attention:
       cos, sin = position_embeddings
       query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-      attn_output = sdpa_attention_forward(
-          self,
-          query_states,
-          key_states,
-          value_states,
-          attention_mask,
-          scaling=self.scaling
-      )
+      key_states = repeat_kv(key_states, self.num_key_value_groups)
+      value_states = repeat_kv(value_states, self.num_key_value_groups)
+
+      attn_output = torch.nn.functional.scaled_dot_product_attention(
+            query_states,
+            key_states,
+            value_states,
+            attn_mask=attention_mask,
+            dropout_p=0,
+            scale=self.scaling,
+            is_causal=False
+        ).transpose(1, 2).contiguous()
+
 
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
       attn_output = self.o_proj(attn_output)
@@ -511,14 +517,15 @@ class HubertAttention:
       key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
       value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
 
-      attn_output = sdpa_attention_forward(
-          self,
-          query_states,
-          key_states,
-          value_states,
-          None,
-          scaling=self.scaling
-      )
+      attn_output = torch.nn.functional.scaled_dot_product_attention(
+              query_states,
+              key_states,
+              value_states,
+              attn_mask=None,
+              dropout_p=0,
+              scale=self.scaling,
+              is_causal=False
+          ).transpose(1, 2).contiguous()
 
       attn_output = attn_output.reshape(*input_shape, -1).contiguous()
       attn_output = self.out_proj(attn_output)
@@ -728,32 +735,6 @@ class audio_tokenizer:
       self.fc2 = nn.Linear(1024, 256)
       self.fc2.weight = tok.fc2.weight
       self.fc2.bias = tok.fc2.bias
-
-from transformers.integrations.sdpa_attention import repeat_kv
-def sdpa_attention_forward(
-    module: torch.nn.Module,
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    attention_mask: torch.Tensor | None,
-    scaling: float | None = None,
-) -> tuple[torch.Tensor, None]:
-    if hasattr(module, "num_key_value_groups"):
-      key = repeat_kv(key, module.num_key_value_groups)
-      value = repeat_kv(value, module.num_key_value_groups)
-
-    attn_output = torch.nn.functional.scaled_dot_product_attention(
-        query,
-        key,
-        value,
-        attn_mask=attention_mask,
-        dropout_p=0,
-        scale=scaling,
-        is_causal=False
-    )
-    attn_output = attn_output.transpose(1, 2).contiguous()
-
-    return attn_output
 
 class omni:
   def __init__(self, model):
