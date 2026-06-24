@@ -1016,9 +1016,13 @@ from tinygrad.helpers import fetch
 from tinygrad.nn.state import safe_load
 from tinygrad import Tensor as tiny_Tensor, dtypes, nn as tiny_nn
 
-def to_torch(x): return torch.Tensor(x.numpy()).to("mps")
+def to_torch(x):
+  if type(x) == torch.Tensor: return x
+  return torch.Tensor(x.numpy()).to("mps")
 
-def to_tiny(x): return tiny_Tensor(x.cpu().detach().numpy())
+def to_tiny(x):
+  if type(x) == tiny_Tensor: return x
+  return tiny_Tensor(x.cpu().detach().numpy())
 
 if __name__ == "__main__":
   model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="mps:0", dtype=torch.float16)
