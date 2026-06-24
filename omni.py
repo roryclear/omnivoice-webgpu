@@ -336,7 +336,8 @@ class llm:
     self.embed_tokens.weight = llm.embed_tokens.weight
     self.norm = Qwen3RMSNorm(llm.norm)
     self.rotary_emb = Qwen3RotaryEmbedding(llm.rotary_emb)
-    self.layers = llm.layers
+    self.layers = []
+    for i in range(28): self.layers.append(llm.layers[i])
     self.config = llm.config
 
   def __call__(
