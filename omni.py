@@ -438,9 +438,13 @@ class HubertPositionalConvEmbedding:
 class HubertEncoderLayer:
   def __init__(self, layer):
     self.attention = layer.attention
-    self.layer_norm = layer.layer_norm
     self.feed_forward = layer.feed_forward
-    self.final_layer_norm = layer.final_layer_norm
+    self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
+    self.layer_norm.weight = layer.layer_norm.weight
+    self.layer_norm.bias = layer.layer_norm.bias
+    self.final_layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
+    self.final_layer_norm.weight = layer.final_layer_norm.weight
+    self.final_layer_norm.bias = layer.final_layer_norm.bias
 
   def __call__(self, hidden_states, attention_mask=None, output_attentions=False):
     attn_residual = hidden_states
