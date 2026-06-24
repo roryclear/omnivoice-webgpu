@@ -452,14 +452,22 @@ from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 from transformers.models.hubert.modeling_hubert import eager_attention_forward
 class HubertAttention:
   def __init__(self, atn):
-    self.head_dim = atn.head_dim
-    self.q_proj = atn.q_proj
-    self.k_proj = atn.k_proj
-    self.v_proj = atn.v_proj
-    self.out_proj = atn.out_proj
+    self.head_dim = 64
+    self.q_proj = nn.Linear(in_features=768, out_features=768, bias=True)
+    self.q_proj.weight = atn.q_proj.weight
+    self.q_proj.bias = atn.q_proj.bias
+    self.k_proj = nn.Linear(in_features=768, out_features=768, bias=True)
+    self.k_proj.weight = atn.k_proj.weight
+    self.k_proj.bias = atn.k_proj.bias
+    self.v_proj = nn.Linear(in_features=768, out_features=768, bias=True)
+    self.v_proj.weight = atn.v_proj.weight
+    self.v_proj.bias = atn.v_proj.bias
+    self.out_proj = nn.Linear(in_features=768, out_features=768, bias=True)
+    self.out_proj.weight = atn.out_proj.weight
+    self.out_proj.bias = atn.out_proj.bias
     self.config = atn.config
-    self.scaling = atn.scaling
-    self.is_causal = atn.is_causal
+    self.scaling = 0.125
+    self.is_causal = False
   
   def __call__(
       self,
