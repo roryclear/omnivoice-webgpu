@@ -316,13 +316,17 @@ class Qwen3RMSNorm:
 from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
 class Qwen3Attention:
   def __init__(self, atn):
-    self.head_dim = atn.head_dim
-    self.q_norm = atn.q_norm
-    self.k_norm = atn.k_norm
-    self.q_proj = atn.q_proj
-    self.k_proj = atn.k_proj
-    self.v_proj = atn.v_proj
-    self.o_proj = atn.o_proj
+    self.head_dim = 128
+    self.q_norm = Qwen3RMSNorm(atn.q_norm)
+    self.k_norm = Qwen3RMSNorm(atn.k_norm)
+    self.q_proj = nn.Linear(in_features=1024, out_features=2048, bias=False)
+    self.q_proj.weight = atn.q_proj.weight
+    self.k_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.k_proj.weight = atn.k_proj.weight
+    self.v_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.v_proj.weight = atn.v_proj.weight
+    self.o_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.o_proj.weight = atn.o_proj.weight
     self.config = atn.config
     self.scaling = 0.08838834764831845
     self.sliding_window = atn.sliding_window
