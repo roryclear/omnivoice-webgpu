@@ -312,7 +312,7 @@ class Qwen3RMSNorm:
     variance = hidden_states.pow(2).mean(-1, keepdim=True)
     hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
     return self.weight * hidden_states.to(input_dtype)
-
+  
 from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
 class Qwen3Attention:
   def __init__(self, atn):
@@ -351,9 +351,7 @@ class Qwen3Attention:
       cos, sin = position_embeddings
       query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-      attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(self.config._attn_implementation, eager_attention_forward)
-
-      attn_output, attn_weights = attention_interface(
+      attn_output, attn_weights = sdpa_attention_forward(
           self,
           query_states,
           key_states,
@@ -483,8 +481,7 @@ class HubertFeedForward:
     hidden_states = self.intermediate_act_fn(hidden_states)
     return self.output_dense(hidden_states)
 
-from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
-from transformers.models.hubert.modeling_hubert import eager_attention_forward
+from transformers.integrations.sdpa_attention import sdpa_attention_forward
 class HubertAttention:
   def __init__(self, atn):
     self.head_dim = 64
@@ -516,11 +513,7 @@ class HubertAttention:
       key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
       value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
 
-      attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
-          self.config._attn_implementation, eager_attention_forward
-      )
-
-      attn_output, attn_weights = attention_interface(
+      attn_output, attn_weights = sdpa_attention_forward(
           self,
           query_states,
           key_states,
