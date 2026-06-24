@@ -421,7 +421,7 @@ class HubertModel:
 
 class HubertPositionalConvEmbedding:
   def __init__(self, em):
-    self.conv = em.conv
+    self.conv = em.conv # todo
     self.activation = nn.GELU()
   
   def __call__(self, hidden_states):
@@ -449,7 +449,7 @@ class HubertFeedForward:
 
 class HubertEncoderLayer:
   def __init__(self, layer):
-    self.attention = layer.attention
+    self.attention = layer.attention # todo
     self.feed_forward = HubertFeedForward(layer.feed_forward)
     self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
     self.layer_norm.weight = layer.layer_norm.weight
@@ -580,6 +580,16 @@ class SemanticEncoder:
         hidden_state = block(hidden_state)
     return hidden_state
 
+class Snake1d:
+  def __init__(self,s): self.alpha = s.alpha
+  
+  def __call__(self, hidden_states):
+    shape = hidden_states.shape
+    hidden_states = hidden_states.reshape(shape[0], shape[1], -1)
+    hidden_states = hidden_states + (self.alpha + 1e-9).reciprocal() * torch.sin(self.alpha * hidden_states).pow(2)
+    return hidden_states.reshape(shape)
+
+
 class DacEncoder:
   def __init__(self, enc):
     self.conv1 = nn.Conv1d(1, 64, kernel_size=(7,), stride=(1,), padding=(3,))
@@ -588,8 +598,8 @@ class DacEncoder:
     self.conv2 = nn.Conv1d(2048, 256, kernel_size=(3,), stride=(1,), padding=(1,))
     self.conv2.weight = enc.conv2.weight
     self.conv2.bias = enc.conv2.bias
-    self.block = enc.block
-    self.snake1 = enc.snake1
+    self.block = enc.block # todo
+    self.snake1 = Snake1d(enc.snake1)
   
   def __call__(self, hidden_state):
     hidden_state = self.conv1(hidden_state)
@@ -610,9 +620,9 @@ class DacDecoder:
     self.conv2 = nn.Conv1d(32, 1, kernel_size=(7,), stride=(1,), padding=(3,))
     self.conv2.weight = dec.conv2.weight
     self.conv2.bias = dec.conv2.bias
-    self.block = dec.block
-    self.snake1 = dec.snake1
-    self.tanh = dec.tanh
+    self.block = dec.block # todo
+    self.snake1 = Snake1d(dec.snake1)
+    self.tanh = dec.tanh # todo
   
   def __call__(self, hidden_state):
       hidden_state = self.conv1(hidden_state)
