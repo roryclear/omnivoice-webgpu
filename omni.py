@@ -435,10 +435,21 @@ class HubertPositionalConvEmbedding:
     hidden_states = self.activation(hidden_states)
     return hidden_states.transpose(1, 2)
 
+class HubertFeedForward:
+  def __init__(self, ff):
+    self.intermediate_dense = ff.intermediate_dense
+    self.intermediate_act_fn = nn.GELU()
+    self.output_dense = ff.output_dense
+
+  def __call__(self, hidden_states):
+    hidden_states = self.intermediate_dense(hidden_states)
+    hidden_states = self.intermediate_act_fn(hidden_states)
+    return self.output_dense(hidden_states)
+
 class HubertEncoderLayer:
   def __init__(self, layer):
     self.attention = layer.attention
-    self.feed_forward = layer.feed_forward
+    self.feed_forward = HubertFeedForward(layer.feed_forward)
     self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
     self.layer_norm.weight = layer.layer_norm.weight
     self.layer_norm.bias = layer.layer_norm.bias
