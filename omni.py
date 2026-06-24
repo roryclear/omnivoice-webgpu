@@ -102,17 +102,6 @@ class SimpleTokenizer:
   def prefix(self) -> list[int]:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
-
-# https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
-def encode(tok, input_values: torch.Tensor) -> torch.Tensor:
-    e_semantic_input = _extract_semantic_features(tok, input_values).detach()
-    e_semantic = semantic_encode(tok.encoder_semantic, e_semantic_input.transpose(1, 2))
-    e_acoustic = acoustic_encode(tok.acoustic_encoder, input_values)
-    embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
-    embeddings = tok.fc(embeddings.transpose(1, 2)).transpose(1, 2)
-    audio_codes = quantizer_encode(tok.quantizer, embeddings)
-    audio_codes = audio_codes.transpose(0, 1)
-    return audio_codes
    
 def quantizer_encode(quantizer, embeddings: torch.Tensor) -> torch.Tensor:
     residual = embeddings
@@ -151,19 +140,6 @@ def acoustic_encode(encoder, hidden_state):
         hidden_state = module(hidden_state)
     hidden_state = encoder.snake1(hidden_state)
     return encoder.conv2(hidden_state)
-
-def _extract_semantic_features(tok, input_values: torch.FloatTensor) -> torch.FloatTensor:
-    input_values = input_values[:, 0, :]
-    # TODO: there is a diff here with original codebase https://github.com/boson-ai/higgs-audio/blob/f644b62b855ba2b938896436221e01efadcc76ca/boson_multimodal/audio_processing/higgs_audio_v2_tokenizer.py#L173-L174
-    # input_values = F.pad(input_values, (self.pad, self.pad))
-    input_values = F.pad(input_values, (160, 160))
-    with torch.no_grad():
-        hidden_states = tok.semantic_model(input_values)
-
-    stacked = torch.stack([h.to(input_values.device) for h in hidden_states], dim=1)
-    semantic_features = stacked.mean(dim=1)
-    semantic_features = semantic_features[:, :: tok.config.semantic_downsample_factor, :]
-    return semantic_features
 
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
@@ -742,19 +718,42 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
     self.quantizers = q.quantizers
 
 class audio_tokenizer:
-   def __init__(self, tok):
-      self.config = tok.config
-      self.semantic_model = HubertModel(tok.semantic_model)
-      self.encoder_semantic = SemanticEncoder(tok.encoder_semantic)
-      self.acoustic_encoder = DacEncoder(tok.acoustic_encoder)
-      self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
-      self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization(tok.quantizer)
-      self.fc = nn.Linear(1024, 1024)
-      self.fc.weight = tok.fc.weight
-      self.fc.bias = tok.fc.bias
-      self.fc2 = nn.Linear(1024, 256)
-      self.fc2.weight = tok.fc2.weight
-      self.fc2.bias = tok.fc2.bias
+  def __init__(self, tok):
+    self.config = tok.config
+    self.semantic_model = HubertModel(tok.semantic_model)
+    self.encoder_semantic = SemanticEncoder(tok.encoder_semantic)
+    self.acoustic_encoder = DacEncoder(tok.acoustic_encoder)
+    self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
+    self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization(tok.quantizer)
+    self.fc = nn.Linear(1024, 1024)
+    self.fc.weight = tok.fc.weight
+    self.fc.bias = tok.fc.bias
+    self.fc2 = nn.Linear(1024, 256)
+    self.fc2.weight = tok.fc2.weight
+    self.fc2.bias = tok.fc2.bias
+
+  # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
+  def encode(self, input_values: torch.Tensor) -> torch.Tensor:
+    e_semantic_input = self._extract_semantic_features(input_values).detach()
+    e_semantic = semantic_encode(self.encoder_semantic, e_semantic_input.transpose(1, 2))
+    e_acoustic = acoustic_encode(self.acoustic_encoder, input_values)
+    embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
+    embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
+    audio_codes = quantizer_encode(self.quantizer, embeddings)
+    audio_codes = audio_codes.transpose(0, 1)
+    return audio_codes
+
+  def _extract_semantic_features(self, input_values: torch.FloatTensor) -> torch.FloatTensor:
+    input_values = input_values[:, 0, :]
+    input_values = F.pad(input_values, (160, 160))
+    with torch.no_grad():
+        hidden_states = self.semantic_model(input_values)
+
+    stacked = torch.stack([h.to(input_values.device) for h in hidden_states], dim=1)
+    semantic_features = stacked.mean(dim=1)
+    semantic_features = semantic_features[:, :: self.config.semantic_downsample_factor, :]
+    return semantic_features
+
 
 class omni:
   def __init__(self, model):
@@ -841,7 +840,7 @@ class omni:
       ref_wav = ref_wav[:, :-clip_size] if clip_size > 0 else ref_wav
       # numpy → torch at tokenizer boundary
       ref_wav_tensor = torch.from_numpy(ref_wav).to("mps")
-      ref_audio_tokens = encode(self.audio_tokenizer, ref_wav_tensor.unsqueeze(0),).squeeze(0)
+      ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).squeeze(0)
 
       return ref_audio_tokens
 
@@ -852,7 +851,6 @@ class omni:
       chunk_audios = [decode(self.audio_tokenizer, t.to("mps").unsqueeze(0))[0].cpu().numpy() for t in tokens]
       audio_waveform = np.concatenate(chunk_audios, axis=-1)
       return audio_waveform.squeeze(0)
-      
 
   def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
       ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
