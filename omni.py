@@ -223,9 +223,6 @@ class OmniVoice(PreTrainedModel):
         
         self.llm = AutoModel.from_config(self.config.llm_config)
 
-        self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
-        self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
-
         # todo, breaks without this
         self.all_tied_weights_keys = {}
 
@@ -761,10 +758,8 @@ class omni:
     self.device = model.device
     self.llm = llm(model.llm)
     self.codebook_layer_offsets = (torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE).to(self.device)
-    self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
-    self.audio_embeddings.weight = model.audio_embeddings.weight
-    self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
-    self.audio_heads.weight = model.audio_heads.weight
+    self.audio_embeddings = tiny_nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
+    self.audio_heads = tiny_nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
 
   def _prepare_embed_inputs(
       self, input_ids: torch.Tensor, audio_mask: torch.Tensor
@@ -777,7 +772,9 @@ class omni:
       input_ids = to_torch(input_ids)
 
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
-      audio_embeds = self.audio_embeddings(shifted_ids).sum(dim=1)
+      shifted_ids = to_tiny(shifted_ids)
+      audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+      audio_embeds = to_torch(audio_embeds)
       return torch.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
 
   def __call__(
@@ -796,7 +793,9 @@ class omni:
 
       # Shape: [B, S, C * Vocab]
       batch_size, seq_len, _ = hidden_states.shape
+      hidden_states = to_tiny(hidden_states)
       logits_flat = self.audio_heads(hidden_states)
+      logits_flat = to_torch(logits_flat)
       # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
       audio_logits = logits_flat.view(
           batch_size,
@@ -1042,6 +1041,8 @@ if __name__ == "__main__":
     model.llm.layers[i].self_attn.o_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.o_proj.weight"].numpy())
   model.llm.norm.weight = tiny_Tensor(weights[f"llm.norm.weight"].numpy())
   model.llm.embed_tokens.weight = tiny_Tensor(weights["llm.embed_tokens.weight"].numpy()).cast(dtypes.float16)
+  model.audio_heads.weight = tiny_Tensor(weights["audio_heads.weight"].numpy())
+  model.audio_embeddings.weight = tiny_Tensor(weights["audio_embeddings.weight"].numpy())
 
   #from urllib.request import urlopen
   #from safetensors.torch import load_file
