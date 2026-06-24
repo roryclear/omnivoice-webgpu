@@ -386,17 +386,20 @@ class Qwen3Attention:
 
 class Qwen3RotaryEmbedding:
   def __init__(self, emb):
-    self.inv_freq = emb.inv_freq
+    self.inv_freq = to_tiny(emb.inv_freq)
     self.attention_scaling = emb.attention_scaling
 
-  def __call__(self, x, position_ids):
-    inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)
+  def __call__(self, position_ids):
+    inv_freq_expanded = self.inv_freq[None, :, None].cast(dtypes.float).expand(position_ids.shape[0], -1, 1)
+
+    inv_freq_expanded = to_torch(inv_freq_expanded)
+
     position_ids_expanded = position_ids[:, None, :].float()
     freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
     emb = torch.cat((freqs, freqs), dim=-1)
     cos = emb.cos() * self.attention_scaling
     sin = emb.sin() * self.attention_scaling
-    return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+    return cos.to(torch.float16), sin.to(torch.float16)
 
 class Qwen3DecoderLayer:
   def __init__(self, layer):
@@ -446,7 +449,7 @@ class llm:
       position_ids = position_ids.unsqueeze(0)
 
       hidden_states = inputs_embeds
-      position_embeddings = self.rotary_emb(hidden_states, position_ids)
+      position_embeddings = self.rotary_emb(position_ids)
 
       for decoder_layer in self.layers:
         hidden_states = decoder_layer(hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings,)
