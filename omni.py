@@ -330,6 +330,45 @@ class Qwen3RotaryEmbedding:
     sin = emb.sin() * self.attention_scaling
     return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
+class Qwen3DecoderLayer:
+  def __init__(self, layer):
+    self.input_layernorm = layer.input_layernorm
+    self.self_attn = layer.self_attn
+    self.post_attention_layernorm = layer.post_attention_layernorm
+    self.mlp = layer.mlp
+  
+  def __call__(
+      self,
+      hidden_states: torch.Tensor,
+      attention_mask: torch.Tensor | None = None,
+      position_ids: torch.LongTensor | None = None,
+      past_key_values=None,
+      use_cache: bool | None = False,
+      position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,
+      **kwargs,
+  ) -> torch.Tensor:
+      residual = hidden_states
+      hidden_states = self.input_layernorm(hidden_states)
+      # Self Attention
+      hidden_states, _ = self.self_attn(
+          hidden_states=hidden_states,
+          attention_mask=attention_mask,
+          position_ids=position_ids,
+          past_key_values=past_key_values,
+          use_cache=use_cache,
+          position_embeddings=position_embeddings,
+          **kwargs,
+      )
+      hidden_states = residual + hidden_states
+
+      # Fully Connected
+      residual = hidden_states
+      hidden_states = self.post_attention_layernorm(hidden_states)
+      hidden_states = self.mlp(hidden_states)
+      hidden_states = residual + hidden_states
+      return hidden_states
+
+
 class llm:
   def __init__(self, llm):
     self.embed_tokens = nn.Embedding(151676, 1024)
@@ -337,7 +376,8 @@ class llm:
     self.norm = Qwen3RMSNorm(llm.norm)
     self.rotary_emb = Qwen3RotaryEmbedding(llm.rotary_emb)
     self.layers = []
-    for i in range(28): self.layers.append(llm.layers[i])
+    for i in range(28):
+      self.layers.append(Qwen3DecoderLayer(llm.layers[i]))
     self.config = llm.config
 
   def __call__(
