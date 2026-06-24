@@ -332,7 +332,7 @@ class Qwen3RotaryEmbedding:
 
 class Qwen3DecoderLayer:
   def __init__(self, layer):
-    self.input_layernorm = layer.input_layernorm
+    self.input_layernorm = Qwen3RMSNorm(layer.input_layernorm)
     self.self_attn = layer.self_attn
     self.post_attention_layernorm = layer.post_attention_layernorm
     self.mlp = layer.mlp
