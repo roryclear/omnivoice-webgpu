@@ -402,15 +402,17 @@ class Qwen3RotaryEmbedding:
 
 class Qwen3MLP():
   def __init__(self, m):
-    self.down_proj = nn.Linear(in_features=3072, out_features=1024, bias=False)
-    self.down_proj.weight = m.down_proj.weight
-    self.act_fn = nn.SiLU()
-    self.gate_proj = nn.Linear(in_features=1024, out_features=3072, bias=False)
-    self.gate_proj.weight = m.gate_proj.weight
-    self.up_proj = nn.Linear(in_features=1024, out_features=3072, bias=False)
-    self.up_proj.weight = m.up_proj.weight
+    self.down_proj = tiny_nn.Linear(in_features=3072, out_features=1024, bias=False)
+    self.down_proj.weight = to_tiny(m.down_proj.weight)
+    self.act_fn = tiny_Tensor.silu
+    self.gate_proj = tiny_nn.Linear(in_features=1024, out_features=3072, bias=False)
+    self.gate_proj.weight = to_tiny(m.gate_proj.weight)
+    self.up_proj = tiny_nn.Linear(in_features=1024, out_features=3072, bias=False)
+    self.up_proj.weight = to_tiny(m.up_proj.weight)
   
-  def __call__(self, x): return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+  def __call__(self, x):
+    x = to_tiny(x)
+    return to_torch(self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x)))
 
 class Qwen3DecoderLayer:
   def __init__(self, layer):
@@ -1015,7 +1017,7 @@ import soundfile as sf
 import pickle
 from tinygrad.helpers import fetch
 from tinygrad.nn.state import safe_load
-from tinygrad import Tensor as tiny_Tensor, dtypes
+from tinygrad import Tensor as tiny_Tensor, dtypes, nn as tiny_nn
 
 def to_torch(x): return torch.Tensor(x.numpy()).to("mps")
 
