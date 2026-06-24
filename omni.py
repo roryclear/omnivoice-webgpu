@@ -401,14 +401,11 @@ class Qwen3RotaryEmbedding:
     return to_torch(cos), to_torch(sin)
 
 class Qwen3MLP():
-  def __init__(self, m):
+  def __init__(self):
     self.down_proj = tiny_nn.Linear(in_features=3072, out_features=1024, bias=False)
-    self.down_proj.weight = to_tiny(m.down_proj.weight)
-    self.act_fn = tiny_Tensor.silu
     self.gate_proj = tiny_nn.Linear(in_features=1024, out_features=3072, bias=False)
-    self.gate_proj.weight = to_tiny(m.gate_proj.weight)
     self.up_proj = tiny_nn.Linear(in_features=1024, out_features=3072, bias=False)
-    self.up_proj.weight = to_tiny(m.up_proj.weight)
+    self.act_fn = tiny_Tensor.silu
   
   def __call__(self, x):
     x = to_tiny(x)
@@ -419,7 +416,7 @@ class Qwen3DecoderLayer:
     self.input_layernorm = Qwen3RMSNorm()
     self.self_attn = Qwen3Attention(layer.self_attn)
     self.post_attention_layernorm = layer.post_attention_layernorm
-    self.mlp = Qwen3MLP(layer.mlp)
+    self.mlp = Qwen3MLP()
   
   def __call__(
       self,
@@ -1034,6 +1031,9 @@ if __name__ == "__main__":
     model.llm.layers[i].input_layernorm.weight = tiny_Tensor(weights[f"llm.layers.{i}.input_layernorm.weight"].numpy())
     model.llm.layers[i].self_attn.q_norm.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.q_norm.weight"].numpy())
     model.llm.layers[i].self_attn.k_norm.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.k_norm.weight"].numpy())
+    model.llm.layers[i].mlp.down_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.down_proj.weight"].numpy())
+    model.llm.layers[i].mlp.gate_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.gate_proj.weight"].numpy())
+    model.llm.layers[i].mlp.up_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.up_proj.weight"].numpy())
   model.llm.norm.weight = tiny_Tensor(weights[f"llm.norm.weight"].numpy())
 
   #from urllib.request import urlopen
@@ -1061,7 +1061,7 @@ if __name__ == "__main__":
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  #pickle.dump(audio, open("long.pkl", "wb"))
+  pickle.dump(audio, open("long.pkl", "wb"))
   exp = pickle.load(open("long.pkl", "rb"))
   sf.write("out_long.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
