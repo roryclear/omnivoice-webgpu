@@ -400,12 +400,21 @@ class Qwen3RotaryEmbedding:
     sin = (emb.sin() * self.attention_scaling).cast(dtypes.float16)
     return to_torch(cos), to_torch(sin)
 
+class Qwen3MLP():
+  def __init__(self, m):
+    self.down_proj = m.down_proj
+    self.act_fn = m.act_fn
+    self.gate_proj = m.gate_proj
+    self.up_proj = m.up_proj
+  
+  def __call__(self, x): return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+
 class Qwen3DecoderLayer:
   def __init__(self, layer):
     self.input_layernorm = Qwen3RMSNorm()
     self.self_attn = Qwen3Attention(layer.self_attn)
     self.post_attention_layernorm = layer.post_attention_layernorm
-    self.mlp = layer.mlp
+    self.mlp = Qwen3MLP(layer.mlp)
   
   def __call__(
       self,
