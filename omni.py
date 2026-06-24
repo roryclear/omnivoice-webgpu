@@ -246,25 +246,6 @@ class OmniVoice(PreTrainedModel):
 
         return model
 
-def decode(decoder, audio_codes: torch.Tensor,):
-    audio_codes = audio_codes.transpose(0, 1)
-    quantized_out = torch.tensor(0.0)
-    for i, indices in enumerate(audio_codes):
-        quantizer = decoder.quantizer.quantizers[i]
-        quantized = F.embedding(indices, quantizer.codebook.embed)
-        quantized = quantizer.project_out(quantized)
-        quantized = quantized.permute(0, 2, 1)
-        quantized_out = quantized_out + quantized
-    quantized = quantized_out
-    quantized_acoustic = decoder.fc2(quantized.transpose(1, 2)).transpose(1, 2)
-    hidden_state = decoder.acoustic_decoder.conv1(quantized_acoustic)
-
-    for layer in decoder.acoustic_decoder.block:
-        hidden_state = layer(hidden_state)
-
-    hidden_state = decoder.acoustic_decoder.snake1(hidden_state)
-    return decoder.acoustic_decoder.conv2(hidden_state)
-
 def _gumbel_sample(logits: torch.Tensor, temperature: float) -> torch.Tensor:
     scaled_logits = logits / temperature
     u = torch.rand_like(scaled_logits)
@@ -754,6 +735,24 @@ class audio_tokenizer:
     semantic_features = semantic_features[:, :: self.config.semantic_downsample_factor, :]
     return semantic_features
 
+  def decode(self, audio_codes: torch.Tensor,):
+      audio_codes = audio_codes.transpose(0, 1)
+      quantized_out = torch.tensor(0.0)
+      for i, indices in enumerate(audio_codes):
+          quantizer = self.quantizer.quantizers[i]
+          quantized = F.embedding(indices, quantizer.codebook.embed)
+          quantized = quantizer.project_out(quantized)
+          quantized = quantized.permute(0, 2, 1)
+          quantized_out = quantized_out + quantized
+      quantized = quantized_out
+      quantized_acoustic = self.fc2(quantized.transpose(1, 2)).transpose(1, 2)
+      hidden_state = self.acoustic_decoder.conv1(quantized_acoustic)
+
+      for layer in self.acoustic_decoder.block:
+          hidden_state = layer(hidden_state)
+
+      hidden_state = self.acoustic_decoder.snake1(hidden_state)
+      return self.acoustic_decoder.conv2(hidden_state)
 
 class omni:
   def __init__(self, model):
@@ -848,7 +847,7 @@ class omni:
       self,
       tokens: Union[torch.Tensor, List[torch.Tensor]],
   ) -> np.ndarray:
-      chunk_audios = [decode(self.audio_tokenizer, t.to("mps").unsqueeze(0))[0].cpu().numpy() for t in tokens]
+      chunk_audios = [self.audio_tokenizer.decode(t.to("mps").unsqueeze(0))[0].cpu().numpy() for t in tokens]
       audio_waveform = np.concatenate(chunk_audios, axis=-1)
       return audio_waveform.squeeze(0)
 
