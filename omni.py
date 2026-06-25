@@ -599,14 +599,6 @@ class SemanticEncoder:
         hidden_state = block(hidden_state)
     return hidden_state
 
-  def encode(self, hidden_state: torch.Tensor) -> torch.Tensor:
-      hidden_state = to_tiny(hidden_state)
-      hidden_state = self.conv(hidden_state)
-      hidden_state = to_torch(hidden_state)
-      for block in self.conv_blocks:
-          hidden_state = block(hidden_state)
-      return hidden_state
-
 class Snake1d:
   def __call__(self, hidden_states):
     hidden_states = to_tiny(hidden_states)
@@ -633,13 +625,9 @@ class DacEncoderBlock:
     return to_torch(hidden_state)
 
 class DacEncoder:
-  def __init__(self, enc):
-    self.conv1 = nn.Conv1d(1, 64, kernel_size=(7,), stride=(1,), padding=(3,))
-    self.conv1.weight = enc.conv1.weight
-    self.conv1.bias = enc.conv1.bias
-    self.conv2 = nn.Conv1d(2048, 256, kernel_size=(3,), stride=(1,), padding=(1,))
-    self.conv2.weight = enc.conv2.weight
-    self.conv2.bias = enc.conv2.bias
+  def __init__(self):
+    self.conv1 = tiny_nn.Conv1d(1, 64, kernel_size=7, stride=1, padding=3)
+    self.conv2 = tiny_nn.Conv1d(2048, 256, kernel_size=3, stride=1, padding=1)
     self.block = [DacEncoderBlock(64, 128, 16, 8, 4,),
                   DacEncoderBlock(128, 256, 10, 5, 3),
                   DacEncoderBlock(256, 512, 8, 4, 2),
@@ -648,22 +636,16 @@ class DacEncoder:
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
+    hidden_state = to_tiny(hidden_state)
     hidden_state = self.conv1(hidden_state)
-
+    hidden_state = to_torch(hidden_state)
     for module in self.block:
         hidden_state = module(hidden_state)
-
+    hidden_state = to_tiny(hidden_state)
     hidden_state = self.snake1(hidden_state)
+    hidden_state = to_tiny(hidden_state)
     hidden_state = self.conv2(hidden_state)
-
-    return hidden_state
-  
-  def encode(self, hidden_state):
-    hidden_state = self.conv1(hidden_state)
-    for module in self.block:
-        hidden_state = module(hidden_state)
-    hidden_state = self.snake1(hidden_state)
-    return self.conv2(hidden_state)
+    return to_torch(hidden_state)
 
 class ConvTranspose1d:
   def __init__(self, conv):
@@ -764,7 +746,7 @@ class audio_tokenizer:
     self.config = tok.config
     self.semantic_model = HubertModel()
     self.encoder_semantic = SemanticEncoder()
-    self.acoustic_encoder = DacEncoder(tok.acoustic_encoder)
+    self.acoustic_encoder = DacEncoder()
     self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
     self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization(tok.quantizer)
     self.fc = tiny_nn.Linear(1024, 1024)
@@ -773,8 +755,8 @@ class audio_tokenizer:
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values: torch.Tensor) -> torch.Tensor:
     e_semantic_input = self._extract_semantic_features(input_values).detach()
-    e_semantic = self.encoder_semantic.encode(e_semantic_input.transpose(1, 2))
-    e_acoustic = self.acoustic_encoder.encode(input_values)
+    e_semantic = self.encoder_semantic(e_semantic_input.transpose(1, 2))
+    e_acoustic = self.acoustic_encoder(input_values)
     embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
     embeddings = to_tiny(embeddings)
     embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
@@ -1147,7 +1129,12 @@ if __name__ == "__main__":
 
   model.audio_tokenizer.acoustic_encoder.snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.snake1.alpha"].numpy())
   model.audio_tokenizer.acoustic_decoder.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.snake1.alpha"].numpy())
-  
+
+  model.audio_tokenizer.acoustic_encoder.conv1.weight = tiny_Tensor(weights["acoustic_encoder.conv1.weight"].numpy())
+  model.audio_tokenizer.acoustic_encoder.conv1.bias = tiny_Tensor(weights["acoustic_encoder.conv1.bias"].numpy())
+  model.audio_tokenizer.acoustic_encoder.conv2.weight = tiny_Tensor(weights["acoustic_encoder.conv2.weight"].numpy())
+  model.audio_tokenizer.acoustic_encoder.conv2.bias = tiny_Tensor(weights["acoustic_encoder.conv2.bias"].numpy())
+
   for i in range(len(model.audio_tokenizer.acoustic_encoder.block)):
     model.audio_tokenizer.acoustic_encoder.block[i].snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.snake1.alpha"].numpy())
     model.audio_tokenizer.acoustic_encoder.block[i].conv1.weight = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.conv1.weight"].numpy())
