@@ -660,7 +660,7 @@ class ConvTranspose1d:
     self.output_padding = conv.output_padding
   
   def __call__(self, input):
-    return F.conv_transpose1d( # todo
+    return conv_transpose1d_manual( # todo
         input,
         self.weight,
         self.bias,
@@ -670,6 +670,39 @@ class ConvTranspose1d:
         self.groups,
         self.dilation,
     )
+
+def conv_transpose1d_manual(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    output_padding=0,
+    groups=1,
+    dilation=1,
+):
+    batch_size, in_channels, in_width = input.shape
+    _, _, kernel_size = weight.shape
+
+    upsampled = torch.zeros(batch_size, in_channels, in_width * stride[0] - (stride[0] - 1), device=input.device, dtype=input.dtype,)
+    upsampled[:, :, ::stride[0]] = input
+
+    pad = dilation[0] * (kernel_size - 1) - padding[0]
+    weight_flipped = weight.flip(-1)
+    weight_conv = weight_flipped.permute(1, 0, 2)
+    out = F.conv1d(
+        upsampled,
+        weight_conv,
+        bias=None,
+        stride=1,
+        padding=pad,
+        dilation=dilation,
+        groups=groups,
+    )
+
+    if output_padding[0] > 0: out = F.pad(out, (0, output_padding[0]))
+    out += bias.view(1, -1, 1)
+    return out
 
 class DacResidualUnit:
   def __init__(self, in_ch, out_ch, p1, d1):
@@ -707,7 +740,9 @@ class DacDecoderBlock:
    
   def __call__(self, hidden_state):
     hidden_state = self.snake1(hidden_state)
+    print(hidden_state.shape)
     hidden_state = self.conv_t1(hidden_state)
+    print(hidden_state.shape)
     hidden_state = self.res_unit1(hidden_state)
     hidden_state = self.res_unit2(hidden_state)
     hidden_state = self.res_unit3(hidden_state)
