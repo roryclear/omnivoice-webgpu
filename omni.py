@@ -549,16 +549,16 @@ class HubertFeatureProjection:
       return self.projection(hidden_states)
 
 class HubertGroupNormConvLayer:
-  def __init__(self, layer):
-    self.conv = nn.Conv1d(1, 512, kernel_size=(10,), stride=(5,), bias=False)
-    self.conv.weight = layer.conv.weight
-    self.activation = nn.GELU()
-    self.layer_norm = layer.layer_norm
+  def __init__(self):
+    self.conv = tiny_nn.Conv1d(1, 512, kernel_size=10, stride=5, bias=False)
+    self.layer_norm = tiny_nn.GroupNorm(512, 512)
   
   def __call__(self, hidden_states):
+    hidden_states = to_tiny(hidden_states)
     hidden_states = self.conv(hidden_states)
     hidden_states = self.layer_norm(hidden_states)
-    return self.activation(hidden_states)
+    hidden_states = tiny_Tensor.gelu(hidden_states)
+    return to_torch(hidden_states)
 
 class HubertNoLayerNormConvLayer:
   def __init__(self, layer):
@@ -572,7 +572,7 @@ class HubertNoLayerNormConvLayer:
 
 class HubertFeatureEncoder:
   def __init__(self, enc):
-    self.conv_layers = [HubertGroupNormConvLayer(enc.conv_layers[0])]
+    self.conv_layers = [HubertGroupNormConvLayer()]
     for i in range(1,7):
       self.conv_layers.append(HubertNoLayerNormConvLayer(enc.conv_layers[i]))
   
@@ -1095,6 +1095,11 @@ if __name__ == "__main__":
   
   weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/audio_tokenizer/model.safetensors"))
   for w in weights.keys(): print(w, type(weights[w]))
+
+  model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.weight = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.weight"].numpy())
+  model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.bias = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.bias"].numpy())
+  model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].conv.weight = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.conv.weight"].numpy())
+
 
   for i in range(len(model.audio_tokenizer.semantic_model.encoder.layers)):
     model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.weight"].numpy())
