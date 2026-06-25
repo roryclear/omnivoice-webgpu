@@ -416,7 +416,7 @@ class llm:
 class HubertModel:
   def __init__(self, model):
     self.config = model.config
-    self.feature_extractor = HubertFeatureEncoder(model.feature_extractor)
+    self.feature_extractor = HubertFeatureEncoder()
     self.feature_projection = HubertFeatureProjection(model.feature_projection)
     self.encoder = HubertEncoder(model.encoder)
 
@@ -561,20 +561,19 @@ class HubertGroupNormConvLayer:
     return to_torch(hidden_states)
 
 class HubertNoLayerNormConvLayer:
-  def __init__(self, layer):
-    self.activation = nn.GELU()
-    self.conv = nn.Conv1d(512, 512, kernel_size=(3,), stride=(2,), bias=False)
-    self.conv.weight = layer.conv.weight
+  def __init__(self): self.conv = tiny_nn.Conv1d(512, 512, kernel_size=3, stride=2, bias=False)
   
   def __call__(self, hidden_states):
+    hidden_states = to_tiny(hidden_states)
     hidden_states = self.conv(hidden_states)
-    return self.activation(hidden_states)
+    hidden_states = tiny_Tensor.gelu(hidden_states)
+    return to_torch(hidden_states)
 
 class HubertFeatureEncoder:
-  def __init__(self, enc):
+  def __init__(self):
     self.conv_layers = [HubertGroupNormConvLayer()]
-    for i in range(1,7):
-      self.conv_layers.append(HubertNoLayerNormConvLayer(enc.conv_layers[i]))
+    for i in range(1, 7):
+      self.conv_layers.append(HubertNoLayerNormConvLayer())
   
   def __call__(self, input_values):
     hidden_states = input_values[:, None]
@@ -1098,8 +1097,10 @@ if __name__ == "__main__":
 
   model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.weight = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.weight"].numpy())
   model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.bias = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.bias"].numpy())
-  model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].conv.weight = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.conv.weight"].numpy())
 
+  for i in range(len(model.audio_tokenizer.semantic_model.feature_extractor.conv_layers)):
+    model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[i].conv.weight = tiny_Tensor(weights[f"semantic_model.feature_extractor.conv_layers.{i}.conv.weight"].numpy())
+     
 
   for i in range(len(model.audio_tokenizer.semantic_model.encoder.layers)):
     model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.weight"].numpy())
@@ -1163,7 +1164,7 @@ if __name__ == "__main__":
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  #pickle.dump(audio, open("short.pkl", "wb"))
+  pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1187,7 +1188,7 @@ if __name__ == "__main__":
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  #pickle.dump(audio, open("short2.pkl", "wb"))
+  pickle.dump(audio, open("short2.pkl", "wb"))
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
