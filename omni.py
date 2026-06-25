@@ -660,35 +660,14 @@ class ConvTranspose1d:
     self.output_padding = conv.output_padding
   
   def __call__(self, input):
-    return conv_transpose1d_manual( # todo
-        input,
-        self.weight,
-        self.bias,
-        self.stride,
-        self.padding,
-        self.output_padding,
-        self.groups,
-        self.dilation,
-    )
-
-def conv_transpose1d_manual(
-    input,
-    weight,
-    bias=None,
-    stride=1,
-    padding=0,
-    output_padding=0,
-    groups=1,
-    dilation=1,
-):
     batch_size, in_channels, in_width = input.shape
-    _, _, kernel_size = weight.shape
+    _, _, kernel_size = self.weight.shape
 
-    upsampled = torch.zeros(batch_size, in_channels, in_width * stride[0] - (stride[0] - 1), device=input.device, dtype=input.dtype,)
-    upsampled[:, :, ::stride[0]] = input
+    upsampled = torch.zeros(batch_size, in_channels, in_width * self.stride[0] - (self.stride[0] - 1), device=input.device, dtype=input.dtype,)
+    upsampled[:, :, ::self.stride[0]] = input
 
-    pad = dilation[0] * (kernel_size - 1) - padding[0]
-    weight_flipped = weight.flip(-1)
+    pad = self.dilation[0] * (kernel_size - 1) - self.padding[0]
+    weight_flipped = self.weight.flip(-1)
     weight_conv = weight_flipped.permute(1, 0, 2)
     out = F.conv1d(
         upsampled,
@@ -696,12 +675,12 @@ def conv_transpose1d_manual(
         bias=None,
         stride=1,
         padding=pad,
-        dilation=dilation,
-        groups=groups,
+        dilation=self.dilation,
+        groups=self.groups,
     )
 
-    if output_padding[0] > 0: out = F.pad(out, (0, output_padding[0]))
-    out += bias.view(1, -1, 1)
+    if self.output_padding[0] > 0: out = F.pad(out, (0, self.output_padding[0]))
+    out += self.bias.view(1, -1, 1)
     return out
 
 class DacResidualUnit:
