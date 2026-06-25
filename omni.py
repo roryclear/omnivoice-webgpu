@@ -403,7 +403,7 @@ class HubertModel:
   def __init__(self, model):
     self.config = model.config
     self.feature_extractor = HubertFeatureEncoder()
-    self.feature_projection = HubertFeatureProjection(model.feature_projection)
+    self.feature_projection = HubertFeatureProjection()
     self.encoder = HubertEncoder(model.encoder)
 
   def __call__(self, input_values: torch.Tensor | None,):
@@ -522,17 +522,15 @@ class HubertEncoder:
     return all_hidden_states
 
 class HubertFeatureProjection:
-  def __init__(self, proj):
-    self.layer_norm = nn.LayerNorm((512,), eps=1e-05, elementwise_affine=True, bias=True)
-    self.layer_norm.weight = proj.layer_norm.weight
-    self.layer_norm.bias = proj.layer_norm.bias
-    self.projection = nn.Linear(in_features=512, out_features=768, bias=True)
-    self.projection.weight = proj.projection.weight
-    self.projection.bias = proj.projection.bias
+  def __init__(self):
+    self.layer_norm = tiny_nn.LayerNorm(512, eps=1e-05, elementwise_affine=True)
+    self.projection = tiny_nn.Linear(in_features=512, out_features=768, bias=True)
 
   def __call__(self, hidden_states):
+      hidden_states = to_tiny(hidden_states)
       hidden_states = self.layer_norm(hidden_states)
-      return self.projection(hidden_states)
+      hidden_states = self.projection(hidden_states)
+      return to_torch(hidden_states)
 
 class HubertGroupNormConvLayer:
   def __init__(self):
@@ -1179,7 +1177,10 @@ if __name__ == "__main__":
   model.audio_tokenizer.fc2.weight = tiny_Tensor(weights["fc2.weight"].numpy())
   model.audio_tokenizer.fc2.bias = tiny_Tensor(weights["fc2.bias"].numpy())
   model.audio_tokenizer.semantic_model.encoder.pos_conv_embed.conv.bias = tiny_Tensor(weights["semantic_model.encoder.pos_conv_embed.conv.bias"].numpy())
-
+  model.audio_tokenizer.semantic_model.feature_projection.layer_norm.weight = tiny_Tensor(weights["semantic_model.feature_projection.layer_norm.weight"].numpy())
+  model.audio_tokenizer.semantic_model.feature_projection.layer_norm.bias = tiny_Tensor(weights["semantic_model.feature_projection.layer_norm.bias"].numpy())
+  model.audio_tokenizer.semantic_model.feature_projection.projection.weight = tiny_Tensor(weights["semantic_model.feature_projection.projection.weight"].numpy())
+  model.audio_tokenizer.semantic_model.feature_projection.projection.bias = tiny_Tensor(weights["semantic_model.feature_projection.projection.bias"].numpy())
   #from urllib.request import urlopen
   #from safetensors.torch import load_file
   #state_dict = load_file("model.safetensors")
