@@ -582,23 +582,22 @@ class HubertFeatureEncoder:
     return hidden_states
 
 class HiggsAudioV2TokenizerResidualUnit:
-  def __init__(self, unit):
-    self.activation = nn.ELU(alpha=1.0)
-    self.conv1 = nn.Conv1d(768, 768, kernel_size=(3,), stride=(1,), padding=(1,), bias=False)
-    self.conv1.weight = unit.conv1.weight
-    self.conv2 = nn.Conv1d(768, 768, kernel_size=(1,), stride=(1,), bias=False)
-    self.conv2.weight = unit.conv2.weight
+  def __init__(self):
+    self.conv1 = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1, bias=False)
+    self.conv2 = tiny_nn.Conv1d(768, 768, kernel_size=1, stride=1, bias=False)
 
   def __call__(self, hidden_state: torch.Tensor) -> torch.Tensor:
-    output_tensor = self.activation(hidden_state)
+    hidden_state = to_tiny(hidden_state)
+    output_tensor = tiny_Tensor.elu(hidden_state)
     output_tensor = self.conv1(output_tensor)
-    output_tensor = self.activation(output_tensor)
+    output_tensor = tiny_Tensor.elu(output_tensor)
     output_tensor = self.conv2(output_tensor)
-    return hidden_state + output_tensor
+    hidden_state = hidden_state + output_tensor
+    return to_torch(hidden_state)
 
 class HiggsAudioV2TokenizerSemanticEncoderBlock:
   def __init__(self, block):
-    self.res_units = [HiggsAudioV2TokenizerResidualUnit(block.res_units[0]), HiggsAudioV2TokenizerResidualUnit(block.res_units[1])]
+    self.res_units = [HiggsAudioV2TokenizerResidualUnit(), HiggsAudioV2TokenizerResidualUnit()]
     self.conv = nn.Conv1d(768, 768, kernel_size=(3,), stride=(1,), padding=(1,))
     self.conv.weight = block.conv.weight
     self.conv.bias = block.conv.bias
@@ -1144,6 +1143,12 @@ if __name__ == "__main__":
     model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv2.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv2.bias"].numpy())
     model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv1.bias"].numpy())
     model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv2.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv2.bias"].numpy())
+
+  for i in range(len(model.audio_tokenizer.encoder_semantic.conv_blocks)):
+    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[0].conv1.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.0.conv1.weight"].numpy())
+    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[0].conv2.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.0.conv2.weight"].numpy())
+    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[1].conv1.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.1.conv1.weight"].numpy())
+    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[1].conv2.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.1.conv2.weight"].numpy())
 
   model.audio_tokenizer.fc.weight = tiny_Tensor(weights["fc.weight"].numpy())
   model.audio_tokenizer.fc.bias = tiny_Tensor(weights["fc.bias"].numpy())
