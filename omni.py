@@ -617,10 +617,10 @@ class Snake1d:
     return to_torch(hidden_states)
 
 class DacEncoderBlock:
-  def __init__(self, blk, in_ch, out_ch, k, s, p):
-    self.res_unit1 = DacResidualUnit(in_ch=blk.res_unit1.conv1.in_channels, out_ch=blk.res_unit1.conv1.out_channels, p1=3, d1=1)
-    self.res_unit2 = DacResidualUnit(in_ch=blk.res_unit2.conv1.in_channels, out_ch=blk.res_unit2.conv1.out_channels, p1=9, d1=3)
-    self.res_unit3 = DacResidualUnit(in_ch=blk.res_unit3.conv1.in_channels, out_ch=blk.res_unit3.conv1.out_channels, p1=27, d1=9)
+  def __init__(self, in_ch, out_ch, k, s, p):
+    self.res_unit1 = DacResidualUnit(in_ch=in_ch, out_ch=in_ch, p1=3, d1=1)
+    self.res_unit2 = DacResidualUnit(in_ch=in_ch, out_ch=in_ch, p1=9, d1=3)
+    self.res_unit3 = DacResidualUnit(in_ch=in_ch, out_ch=in_ch, p1=27, d1=9)
     self.snake1 = Snake1d()
     self.conv1 = tiny_nn.Conv1d(in_ch, out_ch, kernel_size=k, stride=s, padding=p)
 
@@ -640,11 +640,11 @@ class DacEncoder:
     self.conv2 = nn.Conv1d(2048, 256, kernel_size=(3,), stride=(1,), padding=(1,))
     self.conv2.weight = enc.conv2.weight
     self.conv2.bias = enc.conv2.bias
-    self.block = [DacEncoderBlock(enc.block[0], 64, 128, 16, 8, 4),
-                  DacEncoderBlock(enc.block[1], 128, 256, 10, 5, 3),
-                  DacEncoderBlock(enc.block[2], 256, 512, 8, 4, 2),
-                  DacEncoderBlock(enc.block[3], 512, 1024, 4, 2, 1),
-                  DacEncoderBlock(enc.block[4], 1024, 2048, 6, 3, 2)]
+    self.block = [DacEncoderBlock(64, 128, 16, 8, 4,),
+                  DacEncoderBlock(128, 256, 10, 5, 3),
+                  DacEncoderBlock(256, 512, 8, 4, 2),
+                  DacEncoderBlock(512, 1024, 4, 2, 1),
+                  DacEncoderBlock(1024, 2048, 6, 3, 2)]
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
@@ -716,12 +716,12 @@ class DacResidualUnit:
     return output_tensor    
 
 class DacDecoderBlock:
-  def __init__(self, blk, sz):
+  def __init__(self, blk, in_ch):
     self.snake1 = Snake1d()
     self.conv_t1 = ConvTranspose1d(blk.conv_t1) # todo
-    self.res_unit1 = DacResidualUnit(out_ch=blk.res_unit1.conv1.out_channels, in_ch=sz, p1=3, d1=1)
-    self.res_unit2 = DacResidualUnit(out_ch=blk.res_unit2.conv1.out_channels, in_ch=sz, p1=9, d1=3)
-    self.res_unit3 = DacResidualUnit(out_ch=blk.res_unit3.conv1.out_channels, in_ch=sz, p1=27, d1=9)
+    self.res_unit1 = DacResidualUnit(out_ch=blk.res_unit1.conv1.out_channels, in_ch=in_ch, p1=3, d1=1)
+    self.res_unit2 = DacResidualUnit(out_ch=blk.res_unit2.conv1.out_channels, in_ch=in_ch, p1=9, d1=3)
+    self.res_unit3 = DacResidualUnit(out_ch=blk.res_unit3.conv1.out_channels, in_ch=in_ch, p1=27, d1=9)
    
   def __call__(self, hidden_state):
     hidden_state = self.snake1(hidden_state)
