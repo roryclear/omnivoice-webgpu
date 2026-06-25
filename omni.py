@@ -682,7 +682,7 @@ class DacResidualUnit:
     self.conv1 = nn.Conv1d(u.conv1.in_channels, u.conv1.out_channels, kernel_size=u.conv1.kernel_size, stride=u.conv1.stride, padding=u.conv1.padding, dilation=u.conv1.dilation)
     self.conv1.weight = u.conv1.weight
     self.conv1.bias = u.conv1.bias
-    self.conv2 = nn.Conv1d(u.conv2.in_channels, u.conv2.out_channels, kernel_size=u.conv2.kernel_size, stride=u.conv2.stride, padding=u.conv2.padding, dilation=u.conv1.dilation)
+    self.conv2 = nn.Conv1d(u.conv1.in_channels, u.conv1.out_channels, kernel_size=u.conv2.kernel_size, stride=u.conv1.stride, padding=u.conv2.padding, dilation=u.conv1.dilation)
     self.conv2.weight = u.conv2.weight
     self.conv2.bias = u.conv2.bias
     self.snake1 = Snake1d()
