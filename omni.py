@@ -128,21 +128,6 @@ def quantizer_encode(quantizer, embeddings: torch.Tensor) -> torch.Tensor:
     out_indices = torch.stack(all_indices)
     return out_indices
 
-def semantic_encode(encoder, hidden_state: torch.Tensor) -> torch.Tensor:
-    hidden_state = to_tiny(hidden_state)
-    hidden_state = encoder.conv(hidden_state)
-    hidden_state = to_torch(hidden_state)
-    for block in encoder.conv_blocks:
-        hidden_state = block(hidden_state)
-    return hidden_state
-
-def acoustic_encode(encoder, hidden_state):
-    hidden_state = encoder.conv1(hidden_state)
-    for module in encoder.block:
-        hidden_state = module(hidden_state)
-    hidden_state = encoder.snake1(hidden_state)
-    return encoder.conv2(hidden_state)
-
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 NUM_STEPS = 32
@@ -622,6 +607,14 @@ class SemanticEncoder:
         hidden_state = block(hidden_state)
     return hidden_state
 
+  def encode(self, hidden_state: torch.Tensor) -> torch.Tensor:
+      hidden_state = to_tiny(hidden_state)
+      hidden_state = self.conv(hidden_state)
+      hidden_state = to_torch(hidden_state)
+      for block in self.conv_blocks:
+          hidden_state = block(hidden_state)
+      return hidden_state
+
 class Snake1d:
   def __call__(self, hidden_states):
     hidden_states = to_tiny(hidden_states)
@@ -669,6 +662,13 @@ class DacEncoder:
 
     return hidden_state
   
+  def encode(self, hidden_state):
+    hidden_state = self.conv1(hidden_state)
+    for module in self.block:
+        hidden_state = module(hidden_state)
+    hidden_state = self.snake1(hidden_state)
+    return self.conv2(hidden_state)
+
 class ConvTranspose1d:
   def __init__(self, conv):
     self.weight = conv.weight
@@ -774,8 +774,8 @@ class audio_tokenizer:
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values: torch.Tensor) -> torch.Tensor:
     e_semantic_input = self._extract_semantic_features(input_values).detach()
-    e_semantic = semantic_encode(self.encoder_semantic, e_semantic_input.transpose(1, 2))
-    e_acoustic = acoustic_encode(self.acoustic_encoder, input_values)
+    e_semantic = self.encoder_semantic.encode(e_semantic_input.transpose(1, 2))
+    e_acoustic = self.acoustic_encoder.encode(input_values)
     embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
     embeddings = to_tiny(embeddings)
     embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
