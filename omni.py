@@ -652,7 +652,7 @@ class DacEncoder:
     hidden_state = self.conv2(hidden_state)
 
     return hidden_state
-
+  
 class ConvTranspose1d:
   def __init__(self, conv):
     self.weight = conv.weight
@@ -665,83 +665,17 @@ class ConvTranspose1d:
     self._output_padding = conv._output_padding
     self.output_padding = conv.output_padding
   
-  def __call__(self, input, output_size: list[int] | None = None):
-      num_spatial_dims = 1
-      output_padding = _output_padding(
-          self,
-          input,
-          output_size,
-          self.stride,  # type: ignore[arg-type]
-          self.padding,  # type: ignore[arg-type]
-          self.kernel_size,  # type: ignore[arg-type]
-          num_spatial_dims,
-          self.dilation,  # type: ignore[arg-type]
-      )
-      
-      return F.conv_transpose1d(
-          input,
-          self.weight,
-          self.bias,
-          self.stride,
-          self.padding,
-          output_padding,
-          self.groups,
-          self.dilation,
-      )
-
-from torch.nn.modules.utils import _single
-def _output_padding(
-    pd,
-    input,
-    output_size: list[int] | None,
-    stride: list[int],
-    padding: list[int],
-    kernel_size: list[int],
-    num_spatial_dims: int,
-    dilation: list[int] | None = None,
-) -> list[int]:
-    if output_size is None:
-        ret = _single(pd.output_padding)  # converting to list if was not already
-    else:
-        has_batch_dim = input.dim() == num_spatial_dims + 2
-        num_non_spatial_dims = 2 if has_batch_dim else 1
-        if len(output_size) == num_non_spatial_dims + num_spatial_dims:
-            output_size = output_size[num_non_spatial_dims:]
-        if len(output_size) != num_spatial_dims:
-            raise ValueError(
-                f"ConvTranspose{num_spatial_dims}D: for {input.dim()}D input, output_size must have {num_spatial_dims} "
-                f"or {num_non_spatial_dims + num_spatial_dims} elements (got {len(output_size)})"
-            )
-
-        min_sizes = torch.jit.annotate(list[int], [])
-        max_sizes = torch.jit.annotate(list[int], [])
-        for d in range(num_spatial_dims):
-            dim_size = (
-                (input.size(d + num_non_spatial_dims) - 1) * stride[d]
-                - 2 * padding[d]
-                + (dilation[d] if dilation is not None else 1)
-                * (kernel_size[d] - 1)
-                + 1
-            )
-            min_sizes.append(dim_size)
-            max_sizes.append(min_sizes[d] + stride[d] - 1)
-
-        for i in range(len(output_size)):
-            size = output_size[i]
-            min_size = min_sizes[i]
-            max_size = max_sizes[i]
-            if size < min_size or size > max_size:
-                raise ValueError(
-                    f"requested an output size of {output_size}, but valid sizes range "
-                    f"from {min_sizes} to {max_sizes} (for an input of {input.size()[2:]})"
-                )
-
-        res = torch.jit.annotate(list[int], [])
-        for d in range(num_spatial_dims):
-            res.append(output_size[d] - min_sizes[d])
-
-        ret = res
-    return ret
+  def __call__(self, input):
+    return F.conv_transpose1d(
+        input,
+        self.weight,
+        self.bias,
+        self.stride,
+        self.padding,
+        self.output_padding,
+        self.groups,
+        self.dilation,
+    )
 
 class DacDecoderBlock:
   def __init__(self, blk):
