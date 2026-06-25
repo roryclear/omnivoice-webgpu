@@ -669,15 +669,18 @@ class ConvTranspose1d:
     pad = self.dilation[0] * (kernel_size - 1) - self.padding[0]
     weight_flipped = self.weight.flip(-1)
     weight_conv = weight_flipped.permute(1, 0, 2)
-    out = F.conv1d(
-        upsampled,
-        weight_conv,
+
+
+    out = F.conv2d(
+        upsampled.unsqueeze(2),
+        weight_conv.unsqueeze(2),
         bias=None,
-        stride=1,
-        padding=pad,
-        dilation=self.dilation,
+        stride=(1, 1),
+        padding=(0, pad),
+        dilation=(1, self.dilation[0]),
         groups=self.groups,
-    )
+    ).squeeze(2)
+
 
     if self.output_padding[0] > 0: out = F.pad(out, (0, self.output_padding[0]))
     out += self.bias.view(1, -1, 1)
