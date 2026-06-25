@@ -458,20 +458,12 @@ class HubertFeedForward:
 
 
 class HubertAttention:
-  def __init__(self, atn):
+  def __init__(self):
     self.head_dim = 64
     self.q_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
-    self.q_proj.weight = to_tiny(atn.q_proj.weight)
-    self.q_proj.bias = to_tiny(atn.q_proj.bias)
     self.k_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
-    self.k_proj.weight = to_tiny(atn.k_proj.weight)
-    self.k_proj.bias = to_tiny(atn.k_proj.bias)
     self.v_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
-    self.v_proj.weight = to_tiny(atn.v_proj.weight)
-    self.v_proj.bias = to_tiny(atn.v_proj.bias)
     self.out_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
-    self.out_proj.weight = to_tiny(atn.out_proj.weight)
-    self.out_proj.bias = to_tiny(atn.out_proj.bias)
     self.scaling = 0.125
     self.is_causal = False
   
@@ -501,7 +493,7 @@ class HubertAttention:
 
 class HubertEncoderLayer:
   def __init__(self, layer):
-    self.attention = HubertAttention(layer.attention) # todo
+    self.attention = HubertAttention()
     self.feed_forward = HubertFeedForward(layer.feed_forward)
     self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
     self.layer_norm.weight = layer.layer_norm.weight
@@ -1039,6 +1031,17 @@ if __name__ == "__main__":
   
   weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/audio_tokenizer/model.safetensors"))
   for w in weights.keys(): print(w, type(weights[w]))
+
+  for i in range(len(model.audio_tokenizer.semantic_model.encoder.layers)):
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.k_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.k_proj.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.v_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.v_proj.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.out_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.out_proj.weight"].numpy())
+
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.k_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.k_proj.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.v_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.v_proj.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.out_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.out_proj.bias"].numpy())
 
   model.audio_tokenizer.fc.weight = tiny_Tensor(weights["fc.weight"].numpy())
   model.audio_tokenizer.fc.bias = tiny_Tensor(weights["fc.bias"].numpy())
