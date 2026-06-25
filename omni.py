@@ -666,7 +666,7 @@ class ConvTranspose1d:
     self.output_padding = conv.output_padding
   
   def __call__(self, input):
-    return F.conv_transpose1d(
+    return F.conv_transpose1d( # todo
         input,
         self.weight,
         self.bias,
@@ -677,13 +677,32 @@ class ConvTranspose1d:
         self.dilation,
     )
 
+class DacResidualUnit:
+  def __init__(self, u):
+    self.conv1 = u.conv1
+    self.conv2 = u.conv2
+    self.snake1 = Snake1d()
+    self.snake2 = Snake1d()
+
+  def __call__(self, hidden_state):
+    output_tensor = hidden_state
+    output_tensor = self.conv1(self.snake1(output_tensor))
+    output_tensor = self.conv2(self.snake2(output_tensor))
+    padding = (hidden_state.shape[-1] - output_tensor.shape[-1]) // 2
+    if padding > 0:
+        print("does this get hit?")
+        exit()
+        hidden_state = hidden_state[..., padding:-padding]
+    output_tensor = hidden_state + output_tensor
+    return output_tensor    
+
 class DacDecoderBlock:
   def __init__(self, blk):
     self.snake1 = Snake1d()
     self.conv_t1 = ConvTranspose1d(blk.conv_t1)
-    self.res_unit1 = blk.res_unit1
-    self.res_unit2 = blk.res_unit2
-    self.res_unit3 = blk.res_unit3
+    self.res_unit1 = DacResidualUnit(blk.res_unit1)
+    self.res_unit2 = DacResidualUnit(blk.res_unit2)
+    self.res_unit3 = DacResidualUnit(blk.res_unit3)
    
   def __call__(self, hidden_state):
     hidden_state = self.snake1(hidden_state)
@@ -1092,12 +1111,12 @@ if __name__ == "__main__":
   
   for i in range(len(model.audio_tokenizer.acoustic_decoder.block)):
     model.audio_tokenizer.acoustic_decoder.block[i].snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.snake1.alpha"].numpy())
-    #model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake1.alpha"].numpy())
-    #model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake2.alpha"].numpy())
-    #model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake1.alpha"].numpy())
-    #model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake2.alpha"].numpy())
-    #model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake1.alpha"].numpy())
-    #model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake2.alpha"].numpy())
   
     
   model.audio_tokenizer.fc.weight = tiny_Tensor(weights["fc.weight"].numpy())
