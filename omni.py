@@ -660,10 +660,11 @@ class ConvTranspose1d:
     self.output_padding = conv.output_padding
   
   def __call__(self, input):
+    input = to_tiny(input)
     batch_size, in_channels, in_width = input.shape
     _, _, kernel_size = self.weight.shape
 
-    upsampled = torch.zeros(batch_size, in_channels, in_width * self.stride[0] - (self.stride[0] - 1), device=input.device, dtype=input.dtype,)
+    upsampled = tiny_Tensor.zeros(batch_size, in_channels, in_width * self.stride[0] - (self.stride[0] - 1))
     upsampled[:, :, ::self.stride[0]] = input
 
     pad = self.dilation[0] * (kernel_size - 1) - self.padding[0]
@@ -671,7 +672,7 @@ class ConvTranspose1d:
     weight_conv = weight_flipped.permute(1, 0, 2)
 
 
-    out = F.conv2d(
+    out = tiny_Tensor.conv2d(
         upsampled.unsqueeze(2),
         weight_conv.unsqueeze(2),
         bias=None,
@@ -682,9 +683,9 @@ class ConvTranspose1d:
     ).squeeze(2)
 
 
-    if self.output_padding[0] > 0: out = F.pad(out, (0, self.output_padding[0]))
+    if self.output_padding[0] > 0: out = tiny_Tensor.pad(out, (0, self.output_padding[0]))
     out += self.bias.view(1, -1, 1)
-    return out
+    return to_torch(out)
 
 class DacResidualUnit:
   def __init__(self, in_ch, out_ch, p1, d1):
@@ -1185,6 +1186,8 @@ if __name__ == "__main__":
     model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv2.bias = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv2.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.acoustic_decoder.block)):
+    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.bias"].numpy())
     model.audio_tokenizer.acoustic_decoder.block[i].snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.snake1.alpha"].numpy())
     model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake1.alpha"].numpy())
     model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake2.alpha"].numpy())
