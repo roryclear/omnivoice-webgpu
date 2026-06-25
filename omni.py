@@ -400,11 +400,10 @@ class llm:
       return self.norm(hidden_states)
 
 class HubertModel:
-  def __init__(self, model):
-    self.config = model.config
+  def __init__(self):
     self.feature_extractor = HubertFeatureEncoder()
     self.feature_projection = HubertFeatureProjection()
-    self.encoder = HubertEncoder(model.encoder)
+    self.encoder = HubertEncoder()
 
   def __call__(self, input_values: torch.Tensor | None,):
       extract_features = self.feature_extractor(input_values)
@@ -495,20 +494,18 @@ class HubertEncoderLayer:
     return to_torch(outputs)
 
 class HubertEncoder:
-  def __init__(self, enc):
-    self.config = enc.config
+  def __init__(self):
     self.pos_conv_embed = HubertPositionalConvEmbedding()
-    self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
-    self.layer_norm.weight = enc.layer_norm.weight
-    self.layer_norm.bias = enc.layer_norm.bias
-    self.training = False
+    self.layer_norm = tiny_nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
     self.layers = []
     for i in range(12): self.layers.append(HubertEncoderLayer())
   
   def __call__(self, hidden_states: torch.tensor):
     position_embeddings = self.pos_conv_embed(hidden_states)
     hidden_states = hidden_states + position_embeddings.to(hidden_states.device)
+    hidden_states = to_tiny(hidden_states)
     hidden_states = self.layer_norm(hidden_states)
+    hidden_states = to_torch(hidden_states)
 
     all_hidden_states = ()
     for layer in self.layers:
@@ -758,7 +755,7 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
 class audio_tokenizer:
   def __init__(self, tok):
     self.config = tok.config
-    self.semantic_model = HubertModel(tok.semantic_model)
+    self.semantic_model = HubertModel()
     self.encoder_semantic = SemanticEncoder()
     self.acoustic_encoder = DacEncoder(tok.acoustic_encoder)
     self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
@@ -1115,6 +1112,9 @@ if __name__ == "__main__":
   for i in range(len(model.audio_tokenizer.semantic_model.feature_extractor.conv_layers)):
     model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[i].conv.weight = tiny_Tensor(weights[f"semantic_model.feature_extractor.conv_layers.{i}.conv.weight"].numpy())
   
+  model.audio_tokenizer.semantic_model.encoder.layer_norm.weight = tiny_Tensor(weights[f"semantic_model.encoder.layer_norm.weight"].numpy())
+  model.audio_tokenizer.semantic_model.encoder.layer_norm.bias = tiny_Tensor(weights[f"semantic_model.encoder.layer_norm.bias"].numpy())
+
   for i in range(len(model.audio_tokenizer.semantic_model.encoder.layers)):
     model.audio_tokenizer.semantic_model.encoder.layers[i].final_layer_norm.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.final_layer_norm.weight"].numpy())
     model.audio_tokenizer.semantic_model.encoder.layers[i].final_layer_norm.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.final_layer_norm.bias"].numpy())
