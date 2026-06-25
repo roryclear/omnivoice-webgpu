@@ -715,12 +715,8 @@ class DacDecoderBlock:
 
 class DacDecoder:
   def __init__(self, dec):
-    self.conv1 = nn.Conv1d(256, 1024, kernel_size=(7,), stride=(1,), padding=(3,))
-    self.conv1.weight = dec.conv1.weight
-    self.conv1.bias = dec.conv1.bias
-    self.conv2 = nn.Conv1d(32, 1, kernel_size=(7,), stride=(1,), padding=(3,))
-    self.conv2.weight = dec.conv2.weight
-    self.conv2.bias = dec.conv2.bias
+    self.conv1 = tiny_nn.Conv1d(256, 1024, kernel_size=7, stride=1, padding=3)
+    self.conv2 = tiny_nn.Conv1d(32, 1, kernel_size=7, stride=1, padding=3)
     self.block = [DacDecoderBlock(dec.block[0], 512),
                   DacDecoderBlock(dec.block[1], 256),
                   DacDecoderBlock(dec.block[2], 128),
@@ -729,13 +725,16 @@ class DacDecoder:
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
+      hidden_state = to_tiny(hidden_state)
       hidden_state = self.conv1(hidden_state)
-
+      hidden_state = to_torch(hidden_state)
       for layer in self.block:
           hidden_state = layer(hidden_state)
-
+      hidden_state = to_tiny(hidden_state)
       hidden_state = self.snake1(hidden_state)
-      return self.conv2(hidden_state)
+      to_tiny(hidden_state)
+      hidden_state = self.conv2(hidden_state)
+      return to_torch(hidden_state)
 
 class HiggsAudioV2TokenizerResidualVectorQuantization:
    def __init__(self, q):
@@ -788,14 +787,16 @@ class audio_tokenizer:
       quantized = quantized_out
       quantized = to_tiny(quantized)
       quantized_acoustic = self.fc2(quantized.transpose(1, 2)).transpose(1, 2)
-      quantized_acoustic = to_torch(quantized_acoustic)
       hidden_state = self.acoustic_decoder.conv1(quantized_acoustic)
+      hidden_state = to_torch(hidden_state)
 
       for layer in self.acoustic_decoder.block:
           hidden_state = layer(hidden_state)
 
       hidden_state = self.acoustic_decoder.snake1(hidden_state)
-      return self.acoustic_decoder.conv2(hidden_state)
+      hidden_state = to_tiny(hidden_state)
+      hidden_state = self.acoustic_decoder.conv2(hidden_state)
+      return to_torch(hidden_state)
 
 class omni:
   def __init__(self, model):
@@ -1134,6 +1135,11 @@ if __name__ == "__main__":
   model.audio_tokenizer.acoustic_encoder.conv1.bias = tiny_Tensor(weights["acoustic_encoder.conv1.bias"].numpy())
   model.audio_tokenizer.acoustic_encoder.conv2.weight = tiny_Tensor(weights["acoustic_encoder.conv2.weight"].numpy())
   model.audio_tokenizer.acoustic_encoder.conv2.bias = tiny_Tensor(weights["acoustic_encoder.conv2.bias"].numpy())
+
+  model.audio_tokenizer.acoustic_decoder.conv1.weight = tiny_Tensor(weights["acoustic_decoder.conv1.weight"].numpy())
+  model.audio_tokenizer.acoustic_decoder.conv1.bias = tiny_Tensor(weights["acoustic_decoder.conv1.bias"].numpy())
+  model.audio_tokenizer.acoustic_decoder.conv2.weight = tiny_Tensor(weights["acoustic_decoder.conv2.weight"].numpy())
+  model.audio_tokenizer.acoustic_decoder.conv2.bias = tiny_Tensor(weights["acoustic_decoder.conv2.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.acoustic_encoder.block)):
     model.audio_tokenizer.acoustic_encoder.block[i].snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.snake1.alpha"].numpy())
