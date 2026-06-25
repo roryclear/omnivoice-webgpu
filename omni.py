@@ -719,9 +719,9 @@ class DacDecoderBlock:
   def __init__(self, blk, in_ch):
     self.snake1 = Snake1d()
     self.conv_t1 = ConvTranspose1d(blk.conv_t1) # todo
-    self.res_unit1 = DacResidualUnit(out_ch=blk.res_unit1.conv1.out_channels, in_ch=in_ch, p1=3, d1=1)
-    self.res_unit2 = DacResidualUnit(out_ch=blk.res_unit2.conv1.out_channels, in_ch=in_ch, p1=9, d1=3)
-    self.res_unit3 = DacResidualUnit(out_ch=blk.res_unit3.conv1.out_channels, in_ch=in_ch, p1=27, d1=9)
+    self.res_unit1 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=3, d1=1)
+    self.res_unit2 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=9, d1=3)
+    self.res_unit3 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=27, d1=9)
    
   def __call__(self, hidden_state):
     hidden_state = self.snake1(hidden_state)
