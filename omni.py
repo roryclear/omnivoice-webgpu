@@ -129,7 +129,9 @@ def quantizer_encode(quantizer, embeddings: torch.Tensor) -> torch.Tensor:
     return out_indices
 
 def semantic_encode(encoder, hidden_state: torch.Tensor) -> torch.Tensor:
+    hidden_state = to_tiny(hidden_state)
     hidden_state = encoder.conv(hidden_state)
+    hidden_state = to_torch(hidden_state)
     for block in encoder.conv_blocks:
         hidden_state = block(hidden_state)
     return hidden_state
@@ -596,26 +598,26 @@ class HiggsAudioV2TokenizerResidualUnit:
     return to_torch(hidden_state)
 
 class HiggsAudioV2TokenizerSemanticEncoderBlock:
-  def __init__(self, block):
+  def __init__(self):
     self.res_units = [HiggsAudioV2TokenizerResidualUnit(), HiggsAudioV2TokenizerResidualUnit()]
-    self.conv = nn.Conv1d(768, 768, kernel_size=(3,), stride=(1,), padding=(1,))
-    self.conv.weight = block.conv.weight
-    self.conv.bias = block.conv.bias
+    self.conv = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1)
   
   def __call__(self, hidden_state: torch.Tensor) -> torch.Tensor:
     for unit in self.res_units:
         hidden_state = unit(hidden_state)
+    hidden_state = to_tiny(hidden_state)
     hidden_state = self.conv(hidden_state)
-    return hidden_state
+    return to_torch(hidden_state)
 
 class SemanticEncoder:
-  def __init__(self, enc):
-     self.conv = nn.Conv1d(768, 768, kernel_size=(3,), stride=(1,), padding=(1,), bias=False)
-     self.conv.weight = enc.conv.weight
-     self.conv_blocks = [HiggsAudioV2TokenizerSemanticEncoderBlock(enc.conv_blocks[0]), HiggsAudioV2TokenizerSemanticEncoderBlock(enc.conv_blocks[1])]
+  def __init__(self):
+     self.conv = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1, bias=False)
+     self.conv_blocks = [HiggsAudioV2TokenizerSemanticEncoderBlock(), HiggsAudioV2TokenizerSemanticEncoderBlock()]
    
   def __call__(self, hidden_state: torch.Tensor) -> torch.Tensor:
+    hidden_state = to_tiny(hidden_state)
     hidden_state = self.conv(hidden_state)
+    hidden_state = to_torch(hidden_state)
     for block in self.conv_blocks:
         hidden_state = block(hidden_state)
     return hidden_state
@@ -746,7 +748,7 @@ class audio_tokenizer:
   def __init__(self, tok):
     self.config = tok.config
     self.semantic_model = HubertModel(tok.semantic_model)
-    self.encoder_semantic = SemanticEncoder(tok.encoder_semantic)
+    self.encoder_semantic = SemanticEncoder()
     self.acoustic_encoder = DacEncoder(tok.acoustic_encoder)
     self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
     self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization(tok.quantizer)
@@ -1144,6 +1146,12 @@ if __name__ == "__main__":
     model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv1.bias"].numpy())
     model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv2.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv2.bias"].numpy())
 
+  model.audio_tokenizer.encoder_semantic.conv.weight = tiny_Tensor(weights[f"encoder_semantic.conv.weight"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv_blocks[0].conv.weight = tiny_Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.weight"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv_blocks[0].conv.bias = tiny_Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.bias"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv_blocks[1].conv.weight = tiny_Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.weight"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv_blocks[1].conv.bias = tiny_Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.bias"].numpy())
+
   for i in range(len(model.audio_tokenizer.encoder_semantic.conv_blocks)):
     model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[0].conv1.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.0.conv1.weight"].numpy())
     model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[0].conv2.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.0.conv2.weight"].numpy())
@@ -1169,7 +1177,7 @@ if __name__ == "__main__":
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  pickle.dump(audio, open("short.pkl", "wb"))
+  #pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1193,7 +1201,7 @@ if __name__ == "__main__":
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  pickle.dump(audio, open("short2.pkl", "wb"))
+  #pickle.dump(audio, open("short2.pkl", "wb"))
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
