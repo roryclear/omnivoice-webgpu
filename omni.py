@@ -631,6 +631,21 @@ class Snake1d:
     hidden_states = hidden_states.reshape(shape)
     return to_torch(hidden_states)
 
+class DacEncoderBlock:
+  def __init__(self, blk):
+    self.res_unit1 = blk.res_unit1
+    self.res_unit2 = blk.res_unit2
+    self.res_unit3 = blk.res_unit3
+    self.snake1 = blk.snake1
+    self.conv1 = blk.conv1
+
+  def __call__(self, hidden_state):
+    hidden_state = self.res_unit1(hidden_state)
+    hidden_state = self.res_unit2(hidden_state)
+    hidden_state = self.snake1(self.res_unit3(hidden_state))
+    hidden_state = self.conv1(hidden_state)
+    return hidden_state
+
 class DacEncoder:
   def __init__(self, enc):
     self.conv1 = nn.Conv1d(1, 64, kernel_size=(7,), stride=(1,), padding=(3,))
@@ -639,7 +654,8 @@ class DacEncoder:
     self.conv2 = nn.Conv1d(2048, 256, kernel_size=(3,), stride=(1,), padding=(1,))
     self.conv2.weight = enc.conv2.weight
     self.conv2.bias = enc.conv2.bias
-    self.block = enc.block # todo
+    self.block = []
+    for i in range(5): self.block.append(DacEncoderBlock(enc.block[i]))
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
