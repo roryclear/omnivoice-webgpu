@@ -617,12 +617,12 @@ class Snake1d:
     return to_torch(hidden_states)
 
 class DacEncoderBlock:
-  def __init__(self, blk):
+  def __init__(self, blk, in_ch, out_ch, k, s, p):
     self.res_unit1 = blk.res_unit1
     self.res_unit2 = blk.res_unit2
     self.res_unit3 = blk.res_unit3
     self.snake1 = Snake1d()
-    self.conv1 = tiny_nn.Conv1d(blk.conv1.in_channels, blk.conv1.out_channels, kernel_size=blk.conv1.kernel_size[0], stride=blk.conv1.stride[0], padding=blk.conv1.padding[0])
+    self.conv1 = tiny_nn.Conv1d(in_ch, out_ch, kernel_size=k, stride=s, padding=p)
 
   def __call__(self, hidden_state):
     hidden_state = self.res_unit1(hidden_state)
@@ -640,8 +640,11 @@ class DacEncoder:
     self.conv2 = nn.Conv1d(2048, 256, kernel_size=(3,), stride=(1,), padding=(1,))
     self.conv2.weight = enc.conv2.weight
     self.conv2.bias = enc.conv2.bias
-    self.block = []
-    for i in range(5): self.block.append(DacEncoderBlock(enc.block[i]))
+    self.block = [DacEncoderBlock(enc.block[0], 64, 128, 16, 8, 4),
+                  DacEncoderBlock(enc.block[1], 128, 256, 10, 5, 3),
+                  DacEncoderBlock(enc.block[2], 256, 512, 8, 4, 2),
+                  DacEncoderBlock(enc.block[3], 512, 1024, 4, 2, 1),
+                  DacEncoderBlock(enc.block[4], 1024, 2048, 6, 3, 2)]
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
