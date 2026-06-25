@@ -347,10 +347,10 @@ class Qwen3MLP():
     return to_torch(self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x)))
 
 class Qwen3DecoderLayer:
-  def __init__(self, layer):
+  def __init__(self):
     self.input_layernorm = Qwen3RMSNorm()
     self.self_attn = Qwen3Attention()
-    self.post_attention_layernorm = layer.post_attention_layernorm
+    self.post_attention_layernorm = Qwen3RMSNorm()
     self.mlp = Qwen3MLP()
   
   def __call__(
@@ -374,14 +374,13 @@ class Qwen3DecoderLayer:
 
 
 class llm:
-  def __init__(self, llm):
+  def __init__(self):
     self.embed_tokens = tiny_nn.Embedding(151676, 1024)
     self.norm = Qwen3RMSNorm()
     self.rotary_emb = Qwen3RotaryEmbedding()
     self.layers = []
     for i in range(28):
-      self.layers.append(Qwen3DecoderLayer(llm.layers[i]))
-    self.config = llm.config
+      self.layers.append(Qwen3DecoderLayer())
 
   def __call__(
     self,
@@ -820,7 +819,7 @@ class omni:
   def __init__(self, model):
     self.audio_tokenizer = audio_tokenizer(model.audio_tokenizer)
     self.device = model.device
-    self.llm = llm(model.llm)
+    self.llm = llm()
     self.codebook_layer_offsets = (torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE).to(self.device)
     self.audio_embeddings = tiny_nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
     self.audio_heads = tiny_nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
@@ -1094,6 +1093,7 @@ if __name__ == "__main__":
   #for w in weights.keys(): print(w, type(weights[w]))
 
   for i in range(len(model.llm.layers)):
+    model.llm.layers[i].post_attention_layernorm.weight = tiny_Tensor(weights[f"llm.layers.{i}.post_attention_layernorm.weight"].numpy())
     model.llm.layers[i].input_layernorm.weight = tiny_Tensor(weights[f"llm.layers.{i}.input_layernorm.weight"].numpy())
     model.llm.layers[i].self_attn.q_norm.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.q_norm.weight"].numpy())
     model.llm.layers[i].self_attn.k_norm.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.k_norm.weight"].numpy())
