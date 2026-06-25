@@ -618,9 +618,9 @@ class Snake1d:
 
 class DacEncoderBlock:
   def __init__(self, blk, in_ch, out_ch, k, s, p):
-    self.res_unit1 = DacResidualUnit(blk.res_unit1, in_ch=blk.res_unit1.conv1.in_channels, k1=blk.res_unit1.conv1.kernel_size[0], k2=blk.res_unit1.conv2.kernel_size[0], s=blk.res_unit1.conv1.stride[0], p1=blk.res_unit1.conv1.padding[0], p2=blk.res_unit1.conv2.padding[0], d1=blk.res_unit1.conv1.dilation[0], d2=blk.res_unit1.conv2.dilation[0])
-    self.res_unit2 = DacResidualUnit(blk.res_unit2, in_ch=blk.res_unit2.conv1.in_channels, k1=blk.res_unit2.conv1.kernel_size[0], k2=blk.res_unit2.conv2.kernel_size[0], s=blk.res_unit2.conv1.stride[0], p1=blk.res_unit2.conv1.padding[0], p2=blk.res_unit2.conv2.padding[0], d1=blk.res_unit2.conv1.dilation[0], d2=blk.res_unit2.conv2.dilation[0])
-    self.res_unit3 = DacResidualUnit(blk.res_unit3, in_ch=blk.res_unit3.conv1.in_channels, k1=blk.res_unit3.conv1.kernel_size[0], k2=blk.res_unit3.conv2.kernel_size[0], s=blk.res_unit3.conv1.stride[0], p1=blk.res_unit3.conv1.padding[0], p2=blk.res_unit3.conv2.padding[0], d1=blk.res_unit3.conv1.dilation[0], d2=blk.res_unit3.conv2.dilation[0])
+    self.res_unit1 = DacResidualUnit(blk.res_unit1, in_ch=blk.res_unit1.conv1.in_channels, p1=3, d1=1)
+    self.res_unit2 = DacResidualUnit(blk.res_unit2, in_ch=blk.res_unit2.conv1.in_channels, p1=9, d1=3)
+    self.res_unit3 = DacResidualUnit(blk.res_unit3, in_ch=blk.res_unit3.conv1.in_channels, p1=27, d1=9)
     self.snake1 = Snake1d()
     self.conv1 = tiny_nn.Conv1d(in_ch, out_ch, kernel_size=k, stride=s, padding=p)
 
@@ -690,9 +690,9 @@ class ConvTranspose1d:
     )
 
 class DacResidualUnit:
-  def __init__(self, u, in_ch, k1, k2, s, p1, p2, d1, d2):
-    self.conv1 = tiny_nn.Conv1d(in_ch, u.conv1.out_channels, kernel_size=k1, stride=s, padding=p1, dilation=d1)
-    self.conv2 = tiny_nn.Conv1d(in_ch, u.conv2.out_channels, kernel_size=k2, stride=s, padding=p2, dilation=d2)
+  def __init__(self, u, in_ch, p1, d1):
+    self.conv1 = tiny_nn.Conv1d(in_ch, u.conv1.out_channels, kernel_size=7, stride=1, padding=p1, dilation=d1)
+    self.conv2 = tiny_nn.Conv1d(in_ch, u.conv2.out_channels, kernel_size=1, stride=1, padding=0, dilation=1)
     self.snake1 = Snake1d()
     self.snake2 = Snake1d()
 
@@ -719,9 +719,9 @@ class DacDecoderBlock:
   def __init__(self, blk):
     self.snake1 = Snake1d()
     self.conv_t1 = ConvTranspose1d(blk.conv_t1) # todo
-    self.res_unit1 = DacResidualUnit(blk.res_unit1, in_ch=blk.res_unit1.conv1.in_channels, k1=blk.res_unit1.conv1.kernel_size[0], k2=blk.res_unit1.conv2.kernel_size[0], s=blk.res_unit1.conv1.stride[0], p1=blk.res_unit1.conv1.padding[0], p2=blk.res_unit1.conv2.padding[0], d1=blk.res_unit1.conv1.dilation[0], d2=blk.res_unit1.conv2.dilation[0])
-    self.res_unit2 = DacResidualUnit(blk.res_unit2, in_ch=blk.res_unit2.conv1.in_channels, k1=blk.res_unit2.conv1.kernel_size[0], k2=blk.res_unit2.conv2.kernel_size[0], s=blk.res_unit2.conv1.stride[0], p1=blk.res_unit2.conv1.padding[0], p2=blk.res_unit2.conv2.padding[0], d1=blk.res_unit2.conv1.dilation[0], d2=blk.res_unit2.conv2.dilation[0])
-    self.res_unit3 = DacResidualUnit(blk.res_unit3, in_ch=blk.res_unit3.conv1.in_channels, k1=blk.res_unit3.conv1.kernel_size[0], k2=blk.res_unit3.conv2.kernel_size[0], s=blk.res_unit3.conv1.stride[0], p1=blk.res_unit3.conv1.padding[0], p2=blk.res_unit3.conv2.padding[0], d1=blk.res_unit3.conv1.dilation[0], d2=blk.res_unit3.conv2.dilation[0])
+    self.res_unit1 = DacResidualUnit(blk.res_unit1, in_ch=blk.res_unit1.conv1.in_channels, p1=3, d1=1)
+    self.res_unit2 = DacResidualUnit(blk.res_unit2, in_ch=blk.res_unit2.conv1.in_channels, p1=9, d1=3)
+    self.res_unit3 = DacResidualUnit(blk.res_unit3, in_ch=blk.res_unit3.conv1.in_channels, p1=27, d1=9)
    
   def __call__(self, hidden_state):
     hidden_state = self.snake1(hidden_state)
