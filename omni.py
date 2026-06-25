@@ -476,25 +476,23 @@ class HubertAttention:
       return to_torch(attn_output), None, None
 
 class HubertEncoderLayer:
-  def __init__(self, layer):
+  def __init__(self):
     self.attention = HubertAttention()
     self.feed_forward = HubertFeedForward()
-    self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
-    self.layer_norm.weight = layer.layer_norm.weight
-    self.layer_norm.bias = layer.layer_norm.bias
-    self.final_layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
-    self.final_layer_norm.weight = layer.final_layer_norm.weight
-    self.final_layer_norm.bias = layer.final_layer_norm.bias
-
+    self.layer_norm = tiny_nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+    self.final_layer_norm = tiny_nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
   def __call__(self, hidden_states):
     attn_residual = hidden_states
     hidden_states, _, _ = self.attention(hidden_states)
     hidden_states = attn_residual + hidden_states
+    hidden_states = to_tiny(hidden_states)
     hidden_states = self.layer_norm(hidden_states)
+    hidden_states = to_torch(hidden_states)
     hidden_states = hidden_states + self.feed_forward(hidden_states)
+    hidden_states = to_tiny(hidden_states)
     hidden_states = self.final_layer_norm(hidden_states)
     outputs = (hidden_states,)
-    return outputs
+    return to_torch(outputs)
 
 class HubertEncoder:
   def __init__(self, enc):
@@ -505,7 +503,7 @@ class HubertEncoder:
     self.layer_norm.bias = enc.layer_norm.bias
     self.training = False
     self.layers = []
-    for i in range(12): self.layers.append(HubertEncoderLayer(enc.layers[i]))
+    for i in range(12): self.layers.append(HubertEncoderLayer())
   
   def __call__(self, hidden_states: torch.tensor):
     position_embeddings = self.pos_conv_embed(hidden_states)
@@ -1072,6 +1070,7 @@ from tinygrad.nn.state import safe_load
 from tinygrad import Tensor as tiny_Tensor, dtypes, nn as tiny_nn
 
 def to_torch(x):
+  if type(x) == tuple: return tuple(to_torch(y) for y in x)
   if type(x) == torch.Tensor: return x
   if x.dtype == dtypes.float16: return torch.Tensor(x.numpy()).to("mps").to(torch.float16)
   if x.dtype == dtypes.int64: return torch.Tensor(x.numpy()).to("mps").to(torch.int64)
@@ -1115,7 +1114,12 @@ if __name__ == "__main__":
 
   for i in range(len(model.audio_tokenizer.semantic_model.feature_extractor.conv_layers)):
     model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[i].conv.weight = tiny_Tensor(weights[f"semantic_model.feature_extractor.conv_layers.{i}.conv.weight"].numpy())
-     
+  
+  for i in range(len(model.audio_tokenizer.semantic_model.encoder.layers)):
+    model.audio_tokenizer.semantic_model.encoder.layers[i].final_layer_norm.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.final_layer_norm.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].final_layer_norm.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.final_layer_norm.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].layer_norm.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.layer_norm.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].layer_norm.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.layer_norm.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.semantic_model.encoder.layers)):
     model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.weight"].numpy())
