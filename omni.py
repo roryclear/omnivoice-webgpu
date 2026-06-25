@@ -442,19 +442,17 @@ class HubertPositionalConvEmbedding:
     return to_torch(hidden_states)
 
 class HubertFeedForward:
-  def __init__(self, ff):
-    self.intermediate_dense = nn.Linear(in_features=768, out_features=3072, bias=True)
-    self.intermediate_dense.weight = ff.intermediate_dense.weight
-    self.intermediate_dense.bias = ff.intermediate_dense.bias
-    self.intermediate_act_fn = nn.GELU()
-    self.output_dense = nn.Linear(in_features=3072, out_features=768, bias=True)
-    self.output_dense.weight = ff.output_dense.weight
-    self.output_dense.bias = ff.output_dense.bias
+  def __init__(self):
+    self.intermediate_dense = tiny_nn.Linear(in_features=768, out_features=3072, bias=True)
+    self.intermediate_act_fn = tiny_Tensor.gelu
+    self.output_dense = tiny_nn.Linear(in_features=3072, out_features=768, bias=True)
 
   def __call__(self, hidden_states):
+    hidden_states = to_tiny(hidden_states)
     hidden_states = self.intermediate_dense(hidden_states)
     hidden_states = self.intermediate_act_fn(hidden_states)
-    return self.output_dense(hidden_states)
+    hidden_states = self.output_dense(hidden_states)
+    return to_torch(hidden_states)
 
 
 class HubertAttention:
@@ -494,7 +492,7 @@ class HubertAttention:
 class HubertEncoderLayer:
   def __init__(self, layer):
     self.attention = HubertAttention()
-    self.feed_forward = HubertFeedForward(layer.feed_forward)
+    self.feed_forward = HubertFeedForward()
     self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True, bias=True)
     self.layer_norm.weight = layer.layer_norm.weight
     self.layer_norm.bias = layer.layer_norm.bias
@@ -632,7 +630,6 @@ class Snake1d:
     hidden_states = hidden_states.reshape(shape[0], shape[1], -1)
     hidden_states = hidden_states + (self.alpha + 1e-9).reciprocal() * torch.sin(self.alpha * hidden_states).pow(2)
     return hidden_states.reshape(shape)
-
 
 class DacEncoder:
   def __init__(self, enc):
@@ -1042,6 +1039,12 @@ if __name__ == "__main__":
     model.audio_tokenizer.semantic_model.encoder.layers[i].attention.k_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.k_proj.bias"].numpy())
     model.audio_tokenizer.semantic_model.encoder.layers[i].attention.v_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.v_proj.bias"].numpy())
     model.audio_tokenizer.semantic_model.encoder.layers[i].attention.out_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.out_proj.bias"].numpy())
+
+    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.intermediate_dense.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.intermediate_dense.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.intermediate_dense.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.intermediate_dense.bias"].numpy())
+
+    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.output_dense.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.output_dense.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.output_dense.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.output_dense.bias"].numpy())
 
   model.audio_tokenizer.fc.weight = tiny_Tensor(weights["fc.weight"].numpy())
   model.audio_tokenizer.fc.bias = tiny_Tensor(weights["fc.bias"].numpy())
