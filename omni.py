@@ -1229,7 +1229,7 @@ if __name__ == "__main__":
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  pickle.dump(audio, open("short.pkl", "wb"))
+  #pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1253,7 +1253,7 @@ if __name__ == "__main__":
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  pickle.dump(audio, open("short2.pkl", "wb"))
+  #pickle.dump(audio, open("short2.pkl", "wb"))
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
