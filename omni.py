@@ -231,10 +231,12 @@ class OmniVoice(PreTrainedModel):
         return model
 
 def _gumbel_sample(logits, temperature: float):
+    logits = to_tiny(logits)
     scaled_logits = logits / temperature
-    u = torch.rand_like(scaled_logits)
-    gumbel_noise = -torch.log(-torch.log(u + 1e-10) + 1e-10)
-    return scaled_logits + gumbel_noise
+    u = tiny_Tensor.rand_like(scaled_logits)
+    gumbel_noise = -tiny_Tensor.log(-tiny_Tensor.log(u + 1e-10) + 1e-10)
+    ret = scaled_logits + gumbel_noise
+    return to_torch(ret)
 
 _NONVERBAL_PATTERN = re.compile(
     r"\[(laughter|sigh|confirmation-en|question-en|question-ah|question-oh|"
