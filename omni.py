@@ -103,7 +103,7 @@ class SimpleTokenizer:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
    
-def quantizer_encode(quantizer, embeddings: torch.Tensor) -> torch.Tensor:
+def quantizer_encode(quantizer, embeddings):
     residual = embeddings
     all_indices = []
     for q in quantizer.quantizers:
@@ -230,7 +230,7 @@ class OmniVoice(PreTrainedModel):
 
         return model
 
-def _gumbel_sample(logits: torch.Tensor, temperature: float) -> torch.Tensor:
+def _gumbel_sample(logits, temperature: float):
     scaled_logits = logits / temperature
     u = torch.rand_like(scaled_logits)
     gumbel_noise = -torch.log(-torch.log(u + 1e-10) + 1e-10)
@@ -245,7 +245,7 @@ _NONVERBAL_PATTERN = re.compile(
 class Qwen3RMSNorm:
   def __init__(self): self.variance_epsilon = 1e-6
   
-  def __call__(self, hidden_states: torch.Tensor) -> torch.Tensor:
+  def __call__(self, hidden_states):
     hidden_states = to_tiny(hidden_states)
     input_dtype = hidden_states.dtype
     hidden_states = hidden_states.cast(dtypes.float32)
@@ -353,12 +353,7 @@ class Qwen3DecoderLayer:
     self.post_attention_layernorm = Qwen3RMSNorm()
     self.mlp = Qwen3MLP()
   
-  def __call__(
-      self,
-      hidden_states: torch.Tensor,
-      attention_mask: torch.Tensor | None = None,
-      position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None
-  ) -> torch.Tensor:
+  def __call__(self, hidden_states, attention_mask=None, position_embeddings=None):
       residual = hidden_states
       hidden_states = self.input_layernorm(hidden_states)
       # Self Attention
@@ -382,12 +377,7 @@ class llm:
     for i in range(28):
       self.layers.append(Qwen3DecoderLayer())
 
-  def __call__(
-    self,
-    attention_mask: torch.Tensor | None = None,
-    position_ids: torch.LongTensor | None = None,
-    inputs_embeds: torch.FloatTensor | None = None,
-  ):
+  def __call__(self, attention_mask=None, position_ids=None, inputs_embeds=None):
       position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device)
       position_ids = position_ids.unsqueeze(0)
 
@@ -405,7 +395,7 @@ class HubertModel:
     self.feature_projection = HubertFeatureProjection()
     self.encoder = HubertEncoder()
 
-  def __call__(self, input_values: torch.Tensor | None,):
+  def __call__(self, input_values):
       extract_features = self.feature_extractor(input_values)
       extract_features = extract_features.transpose(1, 2)
       hidden_states = self.feature_projection(extract_features)
@@ -450,10 +440,7 @@ class HubertAttention:
     self.scaling = 0.125
     self.is_causal = False
   
-  def __call__(
-      self,
-      hidden_states: torch.Tensor,
-  ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
+  def __call__(self, hidden_states):
       hidden_states = to_tiny(hidden_states)
       input_shape = hidden_states.shape[:-1]
 
@@ -500,7 +487,7 @@ class HubertEncoder:
     self.layers = []
     for i in range(12): self.layers.append(HubertEncoderLayer())
   
-  def __call__(self, hidden_states: torch.tensor):
+  def __call__(self, hidden_states):
     position_embeddings = self.pos_conv_embed(hidden_states)
     hidden_states = hidden_states + position_embeddings.to(hidden_states.device)
     hidden_states = to_tiny(hidden_states)
@@ -565,7 +552,7 @@ class HiggsAudioV2TokenizerResidualUnit:
     self.conv1 = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1, bias=False)
     self.conv2 = tiny_nn.Conv1d(768, 768, kernel_size=1, stride=1, bias=False)
 
-  def __call__(self, hidden_state: torch.Tensor) -> torch.Tensor:
+  def __call__(self, hidden_state):
     hidden_state = to_tiny(hidden_state)
     output_tensor = tiny_Tensor.elu(hidden_state)
     output_tensor = self.conv1(output_tensor)
@@ -579,7 +566,7 @@ class HiggsAudioV2TokenizerSemanticEncoderBlock:
     self.res_units = [HiggsAudioV2TokenizerResidualUnit(), HiggsAudioV2TokenizerResidualUnit()]
     self.conv = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1)
   
-  def __call__(self, hidden_state: torch.Tensor) -> torch.Tensor:
+  def __call__(self, hidden_state):
     for unit in self.res_units:
         hidden_state = unit(hidden_state)
     hidden_state = to_tiny(hidden_state)
@@ -591,7 +578,7 @@ class SemanticEncoder:
      self.conv = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1, bias=False)
      self.conv_blocks = [HiggsAudioV2TokenizerSemanticEncoderBlock(), HiggsAudioV2TokenizerSemanticEncoderBlock()]
    
-  def __call__(self, hidden_state: torch.Tensor) -> torch.Tensor:
+  def __call__(self, hidden_state):
     hidden_state = to_tiny(hidden_state)
     hidden_state = self.conv(hidden_state)
     hidden_state = to_torch(hidden_state)
@@ -770,7 +757,7 @@ class audio_tokenizer:
     self.fc2 = tiny_nn.Linear(1024, 256)
 
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
-  def encode(self, input_values: torch.Tensor) -> torch.Tensor:
+  def encode(self, input_values):
     e_semantic_input = self._extract_semantic_features(input_values).detach()
     e_semantic = self.encoder_semantic(e_semantic_input.transpose(1, 2))
     e_acoustic = self.acoustic_encoder(input_values)
@@ -782,7 +769,7 @@ class audio_tokenizer:
     audio_codes = audio_codes.transpose(0, 1)
     return audio_codes
 
-  def _extract_semantic_features(self, input_values: torch.FloatTensor) -> torch.FloatTensor:
+  def _extract_semantic_features(self, input_values):
     input_values = input_values[:, 0, :]
     input_values = F.pad(input_values, (160, 160))
     with torch.no_grad():
@@ -793,7 +780,7 @@ class audio_tokenizer:
     semantic_features = semantic_features[:, :: self.config.semantic_downsample_factor, :]
     return semantic_features
 
-  def decode(self, audio_codes: torch.Tensor,):
+  def decode(self, audio_codes,):
       audio_codes = audio_codes.transpose(0, 1)
       quantized_out = torch.tensor(0.0)
       for i, indices in enumerate(audio_codes):
@@ -826,8 +813,8 @@ class omni:
     self.audio_heads = tiny_nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
 
   def _prepare_embed_inputs(
-      self, input_ids: torch.Tensor, audio_mask: torch.Tensor
-  ) -> torch.Tensor:
+      self, input_ids, audio_mask
+  ):
       input_ids = to_tiny(input_ids)
 
       text_embeds = self.llm.embed_tokens(to_tiny(input_ids)[:, 0, :])
@@ -843,10 +830,10 @@ class omni:
 
   def __call__(
       self,
-      input_ids: torch.LongTensor,
-      audio_mask: torch.Tensor,
-      attention_mask: Optional[torch.Tensor] = None,
-      position_ids: Optional[torch.LongTensor] = None,
+      input_ids,
+      audio_mask,
+      attention_mask=None,
+      position_ids=None,
   ):
       inputs_embeds = self._prepare_embed_inputs(input_ids, audio_mask)  
       hidden_states = self.llm(
@@ -883,7 +870,7 @@ class omni:
           ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
       return self._decode_and_post_process(result)    
 
-  def create_voice_clone_prompt(self, ref_audio: Union[str, tuple[torch.Tensor, int]],):
+  def create_voice_clone_prompt(self, ref_audio):
       ref_wav = load_audio(ref_audio, SAMPLING_RATE)
       ref_rms = float(np.sqrt(np.mean(ref_wav**2)))
       if 0 < ref_rms < 0.1:
@@ -907,10 +894,7 @@ class omni:
 
       return ref_audio_tokens
 
-  def _decode_and_post_process(
-      self,
-      tokens: Union[torch.Tensor, List[torch.Tensor]],
-  ) -> np.ndarray:
+  def _decode_and_post_process(self, tokens) -> np.ndarray:
       chunk_audios = [self.audio_tokenizer.decode(t.to("mps").unsqueeze(0))[0].cpu().numpy() for t in tokens]
       audio_waveform = np.concatenate(chunk_audios, axis=-1)
       return audio_waveform.squeeze(0)
@@ -927,7 +911,7 @@ class omni:
       text: str,
       num_target_tokens: int,
       ref_text=None,
-      ref_audio_tokens: Optional[torch.Tensor] = None,
+      ref_audio_tokens=None,
   ):  
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
@@ -958,8 +942,7 @@ class omni:
 
 
   def _generate_chunked(
-      self, target_length, text, ref_text, ref_audio_tokens
-  ) -> List[List[torch.Tensor]]:
+      self, target_length, text, ref_text, ref_audio_tokens):
       avg_tokens_per_char = target_length / len(text)
       text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
 
@@ -983,8 +966,7 @@ class omni:
 
 
   def _generate_iterative(
-      self, text, target_length, ref_text, ref_audio_tokens
-  ) -> List[torch.Tensor]:
+      self, text, target_length, ref_text, ref_audio_tokens):
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
       c_len = cond_input_ids.size(2)
