@@ -934,8 +934,7 @@ class omni:
 
       cond_audio_mask = tiny_Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
       cond_audio_mask[0, cond_audio_start_idx:] = True
-
-      return to_torch(cond_input_ids), to_torch(cond_audio_mask)
+      return cond_input_ids, cond_audio_mask
 
 
   def _generate_chunked(
@@ -967,14 +966,21 @@ class omni:
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
       c_len = cond_input_ids.size(2)
-      batch_input_ids = torch.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
-      batch_audio_mask = torch.zeros((2, c_len), dtype=torch.bool, device=self.device)
-      batch_attention_mask = torch.zeros((2, 1, c_len, c_len), dtype=torch.bool, device=self.device)
+      batch_input_ids = tiny_Tensor.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=dtypes.long)
+      batch_audio_mask = tiny_Tensor.zeros((2, c_len), dtype=dtypes.bool)
+      batch_attention_mask = tiny_Tensor.zeros((2, 1, c_len, c_len), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
-      batch_input_ids[0, :, :c_len] = cond_input_ids
-      batch_audio_mask[0, :c_len] = cond_audio_mask
+      batch_input_ids[0] = cond_input_ids[0]
+      batch_audio_mask[0] = cond_audio_mask[0]
       batch_attention_mask[0, :, :c_len, :c_len] = True
+
+      batch_attention_mask = to_torch(batch_attention_mask)
+      batch_audio_mask = to_torch(batch_audio_mask)
+      batch_attention_mask = to_torch(batch_attention_mask)
+      cond_input_ids = to_torch(cond_input_ids)
+      cond_audio_mask = to_torch(cond_audio_mask)
+      batch_input_ids = to_torch(batch_input_ids)
 
       # Uncond (B ~ 2B-1)
       batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:]
@@ -1056,8 +1062,10 @@ from tinygrad import Tensor as tiny_Tensor, dtypes, nn as tiny_nn
 def to_torch(x):
   if type(x) == tuple: return tuple(to_torch(y) for y in x)
   if type(x) == torch.Tensor: return x
+  if x.dtype == dtypes.bool: return torch.Tensor(x.numpy()).to("mps").to(torch.bool)
   if x.dtype == dtypes.float16: return torch.Tensor(x.numpy()).to("mps").to(torch.float16)
   if x.dtype == dtypes.int64: return torch.Tensor(x.numpy()).to("mps").to(torch.int64)
+  if x.dtype == dtypes.int: return torch.Tensor(x.numpy()).to("mps").to(torch.int)
   return torch.Tensor(x.numpy()).to("mps")
 
 def to_tiny(x):
