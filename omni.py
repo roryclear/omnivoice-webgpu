@@ -104,6 +104,7 @@ class SimpleTokenizer:
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
    
 def quantizer_encode(quantizer, embeddings):
+    embeddings = to_torch(embeddings)
     residual = embeddings
     all_indices = []
     for q in quantizer.quantizers:
@@ -763,10 +764,10 @@ class audio_tokenizer:
     e_semantic_input = self._extract_semantic_features(input_values).detach()
     e_semantic = self.encoder_semantic(e_semantic_input.transpose(1, 2))
     e_acoustic = self.acoustic_encoder(input_values)
-    embeddings = torch.cat([e_acoustic.to(e_semantic.device), e_semantic], dim=1)
-    embeddings = to_tiny(embeddings)
+    e_semantic = to_tiny(e_semantic)
+    e_acoustic = to_tiny(e_acoustic)
+    embeddings = tiny_Tensor.cat(e_acoustic, e_semantic, dim=1)
     embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
-    embeddings = to_torch(embeddings)
     audio_codes = quantizer_encode(self.quantizer, embeddings)
     audio_codes = audio_codes.transpose(0, 1)
     return audio_codes
@@ -786,7 +787,7 @@ class audio_tokenizer:
 
   def decode(self, audio_codes,):
       audio_codes = audio_codes.transpose(0, 1)
-      quantized_out = torch.tensor(0.0)
+      quantized_out = 0.0
       for i, indices in enumerate(audio_codes):
           quantizer = self.quantizer.quantizers[i]
           quantized = F.embedding(indices, quantizer.codebook.embed)
@@ -853,7 +854,6 @@ class omni:
       ).permute(0, 2, 1, 3)
       return audio_logits
 
-  @torch.inference_mode()
   def generate(
       self,
       text=None,
