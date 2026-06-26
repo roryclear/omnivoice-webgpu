@@ -328,14 +328,13 @@ class Qwen3RotaryEmbedding:
     self.inv_freq = 1.0 / (1000000 ** (tiny_Tensor.arange(0, 128, 2).cast(dtypes.float) / 128))
 
   def __call__(self, position_ids):
-    position_ids = to_tiny(position_ids)
     inv_freq_expanded = self.inv_freq[None, :, None].cast(dtypes.float).expand(position_ids.shape[0], -1, 1)
     position_ids_expanded = position_ids[:, None, :].cast(dtypes.float)
     freqs = (inv_freq_expanded @ position_ids_expanded).transpose(1, 2)
     emb = tiny_Tensor.cat(freqs, freqs, dim=-1)
     cos = (emb.cos() * self.attention_scaling).cast(dtypes.float16)
     sin = (emb.sin() * self.attention_scaling).cast(dtypes.float16)
-    return to_torch(cos), to_torch(sin)
+    return cos, sin
 
 class Qwen3MLP():
   def __init__(self):
@@ -380,11 +379,12 @@ class llm:
       self.layers.append(Qwen3DecoderLayer())
 
   def __call__(self, attention_mask=None, position_ids=None, inputs_embeds=None):
-      position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device)
+      position_ids = tiny_Tensor.arange(inputs_embeds.shape[1])
       position_ids = position_ids.unsqueeze(0)
 
       hidden_states = inputs_embeds
       position_embeddings = self.rotary_emb(position_ids)
+      position_embeddings = to_torch(position_embeddings)
 
       for decoder_layer in self.layers:
         hidden_states = decoder_layer(hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings,)
@@ -774,8 +774,7 @@ class audio_tokenizer:
   def _extract_semantic_features(self, input_values):
     input_values = input_values[:, 0, :]
     input_values = F.pad(input_values, (160, 160))
-    with torch.no_grad():
-        hidden_states = self.semantic_model(input_values)
+    hidden_states = self.semantic_model(input_values)
 
     stacked = torch.stack([h.to(input_values.device) for h in hidden_states], dim=1)
     semantic_features = stacked.mean(dim=1)
