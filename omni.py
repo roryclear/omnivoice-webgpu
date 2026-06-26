@@ -910,32 +910,32 @@ class omni:
       ref_text=None,
       ref_audio_tokens=None,
   ):  
+      ref_audio_tokens = to_tiny(ref_audio_tokens)
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
-      style_tokens = (torch.tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)).to(self.device)  # [1, C, N1]
+      style_tokens = tiny_Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
 
       # Build text tokens
       full_text = ref_text.strip() + " " + text.strip()
       wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
-      text_tokens = (torch.tensor([tok.encode(wrapped_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)).to(self.device)  # [1, C, N2]
+      text_tokens = tiny_Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
 
       # Target: all MASK
-      target_audio_tokens = torch.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=torch.long, device=self.device)
+      target_audio_tokens = tiny_Tensor.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.long)
 
       # Conditional input
       parts = [style_tokens, text_tokens]
-      parts.append(ref_audio_tokens.unsqueeze(0).to(self.device))
+      parts.append(ref_audio_tokens.unsqueeze(0))
       parts.append(target_audio_tokens)
-      cond_input_ids = torch.cat(parts, dim=2)
-
+      cond_input_ids = tiny_Tensor.cat(*parts, dim=2)
       cond_total_length = cond_input_ids.shape[2]
       cond_audio_start_idx = cond_total_length - num_target_tokens
       cond_audio_start_idx -= ref_audio_tokens.size(-1)
 
-      cond_audio_mask = torch.zeros(1, cond_total_length, dtype=torch.bool, device=self.device)
+      cond_audio_mask = tiny_Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
       cond_audio_mask[0, cond_audio_start_idx:] = True
 
-      return cond_input_ids, cond_audio_mask
+      return to_torch(cond_input_ids), to_torch(cond_audio_mask)
 
 
   def _generate_chunked(
