@@ -809,25 +809,18 @@ class omni:
     self.audio_tokenizer = audio_tokenizer(model.audio_tokenizer)
     self.device = model.device
     self.llm = llm()
-    self.codebook_layer_offsets = (torch.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE).to(self.device)
+    self.codebook_layer_offsets = (tiny_Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
     self.audio_embeddings = tiny_nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
     self.audio_heads = tiny_nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
 
-  def _prepare_embed_inputs(
-      self, input_ids, audio_mask
-  ):
-      input_ids = to_tiny(input_ids)
-
-      text_embeds = self.llm.embed_tokens(to_tiny(input_ids)[:, 0, :])
-
-      text_embeds = to_torch(text_embeds)
-      input_ids = to_torch(input_ids)
-
-      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
-      shifted_ids = to_tiny(shifted_ids)
-      audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-      audio_embeds = to_torch(audio_embeds)
-      return torch.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+  def _prepare_embed_inputs(self, input_ids, audio_mask):
+    input_ids = to_tiny(input_ids)
+    audio_mask = to_tiny(audio_mask)
+    text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
+    shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+    audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+    ret = tiny_Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+    return to_torch(ret)
 
   def __call__(
       self,
