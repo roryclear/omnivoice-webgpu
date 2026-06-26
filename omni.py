@@ -772,14 +772,17 @@ class audio_tokenizer:
     return audio_codes
 
   def _extract_semantic_features(self, input_values):
+    input_values = to_tiny(input_values)
     input_values = input_values[:, 0, :]
-    input_values = F.pad(input_values, (160, 160))
+    input_values = tiny_Tensor.pad(input_values, (160, 160))
+    input_values = to_torch(input_values)
     hidden_states = self.semantic_model(input_values)
+    hidden_states = to_tiny(hidden_states)
 
-    stacked = torch.stack([h.to(input_values.device) for h in hidden_states], dim=1)
-    semantic_features = stacked.mean(dim=1)
+    stacked = tiny_Tensor.stack([h for h in hidden_states], dim=1)
+    semantic_features = stacked.mean(axis=1)
     semantic_features = semantic_features[:, :: self.config.semantic_downsample_factor, :]
-    return semantic_features
+    return to_torch(semantic_features)
 
   def decode(self, audio_codes,):
       audio_codes = audio_codes.transpose(0, 1)
