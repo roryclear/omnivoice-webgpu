@@ -983,10 +983,10 @@ class omni:
       pad_diag = tiny_Tensor.arange(target_length, c_len)
       batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-      tokens = torch.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=torch.long, device=self.device,)
+      tokens = tiny_Tensor.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
 
-      timesteps = torch.linspace(0.0, 1.0, NUM_STEPS + 1)
-      timesteps = (T_SHIFT * timesteps / (1 + (T_SHIFT - 1) * timesteps)).tolist()
+      timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
+      timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
 
       total_mask = target_length * NUM_AUDIO_CODEBOOK
       rem = total_mask
@@ -996,7 +996,10 @@ class omni:
           sched.append(int(num))
           rem -= int(num)
 
-      layer_ids = torch.arange(NUM_AUDIO_CODEBOOK, device=self.device).view(1, -1, 1)
+      layer_ids = tiny_Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
+
+      tokens = to_torch(tokens)
+      layer_ids = to_torch(layer_ids)
 
       batch_input_ids = to_torch(batch_input_ids)
       batch_audio_mask = to_torch(batch_audio_mask)
