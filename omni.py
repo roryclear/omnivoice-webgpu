@@ -717,25 +717,18 @@ class DacDecoder:
       return to_torch(hidden_state)
 
 class HiggsAudioV2TokenizerEuclideanCodebook:
-  def __init__(self, cb):
-    self.embed = torch.zeros([1024, 64], dtype=torch.float32)
-    self.embed = cb.embed
+  def __init__(self): self.embed = tiny_Tensor.zeros([1024, 64], dtype=dtypes.float32)
 
 class HiggsAudioV2TokenizerVectorQuantization:
-  def __init__(self, q):
-    self.codebook = HiggsAudioV2TokenizerEuclideanCodebook(q.codebook)
-    self.project_in = nn.Linear(in_features=1024, out_features=64, bias=True)
-    self.project_in.weight = q.project_in.weight
-    self.project_in.bias = q.project_in.bias
-    self.project_out = nn.Linear(in_features=1024, out_features=64, bias=True)
-    self.project_out.weight = q.project_out.weight
-    self.project_out.bias = q.project_out.bias
+  def __init__(self):
+    self.codebook = HiggsAudioV2TokenizerEuclideanCodebook()
+    self.project_in = tiny_nn.Linear(in_features=1024, out_features=64, bias=True)
+    self.project_out = tiny_nn.Linear(in_features=1024, out_features=64, bias=True)
 
 class HiggsAudioV2TokenizerResidualVectorQuantization:
-  def __init__(self, q):
+  def __init__(self):
     self.quantizers = []
-    for quantizer in q.quantizers:
-      self.quantizers.append(HiggsAudioV2TokenizerVectorQuantization(quantizer))
+    for _ in range(8): self.quantizers.append(HiggsAudioV2TokenizerVectorQuantization())
 
   def encode(self, embeddings):
     embeddings = to_torch(embeddings)
@@ -743,21 +736,25 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
     all_indices = []
     for q in self.quantizers:
       hidden_states = residual.permute(0, 2, 1)
+      hidden_states = to_tiny(hidden_states)
       hidden_states = q.project_in(hidden_states)
 
       shape = hidden_states.shape
       hidden_states = hidden_states.reshape((-1, shape[-1]))
 
-      embed = q.codebook.embed.t()
+      embed = q.codebook.embed.T
+      hidden_states = to_torch(hidden_states)
       scaled_states = hidden_states.pow(2).sum(1, keepdim=True)
+      embed = to_torch(embed)
       dist = -(scaled_states - 2 * hidden_states @ embed + embed.pow(2).sum(0, keepdim=True))
       indices = dist.max(dim=-1).indices
 
       indices = indices.view(*shape[:-1])
-      quantized = q.codebook.embed[indices]
+      quantized = to_torch(q.codebook.embed)[indices]
+      quantized = to_tiny(quantized)
       quantized = q.project_out(quantized)
       quantized = quantized.permute(0, 2, 1)
-
+      quantized = to_torch(quantized)
       residual = residual - quantized
       all_indices.append(indices)
     out_indices = torch.stack(all_indices)
@@ -770,7 +767,7 @@ class audio_tokenizer:
     self.encoder_semantic = SemanticEncoder()
     self.acoustic_encoder = DacEncoder()
     self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
-    self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization(tok.quantizer)
+    self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization()
     self.fc = tiny_nn.Linear(1024, 1024)
     self.fc2 = tiny_nn.Linear(1024, 256)
 
@@ -805,9 +802,11 @@ class audio_tokenizer:
       quantized_out = 0.0
       for i, indices in enumerate(audio_codes):
           quantizer = self.quantizer.quantizers[i]
-          quantized = F.embedding(indices, quantizer.codebook.embed)
+          quantized = F.embedding(indices, to_torch(quantizer.codebook.embed))
+          quantized = to_tiny(quantized)
           quantized = quantizer.project_out(quantized)
           quantized = quantized.permute(0, 2, 1)
+          quantized = to_torch(quantized)
           quantized_out = quantized_out + quantized
       quantized = quantized_out
       quantized = to_tiny(quantized)
@@ -1111,6 +1110,13 @@ if __name__ == "__main__":
   weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/audio_tokenizer/model.safetensors"))
   for w in weights.keys(): print(w, type(weights[w]))
 
+  for i in range(len(model.audio_tokenizer.quantizer.quantizers)):
+    model.audio_tokenizer.quantizer.quantizers[i].codebook.embed = tiny_Tensor(weights[f"quantizer.quantizers.{i}.codebook.embed"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].project_in.weight = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_in.weight"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].project_in.bias = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_in.bias"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].project_out.weight = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_out.weight"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].project_out.bias = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_out.bias"].numpy())
+  
   model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.weight = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.weight"].numpy())
   model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.bias = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.bias"].numpy())
 
