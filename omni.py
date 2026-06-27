@@ -658,22 +658,19 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
     for _ in range(8): self.quantizers.append(HiggsAudioV2TokenizerVectorQuantization())
 
   def encode(self, embeddings):
-    embeddings = to_torch(embeddings)
     residual = embeddings
     all_indices = []
     for q in self.quantizers:
       hidden_states = residual.permute(0, 2, 1)
-      hidden_states = to_tiny(hidden_states)
       hidden_states = q.project_in(hidden_states)
 
       shape = hidden_states.shape
       hidden_states = hidden_states.reshape((-1, shape[-1]))
 
       embed = q.codebook.embed.T
-      hidden_states = to_torch(hidden_states)
       scaled_states = hidden_states.pow(2).sum(1, keepdim=True)
-      embed = to_torch(embed)
       dist = -(scaled_states - 2 * hidden_states @ embed + embed.pow(2).sum(0, keepdim=True))
+      dist = to_torch(dist)
       indices = dist.max(dim=-1).indices
 
       indices = indices.view(*shape[:-1])
@@ -681,7 +678,6 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
       quantized = to_tiny(quantized)
       quantized = q.project_out(quantized)
       quantized = quantized.permute(0, 2, 1)
-      quantized = to_torch(quantized)
       residual = residual - quantized
       all_indices.append(indices)
     out_indices = torch.stack(all_indices)
@@ -945,6 +941,7 @@ class omni:
               audio_mask=batch_audio_mask,
               attention_mask=batch_attention_mask,
           )
+          tokens = to_tiny(tokens)
 
           # Extract real target Logits
           # [1, C, T, V]
@@ -954,20 +951,22 @@ class omni:
           pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
 
           scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
-
           scores = _gumbel_sample(scores, POSITION_TEMP)
 
           sample_tokens = tokens[0: 1, :, :target_length]
-          scores = to_torch(scores)
-          sample_tokens = to_torch(sample_tokens)
-          scores = torch.where(sample_tokens == AUDIO_MASK_ID, scores, torch.tensor(-float("inf")))
+          scores = tiny_Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
 
-          _, topk_idx = torch.topk(scores.flatten(), sched[step])
+
+          _, topk_idx = tiny_Tensor.topk(scores.flatten(), sched[step])
           flat_tokens = sample_tokens.flatten()
 
-          pred_tokens = to_torch(pred_tokens)  
+          pred_tokens = to_torch(pred_tokens)
+          flat_tokens = to_torch(flat_tokens)
+          topk_idx = to_torch(topk_idx)
           flat_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].to(flat_tokens.dtype)
-          sample_tokens.copy_(flat_tokens.view_as(sample_tokens))
+
+          sample_tokens = to_torch(sample_tokens)
+          sample_tokens = flat_tokens.view_as(sample_tokens)
 
           # Update individual slices into batched structure
           tokens = to_torch(tokens)
@@ -1205,4 +1204,6 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
+
+
 
