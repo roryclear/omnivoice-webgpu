@@ -287,7 +287,6 @@ class Qwen3Attention:
 
   def __call__(self, hidden_states, position_embeddings, attention_mask):
       hidden_states = to_tiny(hidden_states)
-      attention_mask = to_tiny(attention_mask)
       position_embeddings = to_tiny(position_embeddings)
 
       input_shape = hidden_states.shape[:-1]
@@ -358,7 +357,6 @@ class Qwen3DecoderLayer:
   def __call__(self, hidden_states, attention_mask=None, position_embeddings=None):
       residual = hidden_states
       hidden_states = self.input_layernorm(hidden_states)
-      # Self Attention
       hidden_states = self.self_attn(hidden_states=hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings)
       hidden_states = residual + hidden_states
 
@@ -386,8 +384,9 @@ class llm:
       hidden_states = inputs_embeds
       position_embeddings = self.rotary_emb(position_ids)
       position_embeddings = to_torch(position_embeddings)
-
+      
       for decoder_layer in self.layers:
+        # attention_mask is tiny?
         hidden_states = decoder_layer(hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings,)
 
       return self.norm(hidden_states)
@@ -831,13 +830,14 @@ class omni:
       input_ids,
       audio_mask,
       attention_mask=None,
-      position_ids=None,
   ):
+      input_ids = to_torch(input_ids)
+      audio_mask = to_torch(audio_mask)
       inputs_embeds = self._prepare_embed_inputs(input_ids, audio_mask)  
       hidden_states = self.llm(
           inputs_embeds=inputs_embeds,
           attention_mask=attention_mask,
-          position_ids=position_ids,
+          position_ids=None,
       )
 
       # Shape: [B, S, C * Vocab]
@@ -955,8 +955,8 @@ class omni:
 
       chunk_results = []
       for i in range(len(chunks)):
-          target_length = self._estimate_target_tokens(chunks[i], ref_text, ref_audio_tokens.size(-1))
-          chunk_results.append(self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens))
+        target_length = self._estimate_target_tokens(chunks[i], ref_text, ref_audio_tokens.size(-1))
+        chunk_results.append(self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens))
 
       return chunk_results
 
@@ -1000,10 +1000,7 @@ class omni:
 
       tokens = to_torch(tokens)
       layer_ids = to_torch(layer_ids)
-
-      batch_input_ids = to_torch(batch_input_ids)
-      batch_audio_mask = to_torch(batch_audio_mask)
-      batch_attention_mask = to_torch(batch_attention_mask)
+  
       for step in range(NUM_STEPS):
           batch_logits = self(
               input_ids=batch_input_ids,
@@ -1032,6 +1029,8 @@ class omni:
 
           # Update individual slices into batched structure
           tokens[0: 1, :, :target_length] = sample_tokens
+
+          batch_input_ids = to_torch(batch_input_ids)
           batch_input_ids[0: 1, :, c_len - target_length : c_len] = sample_tokens
           batch_input_ids[1: 2, :, :target_length] = sample_tokens
 
