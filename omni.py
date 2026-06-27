@@ -120,7 +120,7 @@ def quantizer_encode(quantizer, embeddings):
         indices = dist.max(dim=-1).indices
 
         indices = indices.view(*shape[:-1])
-        quantized = F.embedding(indices, q.codebook.embed)
+        quantized = q.codebook.embed[indices]
         quantized = q.project_out(quantized)
         quantized = quantized.permute(0, 2, 1)
 
@@ -232,12 +232,10 @@ class OmniVoice(PreTrainedModel):
         return model
 
 def _gumbel_sample(logits, temperature: float):
-    logits = to_tiny(logits)
     scaled_logits = logits / temperature
     u = tiny_Tensor.rand_like(scaled_logits)
     gumbel_noise = -tiny_Tensor.log(-tiny_Tensor.log(u + 1e-10) + 1e-10)
-    ret = scaled_logits + gumbel_noise
-    return to_torch(ret)
+    return scaled_logits + gumbel_noise
 
 _NONVERBAL_PATTERN = re.compile(
     r"\[(laughter|sigh|confirmation-en|question-en|question-ah|question-oh|"
@@ -844,7 +842,6 @@ class omni:
       batch_size, seq_len, _ = hidden_states.shape
       hidden_states = to_tiny(hidden_states)
       logits_flat = self.audio_heads(hidden_states)
-      logits_flat = to_torch(logits_flat)
       # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
       audio_logits = logits_flat.view(
           batch_size,
@@ -998,15 +995,12 @@ class omni:
 
       layer_ids = tiny_Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
 
-      tokens = to_torch(tokens)
-      layer_ids = to_torch(layer_ids)
-  
       for step in range(NUM_STEPS):
           batch_logits = self(
               input_ids=batch_input_ids,
               audio_mask=batch_audio_mask,
               attention_mask=batch_attention_mask,
-          ).to(torch.float32)
+          )
 
           # Extract real target Logits
           # [1, C, T, V]
@@ -1020,14 +1014,19 @@ class omni:
           scores = _gumbel_sample(scores, POSITION_TEMP)
 
           sample_tokens = tokens[0: 1, :, :target_length]
-          scores.masked_fill_(sample_tokens != AUDIO_MASK_ID, -float("inf"))
+          scores = to_torch(scores)
+          sample_tokens = to_torch(sample_tokens)
+          scores = torch.where(sample_tokens == AUDIO_MASK_ID, scores, torch.tensor(-float("inf")))
 
           _, topk_idx = torch.topk(scores.flatten(), sched[step])
           flat_tokens = sample_tokens.flatten()
-          flat_tokens[topk_idx] = pred_tokens.flatten()[topk_idx]
+
+          pred_tokens = to_torch(pred_tokens)  
+          flat_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].to(flat_tokens.dtype)
           sample_tokens.copy_(flat_tokens.view_as(sample_tokens))
 
           # Update individual slices into batched structure
+          tokens = to_torch(tokens)
           tokens[0: 1, :, :target_length] = sample_tokens
 
           batch_input_ids = to_torch(batch_input_ids)
@@ -1037,18 +1036,13 @@ class omni:
       return tokens[0, :, : target_length]
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
-      c_log_probs = F.log_softmax(c_logits, dim=-1)
-      u_log_probs = F.log_softmax(u_logits, dim=-1)
-      log_probs = torch.log_softmax(
-          c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs),
-          dim=-1,
-      )
+      c_log_probs = tiny_Tensor.log_softmax(c_logits, axis=-1)
+      u_log_probs = tiny_Tensor.log_softmax(u_logits, axis=-1)
+      log_probs = tiny_Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
 
       log_probs[..., AUDIO_MASK_ID] = -float("inf")
-      pred_tokens = log_probs.argmax(dim=-1)
-
-      confidence_scores = log_probs.max(dim=-1)[0]
-
+      pred_tokens = log_probs.argmax(axis=-1)
+      confidence_scores = log_probs.max(axis=-1)[0]
       return pred_tokens, confidence_scores
 
 import soundfile as sf
@@ -1257,6 +1251,4 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
-
 
