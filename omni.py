@@ -102,32 +102,7 @@ class SimpleTokenizer:
   def prefix(self) -> list[int]:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
-   
-def quantizer_encode(quantizer, embeddings):
-    embeddings = to_torch(embeddings)
-    residual = embeddings
-    all_indices = []
-    for q in quantizer.quantizers:
-        hidden_states = residual.permute(0, 2, 1)
-        hidden_states = q.project_in(hidden_states)
-
-        shape = hidden_states.shape
-        hidden_states = hidden_states.reshape((-1, shape[-1]))
-
-        embed = q.codebook.embed.t()
-        scaled_states = hidden_states.pow(2).sum(1, keepdim=True)
-        dist = -(scaled_states - 2 * hidden_states @ embed + embed.pow(2).sum(0, keepdim=True))
-        indices = dist.max(dim=-1).indices
-
-        indices = indices.view(*shape[:-1])
-        quantized = q.codebook.embed[indices]
-        quantized = q.project_out(quantized)
-        quantized = quantized.permute(0, 2, 1)
-
-        residual = residual - quantized
-        all_indices.append(indices)
-    out_indices = torch.stack(all_indices)
-    return out_indices
+  
 
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
@@ -741,9 +716,52 @@ class DacDecoder:
       hidden_state = self.conv2(hidden_state)
       return to_torch(hidden_state)
 
+class HiggsAudioV2TokenizerEuclideanCodebook:
+  def __init__(self, cb):
+    self.embed = torch.zeros([1024, 64], dtype=torch.float32)
+    self.embed = cb.embed
+
+class HiggsAudioV2TokenizerVectorQuantization:
+  def __init__(self, q):
+    self.codebook = HiggsAudioV2TokenizerEuclideanCodebook(q.codebook)
+    self.project_in = nn.Linear(in_features=1024, out_features=64, bias=True)
+    self.project_in.weight = q.project_in.weight
+    self.project_in.bias = q.project_in.bias
+    self.project_out = nn.Linear(in_features=1024, out_features=64, bias=True)
+    self.project_out.weight = q.project_out.weight
+    self.project_out.bias = q.project_out.bias
+
 class HiggsAudioV2TokenizerResidualVectorQuantization:
-   def __init__(self, q):
-    self.quantizers = q.quantizers
+  def __init__(self, q):
+    self.quantizers = []
+    for quantizer in q.quantizers:
+      self.quantizers.append(HiggsAudioV2TokenizerVectorQuantization(quantizer))
+
+  def encode(self, embeddings):
+    embeddings = to_torch(embeddings)
+    residual = embeddings
+    all_indices = []
+    for q in self.quantizers:
+      hidden_states = residual.permute(0, 2, 1)
+      hidden_states = q.project_in(hidden_states)
+
+      shape = hidden_states.shape
+      hidden_states = hidden_states.reshape((-1, shape[-1]))
+
+      embed = q.codebook.embed.t()
+      scaled_states = hidden_states.pow(2).sum(1, keepdim=True)
+      dist = -(scaled_states - 2 * hidden_states @ embed + embed.pow(2).sum(0, keepdim=True))
+      indices = dist.max(dim=-1).indices
+
+      indices = indices.view(*shape[:-1])
+      quantized = q.codebook.embed[indices]
+      quantized = q.project_out(quantized)
+      quantized = quantized.permute(0, 2, 1)
+
+      residual = residual - quantized
+      all_indices.append(indices)
+    out_indices = torch.stack(all_indices)
+    return out_indices
 
 class audio_tokenizer:
   def __init__(self, tok):
@@ -765,7 +783,7 @@ class audio_tokenizer:
     e_acoustic = to_tiny(e_acoustic)
     embeddings = tiny_Tensor.cat(e_acoustic, e_semantic, dim=1)
     embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
-    audio_codes = quantizer_encode(self.quantizer, embeddings)
+    audio_codes = self.quantizer.encode(embeddings)
     audio_codes = audio_codes.transpose(0, 1)
     return audio_codes
 
