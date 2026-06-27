@@ -610,15 +610,13 @@ class DacEncoder:
     return to_torch(hidden_state)
 
 class ConvTranspose1d:
-  def __init__(self, conv):
-    self.weight = conv.weight
-    self.bias = conv.bias
+  def __init__(self, conv, in_ch, n):
+    self.weight = tiny_Tensor.zeros([in_ch, in_ch//2, n], dtype=dtypes.float32)
+    self.bias = tiny_Tensor.zeros([in_ch], dtype=dtypes.float32)
     self.stride = conv.stride
     self.padding = conv.padding
-    self.groups = conv.groups
     self.dilation = conv.dilation
     self.kernel_size = conv.kernel_size
-    self._output_padding = conv._output_padding
     self.output_padding = conv.output_padding
   
   def __call__(self, input):
@@ -629,7 +627,7 @@ class ConvTranspose1d:
     upsampled = tiny_Tensor.zeros(batch_size, in_channels, in_width * self.stride[0] - (self.stride[0] - 1))
     upsampled[:, :, ::self.stride[0]] = input
 
-    pad = self.dilation[0] * (kernel_size - 1) - self.padding[0]
+    pad = 1 * (kernel_size - 1) - self.padding[0]
     weight_flipped = self.weight.flip(-1)
     weight_conv = weight_flipped.permute(1, 0, 2)
 
@@ -640,8 +638,8 @@ class ConvTranspose1d:
         bias=None,
         stride=(1, 1),
         padding=(0, pad),
-        dilation=(1, self.dilation[0]),
-        groups=self.groups,
+        dilation=(1, 1),
+        groups=1,
     ).squeeze(2)
 
 
@@ -676,9 +674,9 @@ class DacResidualUnit:
     return output_tensor    
 
 class DacDecoderBlock:
-  def __init__(self, blk, in_ch):
+  def __init__(self, blk, in_ch, n):
     self.snake1 = Snake1d()
-    self.conv_t1 = ConvTranspose1d(blk.conv_t1) # todo
+    self.conv_t1 = ConvTranspose1d(blk.conv_t1, in_ch=in_ch, n=n) # todo
     self.res_unit1 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=3, d1=1)
     self.res_unit2 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=9, d1=3)
     self.res_unit3 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=27, d1=9)
@@ -697,11 +695,11 @@ class DacDecoder:
   def __init__(self, dec):
     self.conv1 = tiny_nn.Conv1d(256, 1024, kernel_size=7, stride=1, padding=3)
     self.conv2 = tiny_nn.Conv1d(32, 1, kernel_size=7, stride=1, padding=3)
-    self.block = [DacDecoderBlock(dec.block[0], 512),
-                  DacDecoderBlock(dec.block[1], 256),
-                  DacDecoderBlock(dec.block[2], 128),
-                  DacDecoderBlock(dec.block[3], 64),
-                  DacDecoderBlock(dec.block[4], 32)]
+    self.block = [DacDecoderBlock(dec.block[0], 512, 16),
+                  DacDecoderBlock(dec.block[1], 256, 10),
+                  DacDecoderBlock(dec.block[2], 128, 8),
+                  DacDecoderBlock(dec.block[3], 64, 4),
+                  DacDecoderBlock(dec.block[4], 32, 6)]
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
@@ -1161,6 +1159,10 @@ if __name__ == "__main__":
   model.audio_tokenizer.acoustic_decoder.conv1.bias = tiny_Tensor(weights["acoustic_decoder.conv1.bias"].numpy())
   model.audio_tokenizer.acoustic_decoder.conv2.weight = tiny_Tensor(weights["acoustic_decoder.conv2.weight"].numpy())
   model.audio_tokenizer.acoustic_decoder.conv2.bias = tiny_Tensor(weights["acoustic_decoder.conv2.bias"].numpy())
+
+  for i in range(len(model.audio_tokenizer.acoustic_decoder.block)):
+    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.acoustic_encoder.block)):
     model.audio_tokenizer.acoustic_encoder.block[i].snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.snake1.alpha"].numpy())
