@@ -1,25 +1,13 @@
-import logging
 import math
-import os
 import re
 import struct
-from typing import List, Optional, Union
 import pickle
 
 import numpy as np
 import torch
 import torchaudio
 torch.manual_seed(0)
-import torch.nn as nn
 import torch.nn.functional as F
-
-from transformers import (
-    AutoModel,
-    HiggsAudioV2TokenizerModel,
-    PretrainedConfig,
-    PreTrainedModel,
-)
-from transformers.models.auto import CONFIG_MAPPING, AutoConfig
 
 from tinygrad.helpers import partition
 import json, urllib.request, typing, unicodedata, sys
@@ -113,32 +101,6 @@ GUIDANCE_SCALE = 2.0
 T_SHIFT = 0.1
 AUDIO_CHUNKED_THRESHOLD = 30.0
 
-class OmniVoiceConfig(PretrainedConfig):
-    model_type = "omnivoice"
-    sub_configs = {"llm_config": AutoConfig}
-
-    def __init__(
-        self,
-        llm_config: Optional[Union[dict, PretrainedConfig]] = None,
-        **kwargs,
-    ):
-
-        if isinstance(llm_config, dict):
-            self.llm_config = CONFIG_MAPPING[llm_config["model_type"]](**llm_config)
-
-
-        super().__init__(**kwargs)
-
-
-def _resolve_model_path(name_or_path: str) -> str:
-    if os.path.isdir(name_or_path):
-        return name_or_path
-    from huggingface_hub import snapshot_download
-
-    return snapshot_download(name_or_path)
-
-class blank: pass
-
 HIDDEN_SIZE = 1024
 NUM_AUDIO_CODEBOOK = 8
 AUDIO_VOCAB_SIZE = 1025
@@ -174,37 +136,6 @@ def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
     # just resample every time?
     data = torchaudio.functional.resample(torch.from_numpy(data), orig_freq=sr, new_freq=sampling_rate).numpy()
     return data
-
-class OmniVoice(PreTrainedModel):
-    _supports_flex_attn = True
-    _supports_flash_attn_2 = True
-    _supports_sdpa = True
-    config_class = OmniVoiceConfig
-
-    def __init__(self, config):
-        super().__init__(config)
-        
-        self.llm = AutoModel.from_config(self.config.llm_config)
-
-        # todo, breaks without this
-        self.all_tied_weights_keys = {}
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        logging.disable(logging.INFO)
-
-        # Resolve to local path first; download only if not already cached
-        resolved_path = _resolve_model_path(pretrained_model_name_or_path)
-        model = super().from_pretrained(resolved_path, *args, **kwargs)
-
-        audio_tokenizer_path = os.path.join(resolved_path, "audio_tokenizer")
-
-        # higgs-audio-v2-tokenizer does not support MPS
-        # (output channels > 65536)
-        model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(audio_tokenizer_path, device_map="mps")
-        model.audio_tokenizer.config.semantic_sample_rate = SAMPLING_RATE
-
-        return model
 
 def _gumbel_sample(logits, temperature: float):
     scaled_logits = logits / temperature
@@ -610,24 +541,23 @@ class DacEncoder:
     return to_torch(hidden_state)
 
 class ConvTranspose1d:
-  def __init__(self, conv, in_ch, n):
+  def __init__(self, in_ch, n, s, p, op):
     self.weight = tiny_Tensor.zeros([in_ch, in_ch//2, n], dtype=dtypes.float32)
     self.bias = tiny_Tensor.zeros([in_ch], dtype=dtypes.float32)
-    self.stride = conv.stride
-    self.padding = conv.padding
-    self.dilation = conv.dilation
-    self.kernel_size = conv.kernel_size
-    self.output_padding = conv.output_padding
+    self.stride = s
+    self.padding = p
+    self.kernel_size = self.padding*2
+    self.output_padding = op
   
   def __call__(self, input):
     input = to_tiny(input)
     batch_size, in_channels, in_width = input.shape
     _, _, kernel_size = self.weight.shape
 
-    upsampled = tiny_Tensor.zeros(batch_size, in_channels, in_width * self.stride[0] - (self.stride[0] - 1))
-    upsampled[:, :, ::self.stride[0]] = input
+    upsampled = tiny_Tensor.zeros(batch_size, in_channels, in_width * self.stride - (self.stride - 1))
+    upsampled[:, :, ::self.stride] = input
 
-    pad = 1 * (kernel_size - 1) - self.padding[0]
+    pad = 1 * (kernel_size - 1) - self.padding
     weight_flipped = self.weight.flip(-1)
     weight_conv = weight_flipped.permute(1, 0, 2)
 
@@ -642,8 +572,7 @@ class ConvTranspose1d:
         groups=1,
     ).squeeze(2)
 
-
-    if self.output_padding[0] > 0: out = tiny_Tensor.pad(out, (0, self.output_padding[0]))
+    if self.output_padding > 0: out = tiny_Tensor.pad(out, (0, self.output_padding))
     out += self.bias.view(1, -1, 1)
     return to_torch(out)
 
@@ -674,9 +603,9 @@ class DacResidualUnit:
     return output_tensor    
 
 class DacDecoderBlock:
-  def __init__(self, blk, in_ch, n):
+  def __init__(self, in_ch, n, s, p, op):
     self.snake1 = Snake1d()
-    self.conv_t1 = ConvTranspose1d(blk.conv_t1, in_ch=in_ch, n=n) # todo
+    self.conv_t1 = ConvTranspose1d(in_ch=in_ch, n=n, s=s, p=p, op=op) # todo
     self.res_unit1 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=3, d1=1)
     self.res_unit2 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=9, d1=3)
     self.res_unit3 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=27, d1=9)
@@ -692,14 +621,14 @@ class DacDecoderBlock:
     return hidden_state
 
 class DacDecoder:
-  def __init__(self, dec):
+  def __init__(self):
     self.conv1 = tiny_nn.Conv1d(256, 1024, kernel_size=7, stride=1, padding=3)
     self.conv2 = tiny_nn.Conv1d(32, 1, kernel_size=7, stride=1, padding=3)
-    self.block = [DacDecoderBlock(dec.block[0], 512, 16),
-                  DacDecoderBlock(dec.block[1], 256, 10),
-                  DacDecoderBlock(dec.block[2], 128, 8),
-                  DacDecoderBlock(dec.block[3], 64, 4),
-                  DacDecoderBlock(dec.block[4], 32, 6)]
+    self.block = [DacDecoderBlock(512, 16, s=8, p=4, op=0),
+                  DacDecoderBlock(256, 10, s=5, p=3, op=1),
+                  DacDecoderBlock(128, 8, s=4, p=2, op=0),
+                  DacDecoderBlock(64, 4, s=2, p=1, op=0),
+                  DacDecoderBlock(32, 6, s=3, p=2, op=1)]
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
@@ -759,12 +688,13 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
     return out_indices
 
 class audio_tokenizer:
-  def __init__(self, tok):
-    self.config = tok.config
+  def __init__(self):
+    self.semantic_downsample_factor = 3
+    self.hop_length = 960
     self.semantic_model = HubertModel()
     self.encoder_semantic = SemanticEncoder()
     self.acoustic_encoder = DacEncoder()
-    self.acoustic_decoder = DacDecoder(tok.acoustic_decoder)
+    self.acoustic_decoder = DacDecoder()
     self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization()
     self.fc = tiny_nn.Linear(1024, 1024)
     self.fc2 = tiny_nn.Linear(1024, 256)
@@ -792,7 +722,7 @@ class audio_tokenizer:
 
     stacked = tiny_Tensor.stack([h for h in hidden_states], dim=1)
     semantic_features = stacked.mean(axis=1)
-    semantic_features = semantic_features[:, :: self.config.semantic_downsample_factor, :]
+    semantic_features = semantic_features[:, :: self.semantic_downsample_factor, :]
     return to_torch(semantic_features)
 
   def decode(self, audio_codes,):
@@ -821,9 +751,8 @@ class audio_tokenizer:
       return to_torch(hidden_state)
 
 class omni:
-  def __init__(self, model):
-    self.audio_tokenizer = audio_tokenizer(model.audio_tokenizer)
-    self.device = model.device
+  def __init__(self):
+    self.audio_tokenizer = audio_tokenizer()
     self.llm = llm()
     self.codebook_layer_offsets = (tiny_Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
     self.audio_embeddings = tiny_nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
@@ -894,7 +823,7 @@ class omni:
               ref_duration,
           )
 
-      chunk_size = self.audio_tokenizer.config.hop_length
+      chunk_size = self.audio_tokenizer.hop_length
       clip_size = int(ref_wav.shape[-1] % chunk_size)
       ref_wav = ref_wav[:, :-clip_size] if clip_size > 0 else ref_wav
       # numpy → torch at tokenizer boundary
@@ -1081,9 +1010,8 @@ def to_tiny(x):
   return tiny_Tensor(x.cpu().detach().numpy())
 
 if __name__ == "__main__":
-  model = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="mps:0", dtype=torch.float16)
   tiny_Tensor.manual_seed(0)
-  model = omni(model)
+  model = omni()
 
   weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
   #for w in weights.keys(): print(w, type(weights[w]))
