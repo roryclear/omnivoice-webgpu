@@ -942,15 +942,16 @@ class omni:
 
 
           _, topk_idx = tiny_Tensor.topk(scores.flatten(), sched[step])
-          flat_tokens = sample_tokens.flatten()
-
+          shape = sample_tokens.shape
+          
           pred_tokens = to_torch(pred_tokens)
-          flat_tokens = to_torch(flat_tokens)
           topk_idx = to_torch(topk_idx)
-          flat_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].to(flat_tokens.dtype)
+          sample_tokens = sample_tokens.flatten()
+          sample_tokens = to_torch(sample_tokens)
+          sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].to(sample_tokens.dtype)
 
           sample_tokens = to_torch(sample_tokens)
-          sample_tokens = flat_tokens.view_as(sample_tokens)
+          sample_tokens = sample_tokens.reshape(shape)
 
           # Update individual slices into batched structure
           tokens = to_torch(tokens)
