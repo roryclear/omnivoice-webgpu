@@ -656,16 +656,14 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
       embed = q.codebook.embed.T
       scaled_states = hidden_states.pow(2).sum(1, keepdim=True)
       dist = -(scaled_states - 2 * hidden_states @ embed + embed.pow(2).sum(0, keepdim=True))
-      dist = to_torch(dist)
-      indices = dist.max(dim=-1).indices
+      indices = dist.argmax(axis=-1)
 
       indices = indices.view(*shape[:-1])
-      quantized = to_torch(q.codebook.embed)[indices]
-      quantized = to_tiny(quantized)
+      quantized = q.codebook.embed[indices]
       quantized = q.project_out(quantized)
       quantized = quantized.permute(0, 2, 1)
       residual = residual - quantized
-      all_indices.append(indices)
+      all_indices.append(to_torch(indices))
     out_indices = torch.stack(all_indices)
     return out_indices
 
