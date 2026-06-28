@@ -944,12 +944,8 @@ class omni:
           _, topk_idx = tiny_Tensor.topk(scores.flatten(), sched[step])
           shape = sample_tokens.shape
           
-          pred_tokens = to_torch(pred_tokens)
-          topk_idx = to_torch(topk_idx)
           sample_tokens = sample_tokens.flatten()
-          sample_tokens = to_torch(sample_tokens)
-          sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].to(sample_tokens.dtype)
-
+          sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(sample_tokens.dtype)
           sample_tokens = to_torch(sample_tokens)
           sample_tokens = sample_tokens.reshape(shape)
 
