@@ -432,7 +432,7 @@ class HubertNoLayerNormConvLayer:
     hidden_states = to_tiny(hidden_states)
     hidden_states = self.conv(hidden_states)
     hidden_states = tiny_Tensor.gelu(hidden_states)
-    return to_torch(hidden_states)
+    return hidden_states
 
 class HubertFeatureEncoder:
   def __init__(self):
@@ -710,18 +710,17 @@ class audio_tokenizer:
       audio_codes = audio_codes.transpose(0, 1)
       quantized_out = 0.0
       for i, indices in enumerate(audio_codes):
-          quantizer = self.quantizer.quantizers[i]
-          quantized = F.embedding(indices, to_torch(quantizer.codebook.embed))
-          quantized = to_tiny(quantized)
-          quantized = quantizer.project_out(quantized)
-          quantized = quantized.permute(0, 2, 1)
-          quantized = to_torch(quantized)
-          quantized_out = quantized_out + quantized
+        quantizer = self.quantizer.quantizers[i]
+        quantized = F.embedding(indices, to_torch(quantizer.codebook.embed))
+        quantized = to_tiny(quantized)
+        quantized = quantizer.project_out(quantized)
+        quantized = quantized.permute(0, 2, 1)
+        quantized = to_torch(quantized)
+        quantized_out = quantized_out + quantized
       quantized = quantized_out
       quantized = to_tiny(quantized)
       quantized_acoustic = self.fc2(quantized.transpose(1, 2)).transpose(1, 2)
       hidden_state = self.acoustic_decoder.conv1(quantized_acoustic)
-      hidden_state = to_torch(hidden_state)
 
       for layer in self.acoustic_decoder.block:
           hidden_state = layer(hidden_state)
@@ -729,7 +728,7 @@ class audio_tokenizer:
       hidden_state = self.acoustic_decoder.snake1(hidden_state)
       hidden_state = to_tiny(hidden_state)
       hidden_state = self.acoustic_decoder.conv2(hidden_state)
-      return to_torch(hidden_state)
+      return hidden_state
 
 class omni:
   def __init__(self):
@@ -746,7 +745,7 @@ class omni:
     shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
     ret = tiny_Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-    return to_torch(ret)
+    return ret
 
   def __call__(
       self,
@@ -812,7 +811,7 @@ class omni:
       return ref_audio_tokens
 
   def _decode_and_post_process(self, tokens) -> np.ndarray:
-      chunk_audios = [self.audio_tokenizer.decode(t.to("mps").unsqueeze(0))[0].cpu().numpy() for t in tokens]
+      chunk_audios = [self.audio_tokenizer.decode(t.unsqueeze(0))[0].numpy() for t in tokens]
       audio_waveform = np.concatenate(chunk_audios, axis=-1)
       return audio_waveform.squeeze(0)
 
