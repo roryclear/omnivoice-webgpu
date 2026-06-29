@@ -663,8 +663,8 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
       quantized = q.project_out(quantized)
       quantized = quantized.permute(0, 2, 1)
       residual = residual - quantized
-      all_indices.append(to_torch(indices))
-    out_indices = torch.stack(all_indices)
+      all_indices.append(indices)
+    out_indices = tiny_Tensor.stack(all_indices)
     return out_indices
 
 class audio_tokenizer:
@@ -712,7 +712,6 @@ class audio_tokenizer:
         quantized = quantizer.codebook.embed(indices)
         quantized = quantizer.project_out(quantized)
         quantized = quantized.permute(0, 2, 1)
-        quantized = to_torch(quantized)
         quantized_out = quantized_out + quantized
       quantized = quantized_out
       quantized = to_tiny(quantized)
@@ -970,15 +969,6 @@ import pickle
 from tinygrad.helpers import fetch
 from tinygrad.nn.state import safe_load
 from tinygrad import Tensor as tiny_Tensor, dtypes, nn as tiny_nn, TinyJit
-
-def to_torch(x):
-  if type(x) == tuple: return tuple(to_torch(y) for y in x)
-  if type(x) == torch.Tensor: return x
-  if x.dtype == dtypes.bool: return torch.Tensor(x.numpy()).to("mps").to(torch.bool)
-  if x.dtype == dtypes.float16: return torch.Tensor(x.numpy()).to("mps").to(torch.float16)
-  if x.dtype == dtypes.int64: return torch.Tensor(x.numpy()).to("mps").to(torch.int64)
-  if x.dtype == dtypes.int: return torch.Tensor(x.numpy()).to("mps").to(torch.int)
-  return torch.Tensor(x.numpy()).to("mps")
 
 def to_tiny(x):
   if type(x) == tuple: return tuple(to_tiny(y) for y in x)
