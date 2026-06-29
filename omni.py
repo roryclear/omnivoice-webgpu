@@ -133,7 +133,7 @@ def resample_numpy(data, orig_sr, target_sr):
     resampled_channels = [np.interp(new_times, orig_times, channel) for channel in data]
     return np.array(resampled_channels)
 
-def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
+def load_audio(audio_path: str, sampling_rate: int):
     data, sr = load_waveform(audio_path)
     data = np.mean(data, axis=0, keepdims=True)
     data = resample_numpy(data, sr, sampling_rate)
@@ -733,18 +733,13 @@ class omni:
       ).permute(0, 2, 1, 3)
       return audio_logits
 
-  def generate(
-      self,
-      text=None,
-      ref_text=None,
-      ref_audio=None,
-  ) -> list[np.ndarray]:
-      ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
-      num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
+  def generate(self, text=None, ref_text=None, ref_audio=None):
+    ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
+    num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
 
-      result = self._generate_chunked(target_length=num_target_tokens, text=text,\
-          ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
-      return self._decode_and_post_process(result)    
+    result = self._generate_chunked(target_length=num_target_tokens, text=text,\
+        ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
+    return self._decode_and_post_process(result)    
 
   def create_voice_clone_prompt(self, ref_audio):
       ref_wav = load_audio(ref_audio, SAMPLING_RATE)
@@ -769,9 +764,9 @@ class omni:
 
       return ref_audio_tokens
 
-  def _decode_and_post_process(self, tokens) -> np.ndarray:
-      chunk_audios = [self.audio_tokenizer.decode(t.unsqueeze(0))[0].numpy() for t in tokens]
-      audio_waveform = np.concatenate(chunk_audios, axis=-1)
+  def _decode_and_post_process(self, tokens):
+      chunk_audios = [self.audio_tokenizer.decode(t.unsqueeze(0))[0] for t in tokens]
+      audio_waveform = Tensor.cat(*chunk_audios, dim=-1)
       return audio_waveform.squeeze(0)
 
   def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
@@ -1093,7 +1088,7 @@ if __name__ == "__main__":
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
-  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  ).numpy()
   pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, 24000)
