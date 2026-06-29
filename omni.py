@@ -4,10 +4,6 @@ import struct
 import pickle
 
 import numpy as np
-import torch
-import torchaudio
-torch.manual_seed(0)
-import torch.nn.functional as F
 
 from tinygrad.helpers import partition
 import json, urllib.request, typing, unicodedata, sys
@@ -128,13 +124,19 @@ def load_waveform(audio_path: str):
     audio /= 32768.0
     return audio.T, sample_rate
 
+def resample_numpy(data, orig_sr, target_sr):
+    # data is always multi-channel, shape (channels, samples)
+    duration = data.shape[1] / orig_sr
+    orig_times = np.linspace(0, duration, data.shape[1], endpoint=False)
+    new_times = np.linspace(0, duration, int(duration * target_sr), endpoint=False)
+    
+    resampled_channels = [np.interp(new_times, orig_times, channel) for channel in data]
+    return np.array(resampled_channels)
+
 def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
     data, sr = load_waveform(audio_path)
-
-    # two sides
     data = np.mean(data, axis=0, keepdims=True)
-    # just resample every time?
-    data = torchaudio.functional.resample(torch.from_numpy(data), orig_freq=sr, new_freq=sampling_rate).numpy()
+    data = resample_numpy(data, sr, sampling_rate)
     return data
 
 def _gumbel_sample(logits, temperature: float):
@@ -800,8 +802,7 @@ class omni:
       chunk_size = self.audio_tokenizer.hop_length
       clip_size = int(ref_wav.shape[-1] % chunk_size)
       ref_wav = ref_wav[:, :-clip_size] if clip_size > 0 else ref_wav
-      # numpy → torch at tokenizer boundary
-      ref_wav_tensor = torch.from_numpy(ref_wav).to("mps")
+      ref_wav_tensor = tiny_Tensor(ref_wav.astype(np.float32))
       ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).squeeze(0)
 
       return ref_audio_tokens
@@ -1130,14 +1131,8 @@ if __name__ == "__main__":
   model.audio_tokenizer.semantic_model.feature_projection.layer_norm.bias = tiny_Tensor(weights["semantic_model.feature_projection.layer_norm.bias"].numpy())
   model.audio_tokenizer.semantic_model.feature_projection.projection.weight = tiny_Tensor(weights["semantic_model.feature_projection.projection.weight"].numpy())
   model.audio_tokenizer.semantic_model.feature_projection.projection.bias = tiny_Tensor(weights["semantic_model.feature_projection.projection.bias"].numpy())
-  #from urllib.request import urlopen
-  #from safetensors.torch import load_file
-  #state_dict = load_file("model.safetensors")
-
-  #for k in state_dict.keys(): model.k = state_dict[k]
   
   tiny_Tensor.manual_seed(42)
-  torch.manual_seed(42)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
@@ -1149,7 +1144,6 @@ if __name__ == "__main__":
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
   tiny_Tensor.manual_seed(42)
-  torch.manual_seed(42)
   audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black. That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
       ref_audio="voice.wav",
@@ -1161,7 +1155,6 @@ if __name__ == "__main__":
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
   exit()
   tiny_Tensor.manual_seed(0)
-  torch.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice2.wav",
