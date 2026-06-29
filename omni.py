@@ -630,7 +630,7 @@ class DacDecoder:
       return hidden_state
 
 class HiggsAudioV2TokenizerEuclideanCodebook:
-  def __init__(self): self.embed = tiny_Tensor.zeros([1024, 64], dtype=dtypes.float32)
+  def __init__(self): self.embed = tiny_nn.Embedding(1024, 64)
 
 class HiggsAudioV2TokenizerVectorQuantization:
   def __init__(self):
@@ -653,13 +653,13 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
       shape = hidden_states.shape
       hidden_states = hidden_states.reshape((-1, shape[-1]))
 
-      embed = q.codebook.embed.T
+      embed = q.codebook.embed.weight.T
       scaled_states = hidden_states.pow(2).sum(1, keepdim=True)
       dist = -(scaled_states - 2 * hidden_states @ embed + embed.pow(2).sum(0, keepdim=True))
       indices = dist.argmax(axis=-1)
 
       indices = indices.view(*shape[:-1])
-      quantized = q.codebook.embed[indices]
+      quantized = q.codebook.embed(indices)
       quantized = q.project_out(quantized)
       quantized = quantized.permute(0, 2, 1)
       residual = residual - quantized
@@ -709,8 +709,7 @@ class audio_tokenizer:
       quantized_out = 0.0
       for i, indices in enumerate(audio_codes):
         quantizer = self.quantizer.quantizers[i]
-        quantized = F.embedding(indices, to_torch(quantizer.codebook.embed))
-        quantized = to_tiny(quantized)
+        quantized = quantizer.codebook.embed(indices)
         quantized = quantizer.project_out(quantized)
         quantized = quantized.permute(0, 2, 1)
         quantized = to_torch(quantized)
@@ -873,7 +872,8 @@ class omni:
       chunk_results = []
       for i in range(len(chunks)):
         target_length = self._estimate_target_tokens(chunks[i], ref_text, ref_audio_tokens.size(-1))
-        chunk_results.append(self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens))
+        ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
+        chunk_results.append(ret)
 
       return chunk_results
 
@@ -923,7 +923,6 @@ class omni:
               attention_mask=batch_attention_mask,
           )
           print("batch_logits =",batch_logits.shape, type(batch_logits))
-          tokens = to_tiny(tokens)
 
           # Extract real target Logits
           # [1, C, T, V]
@@ -944,16 +943,15 @@ class omni:
           
           sample_tokens = sample_tokens.flatten()
           sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(sample_tokens.dtype)
-          sample_tokens = to_torch(sample_tokens)
           sample_tokens = sample_tokens.reshape(shape)
 
           # Update individual slices into batched structure
-          tokens = to_torch(tokens)
+          tokens = tokens.clone()
           tokens[0: 1, :, :target_length] = sample_tokens
-
-          batch_input_ids = to_torch(batch_input_ids)
+          batch_input_ids = batch_input_ids.clone()
           batch_input_ids[0: 1, :, c_len - target_length : c_len] = sample_tokens
           batch_input_ids[1: 2, :, :target_length] = sample_tokens
+          batch_input_ids.realize() # todo
 
       return tokens[0, :, : target_length]
 
@@ -1015,7 +1013,7 @@ if __name__ == "__main__":
   for w in weights.keys(): print(w, type(weights[w]))
 
   for i in range(len(model.audio_tokenizer.quantizer.quantizers)):
-    model.audio_tokenizer.quantizer.quantizers[i].codebook.embed = tiny_Tensor(weights[f"quantizer.quantizers.{i}.codebook.embed"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].codebook.embed.weight = tiny_Tensor(weights[f"quantizer.quantizers.{i}.codebook.embed"].numpy())
     model.audio_tokenizer.quantizer.quantizers[i].project_in.weight = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_in.weight"].numpy())
     model.audio_tokenizer.quantizer.quantizers[i].project_in.bias = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_in.bias"].numpy())
     model.audio_tokenizer.quantizer.quantizers[i].project_out.weight = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_out.weight"].numpy())
