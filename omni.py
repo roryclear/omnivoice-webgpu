@@ -155,7 +155,6 @@ class Qwen3RMSNorm:
   def __init__(self): self.variance_epsilon = 1e-6
   
   def __call__(self, hidden_states):
-    hidden_states = to_tiny(hidden_states)
     input_dtype = hidden_states.dtype
     hidden_states = hidden_states.cast(dtypes.float32)
     variance = hidden_states.pow(2).mean(-1, keepdim=True)
@@ -192,9 +191,7 @@ class Qwen3Attention:
     self.num_key_value_groups = 2
 
   def __call__(self, hidden_states, position_embeddings, attention_mask):
-      hidden_states = to_tiny(hidden_states)
-      position_embeddings = to_tiny(position_embeddings)
-
+      position_embeddings = position_embeddings
       input_shape = hidden_states.shape[:-1]
       hidden_shape = (*input_shape, -1, self.head_dim)
 
@@ -245,9 +242,7 @@ class Qwen3MLP():
     self.up_proj = nn.Linear(in_features=1024, out_features=3072, bias=False)
     self.act_fn = Tensor.silu
   
-  def __call__(self, x):
-    x = to_tiny(x)
-    return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+  def __call__(self, x): return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
 class Qwen3DecoderLayer:
   def __init__(self):
@@ -257,7 +252,6 @@ class Qwen3DecoderLayer:
     self.mlp = Qwen3MLP()
   
   def __call__(self, hidden_states, attention_mask=None, position_embeddings=None):
-      hidden_states = to_tiny(hidden_states)
       residual = hidden_states
       hidden_states = self.input_layernorm(hidden_states)
       hidden_states = self.self_attn(hidden_states=hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings)
@@ -265,7 +259,6 @@ class Qwen3DecoderLayer:
 
       # Fully Connected
       residual = hidden_states
-      hidden_states = to_tiny(hidden_states)
       hidden_states = self.post_attention_layernorm(hidden_states)
       hidden_states = self.mlp(hidden_states)
       hidden_states = residual + hidden_states
@@ -312,7 +305,6 @@ class HubertPositionalConvEmbedding:
     self.activation = Tensor.gelu
   
   def __call__(self, hidden_states):
-    hidden_states = to_tiny(hidden_states)
     hidden_states = hidden_states.transpose(1, 2)
     hidden_states = self.conv(hidden_states)    
     #https://github.com/huggingface/transformers/blob/c5deba28c83d853a1f63a0ab589a4531346fbcb0/src/transformers/models/hubert/modeling_hubert.py#L102
@@ -327,7 +319,6 @@ class HubertFeedForward:
     self.output_dense = nn.Linear(in_features=3072, out_features=768, bias=True)
 
   def __call__(self, hidden_states):
-    hidden_states = to_tiny(hidden_states)
     hidden_states = self.intermediate_dense(hidden_states)
     hidden_states = self.intermediate_act_fn(hidden_states)
     hidden_states = self.output_dense(hidden_states)
@@ -345,7 +336,6 @@ class HubertAttention:
     self.is_causal = False
   
   def __call__(self, hidden_states):
-      hidden_states = to_tiny(hidden_states)
       input_shape = hidden_states.shape[:-1]
 
       hidden_shape = (*input_shape, -1, self.head_dim)
@@ -372,7 +362,6 @@ class HubertEncoderLayer:
     self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
     self.final_layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
   def __call__(self, hidden_states):
-    hidden_states = to_tiny(hidden_states)
     attn_residual = hidden_states
     hidden_states, _, _ = self.attention(hidden_states)
     hidden_states = attn_residual + hidden_states
@@ -390,7 +379,6 @@ class HubertEncoder:
     for i in range(12): self.layers.append(HubertEncoderLayer())
   
   def __call__(self, hidden_states):
-    hidden_states = to_tiny(hidden_states)
     position_embeddings = self.pos_conv_embed(hidden_states)
     hidden_states = hidden_states + position_embeddings
     hidden_states = self.layer_norm(hidden_states)
@@ -410,7 +398,6 @@ class HubertFeatureProjection:
     self.projection = nn.Linear(in_features=512, out_features=768, bias=True)
 
   def __call__(self, hidden_states):
-      hidden_states = to_tiny(hidden_states)
       hidden_states = self.layer_norm(hidden_states)
       hidden_states = self.projection(hidden_states)
       return hidden_states
@@ -421,7 +408,6 @@ class HubertGroupNormConvLayer:
     self.layer_norm = nn.GroupNorm(512, 512)
   
   def __call__(self, hidden_states):
-    hidden_states = to_tiny(hidden_states)
     hidden_states = self.conv(hidden_states)
     hidden_states = self.layer_norm(hidden_states)
     hidden_states = Tensor.gelu(hidden_states)
@@ -431,7 +417,6 @@ class HubertNoLayerNormConvLayer:
   def __init__(self): self.conv = nn.Conv1d(512, 512, kernel_size=3, stride=2, bias=False)
   
   def __call__(self, hidden_states):
-    hidden_states = to_tiny(hidden_states)
     hidden_states = self.conv(hidden_states)
     hidden_states = Tensor.gelu(hidden_states)
     return hidden_states
@@ -485,7 +470,6 @@ class SemanticEncoder:
 
 class Snake1d:
   def __call__(self, hidden_states):
-    hidden_states = to_tiny(hidden_states)
     shape = hidden_states.shape
     hidden_states = hidden_states.reshape(shape[0], shape[1], -1)
     hidden_states = hidden_states + (self.alpha + 1e-9).reciprocal() * Tensor.sin(self.alpha * hidden_states).pow(2)
@@ -504,7 +488,6 @@ class DacEncoderBlock:
     hidden_state = self.res_unit1(hidden_state)
     hidden_state = self.res_unit2(hidden_state)
     hidden_state = self.snake1(self.res_unit3(hidden_state))
-    hidden_state = to_tiny(hidden_state)
     hidden_state = self.conv1(hidden_state)
     return hidden_state
 
@@ -520,13 +503,10 @@ class DacEncoder:
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
-    hidden_state = to_tiny(hidden_state)
     hidden_state = self.conv1(hidden_state)
     for module in self.block:
         hidden_state = module(hidden_state)
-    hidden_state = to_tiny(hidden_state)
     hidden_state = self.snake1(hidden_state)
-    hidden_state = to_tiny(hidden_state)
     hidden_state = self.conv2(hidden_state)
     return hidden_state
 
@@ -540,7 +520,6 @@ class ConvTranspose1d:
     self.output_padding = op
   
   def __call__(self, input):
-    input = to_tiny(input)
     batch_size, in_channels, in_width = input.shape
     _, _, kernel_size = self.weight.shape
 
@@ -574,20 +553,16 @@ class DacResidualUnit:
     self.snake2 = Snake1d()
 
   def __call__(self, hidden_state):
-    hidden_state = to_tiny(hidden_state)
     output_tensor = hidden_state
     output_tensor = self.snake1(output_tensor)
-    output_tensor = to_tiny(output_tensor)
     output_tensor = self.conv1(output_tensor)
     output_tensor = self.snake2(output_tensor)
-    output_tensor = to_tiny(output_tensor)
     output_tensor = self.conv2(output_tensor)
     padding = (hidden_state.shape[-1] - output_tensor.shape[-1]) // 2
     if padding > 0:
         print("does this get hit?")
         exit()
         hidden_state = hidden_state[..., padding:-padding]
-    output_tensor = to_tiny(output_tensor)
     output_tensor = hidden_state + output_tensor
     return output_tensor    
 
@@ -621,13 +596,10 @@ class DacDecoder:
     self.snake1 = Snake1d()
   
   def __call__(self, hidden_state):
-      hidden_state = to_tiny(hidden_state)
       hidden_state = self.conv1(hidden_state)
       for layer in self.block:
           hidden_state = layer(hidden_state)
-      hidden_state = to_tiny(hidden_state)
       hidden_state = self.snake1(hidden_state)
-      to_tiny(hidden_state)
       hidden_state = self.conv2(hidden_state)
       return hidden_state
 
@@ -686,8 +658,6 @@ class audio_tokenizer:
     e_semantic_input = self._extract_semantic_features(input_values).detach()
     e_semantic = self.encoder_semantic(e_semantic_input.transpose(1, 2))
     e_acoustic = self.acoustic_encoder(input_values)
-    e_semantic = to_tiny(e_semantic)
-    e_acoustic = to_tiny(e_acoustic)
     embeddings = Tensor.cat(e_acoustic, e_semantic, dim=1)
     embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
     audio_codes = self.quantizer.encode(embeddings)
@@ -695,12 +665,9 @@ class audio_tokenizer:
     return audio_codes
 
   def _extract_semantic_features(self, input_values):
-    input_values = to_tiny(input_values)
     input_values = input_values[:, 0, :]
     input_values = Tensor.pad(input_values, (160, 160))
     hidden_states = self.semantic_model(input_values)
-    hidden_states = to_tiny(hidden_states)
-
     stacked = Tensor.stack([h for h in hidden_states], dim=1)
     semantic_features = stacked.mean(axis=1)
     semantic_features = semantic_features[:, :: self.semantic_downsample_factor, :]
@@ -716,7 +683,6 @@ class audio_tokenizer:
         quantized = quantized.permute(0, 2, 1)
         quantized_out = quantized_out + quantized
       quantized = quantized_out
-      quantized = to_tiny(quantized)
       quantized_acoustic = self.fc2(quantized.transpose(1, 2)).transpose(1, 2)
       hidden_state = self.acoustic_decoder.conv1(quantized_acoustic)
 
@@ -724,7 +690,6 @@ class audio_tokenizer:
           hidden_state = layer(hidden_state)
 
       hidden_state = self.acoustic_decoder.snake1(hidden_state)
-      hidden_state = to_tiny(hidden_state)
       hidden_state = self.acoustic_decoder.conv2(hidden_state)
       return hidden_state
 
@@ -737,8 +702,6 @@ class omni:
     self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
 
   def _prepare_embed_inputs(self, input_ids, audio_mask):
-    input_ids = to_tiny(input_ids)
-    audio_mask = to_tiny(audio_mask)
     text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
     shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
@@ -760,7 +723,6 @@ class omni:
 
       # Shape: [B, S, C * Vocab]
       batch_size, seq_len, _ = hidden_states.shape
-      hidden_states = to_tiny(hidden_states)
       logits_flat = self.audio_heads(hidden_states)
       # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
       audio_logits = logits_flat.view(
@@ -826,7 +788,6 @@ class omni:
       ref_text=None,
       ref_audio_tokens=None,
   ):  
-      ref_audio_tokens = to_tiny(ref_audio_tokens)
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
       style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
@@ -970,11 +931,6 @@ import pickle
 from tinygrad.helpers import fetch
 from tinygrad.nn.state import safe_load
 from tinygrad import Tensor, dtypes, nn, TinyJit
-
-def to_tiny(x):
-  if type(x) == tuple: return tuple(to_tiny(y) for y in x)
-  if type(x) == Tensor: return x
-  return Tensor(x.cpu().detach().numpy())
 
 if __name__ == "__main__":
   Tensor.manual_seed(0)
