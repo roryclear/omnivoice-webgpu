@@ -141,8 +141,8 @@ def load_audio(audio_path: str, sampling_rate: int) -> np.ndarray:
 
 def _gumbel_sample(logits, temperature: float):
     scaled_logits = logits / temperature
-    u = tiny_Tensor.rand_like(scaled_logits)
-    gumbel_noise = -tiny_Tensor.log(-tiny_Tensor.log(u + 1e-10) + 1e-10)
+    u = Tensor.rand_like(scaled_logits)
+    gumbel_noise = -Tensor.log(-Tensor.log(u + 1e-10) + 1e-10)
     return scaled_logits + gumbel_noise
 
 _NONVERBAL_PATTERN = re.compile(
@@ -159,7 +159,7 @@ class Qwen3RMSNorm:
     input_dtype = hidden_states.dtype
     hidden_states = hidden_states.cast(dtypes.float32)
     variance = hidden_states.pow(2).mean(-1, keepdim=True)
-    hidden_states = (hidden_states * tiny_Tensor.rsqrt(variance + self.variance_epsilon)).cast(input_dtype)
+    hidden_states = (hidden_states * Tensor.rsqrt(variance + self.variance_epsilon)).cast(input_dtype)
     return self.weight * hidden_states
   
 def repeat_kv(hidden_states, n_rep: int):
@@ -177,17 +177,17 @@ def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
 def rotate_half(x):
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return tiny_Tensor.cat(-x2, x1, dim=-1)
+    return Tensor.cat(-x2, x1, dim=-1)
 
 class Qwen3Attention:
   def __init__(self):
     self.head_dim = 128
     self.q_norm = Qwen3RMSNorm()
     self.k_norm = Qwen3RMSNorm()
-    self.q_proj = tiny_nn.Linear(in_features=1024, out_features=2048, bias=False)
-    self.k_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
-    self.v_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
-    self.o_proj = tiny_nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.q_proj = nn.Linear(in_features=1024, out_features=2048, bias=False)
+    self.k_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.v_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
+    self.o_proj = nn.Linear(in_features=1024, out_features=1024, bias=False)
     self.scaling = 0.08838834764831845
     self.num_key_value_groups = 2
 
@@ -212,7 +212,7 @@ class Qwen3Attention:
       key_states = repeat_kv(key_states, self.num_key_value_groups)
       value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-      attn_output = tiny_Tensor.scaled_dot_product_attention(
+      attn_output = Tensor.scaled_dot_product_attention(
             query_states,
             key_states,
             value_states,
@@ -227,23 +227,23 @@ class Qwen3RotaryEmbedding:
   def __init__(self):
     self.attention_scaling = 1.0
     #https://github.com/huggingface/transformers/blob/f73cc1b1fe0477053638fc929546bac8b3697007/src/transformers/models/qwen3/modeling_qwen3.py#L130-L132
-    self.inv_freq = 1.0 / (1000000 ** (tiny_Tensor.arange(0, 128, 2).cast(dtypes.float) / 128))
+    self.inv_freq = 1.0 / (1000000 ** (Tensor.arange(0, 128, 2).cast(dtypes.float) / 128))
 
   def __call__(self, position_ids):
     inv_freq_expanded = self.inv_freq[None, :, None].cast(dtypes.float).expand(position_ids.shape[0], -1, 1)
     position_ids_expanded = position_ids[:, None, :].cast(dtypes.float)
     freqs = (inv_freq_expanded @ position_ids_expanded).transpose(1, 2)
-    emb = tiny_Tensor.cat(freqs, freqs, dim=-1)
+    emb = Tensor.cat(freqs, freqs, dim=-1)
     cos = (emb.cos() * self.attention_scaling).cast(dtypes.float16)
     sin = (emb.sin() * self.attention_scaling).cast(dtypes.float16)
     return cos, sin
 
 class Qwen3MLP():
   def __init__(self):
-    self.down_proj = tiny_nn.Linear(in_features=3072, out_features=1024, bias=False)
-    self.gate_proj = tiny_nn.Linear(in_features=1024, out_features=3072, bias=False)
-    self.up_proj = tiny_nn.Linear(in_features=1024, out_features=3072, bias=False)
-    self.act_fn = tiny_Tensor.silu
+    self.down_proj = nn.Linear(in_features=3072, out_features=1024, bias=False)
+    self.gate_proj = nn.Linear(in_features=1024, out_features=3072, bias=False)
+    self.up_proj = nn.Linear(in_features=1024, out_features=3072, bias=False)
+    self.act_fn = Tensor.silu
   
   def __call__(self, x):
     x = to_tiny(x)
@@ -274,7 +274,7 @@ class Qwen3DecoderLayer:
 
 class llm:
   def __init__(self):
-    self.embed_tokens = tiny_nn.Embedding(151676, 1024)
+    self.embed_tokens = nn.Embedding(151676, 1024)
     self.norm = Qwen3RMSNorm()
     self.rotary_emb = Qwen3RotaryEmbedding()
     self.layers = []
@@ -282,7 +282,7 @@ class llm:
       self.layers.append(Qwen3DecoderLayer())
 
   def __call__(self, attention_mask=None, position_ids=None, inputs_embeds=None):
-      position_ids = tiny_Tensor.arange(inputs_embeds.shape[1])
+      position_ids = Tensor.arange(inputs_embeds.shape[1])
       position_ids = position_ids.unsqueeze(0)
 
       hidden_states = inputs_embeds
@@ -308,8 +308,8 @@ class HubertModel:
 
 class HubertPositionalConvEmbedding:
   def __init__(self):
-    self.conv = tiny_nn.Conv1d(in_channels=768, out_channels=768, kernel_size=128, stride=1, padding=64, groups=16)
-    self.activation = tiny_Tensor.gelu
+    self.conv = nn.Conv1d(in_channels=768, out_channels=768, kernel_size=128, stride=1, padding=64, groups=16)
+    self.activation = Tensor.gelu
   
   def __call__(self, hidden_states):
     hidden_states = to_tiny(hidden_states)
@@ -322,9 +322,9 @@ class HubertPositionalConvEmbedding:
 
 class HubertFeedForward:
   def __init__(self):
-    self.intermediate_dense = tiny_nn.Linear(in_features=768, out_features=3072, bias=True)
-    self.intermediate_act_fn = tiny_Tensor.gelu
-    self.output_dense = tiny_nn.Linear(in_features=3072, out_features=768, bias=True)
+    self.intermediate_dense = nn.Linear(in_features=768, out_features=3072, bias=True)
+    self.intermediate_act_fn = Tensor.gelu
+    self.output_dense = nn.Linear(in_features=3072, out_features=768, bias=True)
 
   def __call__(self, hidden_states):
     hidden_states = to_tiny(hidden_states)
@@ -337,10 +337,10 @@ class HubertFeedForward:
 class HubertAttention:
   def __init__(self):
     self.head_dim = 64
-    self.q_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
-    self.k_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
-    self.v_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
-    self.out_proj = tiny_nn.Linear(in_features=768, out_features=768, bias=True)
+    self.q_proj = nn.Linear(in_features=768, out_features=768, bias=True)
+    self.k_proj = nn.Linear(in_features=768, out_features=768, bias=True)
+    self.v_proj = nn.Linear(in_features=768, out_features=768, bias=True)
+    self.out_proj = nn.Linear(in_features=768, out_features=768, bias=True)
     self.scaling = 0.125
     self.is_causal = False
   
@@ -354,7 +354,7 @@ class HubertAttention:
       key_states = self.k_proj(hidden_states).view(kv_shape).transpose(1, 2)
       value_states = self.v_proj(hidden_states).view(kv_shape).transpose(1, 2)
       
-      attn_output = tiny_Tensor.scaled_dot_product_attention(
+      attn_output = Tensor.scaled_dot_product_attention(
               query_states,
               key_states,
               value_states,
@@ -369,8 +369,8 @@ class HubertEncoderLayer:
   def __init__(self):
     self.attention = HubertAttention()
     self.feed_forward = HubertFeedForward()
-    self.layer_norm = tiny_nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
-    self.final_layer_norm = tiny_nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+    self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+    self.final_layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
   def __call__(self, hidden_states):
     hidden_states = to_tiny(hidden_states)
     attn_residual = hidden_states
@@ -385,7 +385,7 @@ class HubertEncoderLayer:
 class HubertEncoder:
   def __init__(self):
     self.pos_conv_embed = HubertPositionalConvEmbedding()
-    self.layer_norm = tiny_nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
+    self.layer_norm = nn.LayerNorm((768,), eps=1e-05, elementwise_affine=True)
     self.layers = []
     for i in range(12): self.layers.append(HubertEncoderLayer())
   
@@ -406,8 +406,8 @@ class HubertEncoder:
 
 class HubertFeatureProjection:
   def __init__(self):
-    self.layer_norm = tiny_nn.LayerNorm(512, eps=1e-05, elementwise_affine=True)
-    self.projection = tiny_nn.Linear(in_features=512, out_features=768, bias=True)
+    self.layer_norm = nn.LayerNorm(512, eps=1e-05, elementwise_affine=True)
+    self.projection = nn.Linear(in_features=512, out_features=768, bias=True)
 
   def __call__(self, hidden_states):
       hidden_states = to_tiny(hidden_states)
@@ -417,23 +417,23 @@ class HubertFeatureProjection:
 
 class HubertGroupNormConvLayer:
   def __init__(self):
-    self.conv = tiny_nn.Conv1d(1, 512, kernel_size=10, stride=5, bias=False)
-    self.layer_norm = tiny_nn.GroupNorm(512, 512)
+    self.conv = nn.Conv1d(1, 512, kernel_size=10, stride=5, bias=False)
+    self.layer_norm = nn.GroupNorm(512, 512)
   
   def __call__(self, hidden_states):
     hidden_states = to_tiny(hidden_states)
     hidden_states = self.conv(hidden_states)
     hidden_states = self.layer_norm(hidden_states)
-    hidden_states = tiny_Tensor.gelu(hidden_states)
+    hidden_states = Tensor.gelu(hidden_states)
     return hidden_states
 
 class HubertNoLayerNormConvLayer:
-  def __init__(self): self.conv = tiny_nn.Conv1d(512, 512, kernel_size=3, stride=2, bias=False)
+  def __init__(self): self.conv = nn.Conv1d(512, 512, kernel_size=3, stride=2, bias=False)
   
   def __call__(self, hidden_states):
     hidden_states = to_tiny(hidden_states)
     hidden_states = self.conv(hidden_states)
-    hidden_states = tiny_Tensor.gelu(hidden_states)
+    hidden_states = Tensor.gelu(hidden_states)
     return hidden_states
 
 class HubertFeatureEncoder:
@@ -450,13 +450,13 @@ class HubertFeatureEncoder:
 
 class HiggsAudioV2TokenizerResidualUnit:
   def __init__(self):
-    self.conv1 = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1, bias=False)
-    self.conv2 = tiny_nn.Conv1d(768, 768, kernel_size=1, stride=1, bias=False)
+    self.conv1 = nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1, bias=False)
+    self.conv2 = nn.Conv1d(768, 768, kernel_size=1, stride=1, bias=False)
 
   def __call__(self, hidden_state):
-    output_tensor = tiny_Tensor.elu(hidden_state)
+    output_tensor = Tensor.elu(hidden_state)
     output_tensor = self.conv1(output_tensor)
-    output_tensor = tiny_Tensor.elu(output_tensor)
+    output_tensor = Tensor.elu(output_tensor)
     output_tensor = self.conv2(output_tensor)
     hidden_state = hidden_state + output_tensor
     return hidden_state
@@ -464,7 +464,7 @@ class HiggsAudioV2TokenizerResidualUnit:
 class HiggsAudioV2TokenizerSemanticEncoderBlock:
   def __init__(self):
     self.res_units = [HiggsAudioV2TokenizerResidualUnit(), HiggsAudioV2TokenizerResidualUnit()]
-    self.conv = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1)
+    self.conv = nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1)
   
   def __call__(self, hidden_state):
     for unit in self.res_units:
@@ -474,7 +474,7 @@ class HiggsAudioV2TokenizerSemanticEncoderBlock:
 
 class SemanticEncoder:
   def __init__(self):
-     self.conv = tiny_nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1, bias=False)
+     self.conv = nn.Conv1d(768, 768, kernel_size=3, stride=1, padding=1, bias=False)
      self.conv_blocks = [HiggsAudioV2TokenizerSemanticEncoderBlock(), HiggsAudioV2TokenizerSemanticEncoderBlock()]
    
   def __call__(self, hidden_state):
@@ -488,7 +488,7 @@ class Snake1d:
     hidden_states = to_tiny(hidden_states)
     shape = hidden_states.shape
     hidden_states = hidden_states.reshape(shape[0], shape[1], -1)
-    hidden_states = hidden_states + (self.alpha + 1e-9).reciprocal() * tiny_Tensor.sin(self.alpha * hidden_states).pow(2)
+    hidden_states = hidden_states + (self.alpha + 1e-9).reciprocal() * Tensor.sin(self.alpha * hidden_states).pow(2)
     hidden_states = hidden_states.reshape(shape)
     return hidden_states
 
@@ -498,7 +498,7 @@ class DacEncoderBlock:
     self.res_unit2 = DacResidualUnit(in_ch=in_ch, out_ch=in_ch, p1=9, d1=3)
     self.res_unit3 = DacResidualUnit(in_ch=in_ch, out_ch=in_ch, p1=27, d1=9)
     self.snake1 = Snake1d()
-    self.conv1 = tiny_nn.Conv1d(in_ch, out_ch, kernel_size=k, stride=s, padding=p)
+    self.conv1 = nn.Conv1d(in_ch, out_ch, kernel_size=k, stride=s, padding=p)
 
   def __call__(self, hidden_state):
     hidden_state = self.res_unit1(hidden_state)
@@ -510,8 +510,8 @@ class DacEncoderBlock:
 
 class DacEncoder:
   def __init__(self):
-    self.conv1 = tiny_nn.Conv1d(1, 64, kernel_size=7, stride=1, padding=3)
-    self.conv2 = tiny_nn.Conv1d(2048, 256, kernel_size=3, stride=1, padding=1)
+    self.conv1 = nn.Conv1d(1, 64, kernel_size=7, stride=1, padding=3)
+    self.conv2 = nn.Conv1d(2048, 256, kernel_size=3, stride=1, padding=1)
     self.block = [DacEncoderBlock(64, 128, 16, 8, 4,),
                   DacEncoderBlock(128, 256, 10, 5, 3),
                   DacEncoderBlock(256, 512, 8, 4, 2),
@@ -532,8 +532,8 @@ class DacEncoder:
 
 class ConvTranspose1d:
   def __init__(self, in_ch, n, s, p, op):
-    self.weight = tiny_Tensor.zeros([in_ch, in_ch//2, n], dtype=dtypes.float32)
-    self.bias = tiny_Tensor.zeros([in_ch], dtype=dtypes.float32)
+    self.weight = Tensor.zeros([in_ch, in_ch//2, n], dtype=dtypes.float32)
+    self.bias = Tensor.zeros([in_ch], dtype=dtypes.float32)
     self.stride = s
     self.padding = p
     self.kernel_size = self.padding*2
@@ -544,7 +544,7 @@ class ConvTranspose1d:
     batch_size, in_channels, in_width = input.shape
     _, _, kernel_size = self.weight.shape
 
-    upsampled = tiny_Tensor.zeros(batch_size, in_channels, in_width * self.stride - (self.stride - 1))
+    upsampled = Tensor.zeros(batch_size, in_channels, in_width * self.stride - (self.stride - 1))
     upsampled[:, :, ::self.stride] = input
 
     pad = 1 * (kernel_size - 1) - self.padding
@@ -552,7 +552,7 @@ class ConvTranspose1d:
     weight_conv = weight_flipped.permute(1, 0, 2)
 
 
-    out = tiny_Tensor.conv2d(
+    out = Tensor.conv2d(
         upsampled.unsqueeze(2),
         weight_conv.unsqueeze(2),
         bias=None,
@@ -562,14 +562,14 @@ class ConvTranspose1d:
         groups=1,
     ).squeeze(2)
 
-    if self.output_padding > 0: out = tiny_Tensor.pad(out, (0, self.output_padding))
+    if self.output_padding > 0: out = Tensor.pad(out, (0, self.output_padding))
     out += self.bias.view(1, -1, 1)
     return out
 
 class DacResidualUnit:
   def __init__(self, in_ch, out_ch, p1, d1):
-    self.conv1 = tiny_nn.Conv1d(in_ch, out_ch, kernel_size=7, stride=1, padding=p1, dilation=d1)
-    self.conv2 = tiny_nn.Conv1d(in_ch, out_ch, kernel_size=1, stride=1, padding=0, dilation=1)
+    self.conv1 = nn.Conv1d(in_ch, out_ch, kernel_size=7, stride=1, padding=p1, dilation=d1)
+    self.conv2 = nn.Conv1d(in_ch, out_ch, kernel_size=1, stride=1, padding=0, dilation=1)
     self.snake1 = Snake1d()
     self.snake2 = Snake1d()
 
@@ -611,8 +611,8 @@ class DacDecoderBlock:
 
 class DacDecoder:
   def __init__(self):
-    self.conv1 = tiny_nn.Conv1d(256, 1024, kernel_size=7, stride=1, padding=3)
-    self.conv2 = tiny_nn.Conv1d(32, 1, kernel_size=7, stride=1, padding=3)
+    self.conv1 = nn.Conv1d(256, 1024, kernel_size=7, stride=1, padding=3)
+    self.conv2 = nn.Conv1d(32, 1, kernel_size=7, stride=1, padding=3)
     self.block = [DacDecoderBlock(512, 16, s=8, p=4, op=0),
                   DacDecoderBlock(256, 10, s=5, p=3, op=1),
                   DacDecoderBlock(128, 8, s=4, p=2, op=0),
@@ -632,13 +632,13 @@ class DacDecoder:
       return hidden_state
 
 class HiggsAudioV2TokenizerEuclideanCodebook:
-  def __init__(self): self.embed = tiny_nn.Embedding(1024, 64)
+  def __init__(self): self.embed = nn.Embedding(1024, 64)
 
 class HiggsAudioV2TokenizerVectorQuantization:
   def __init__(self):
     self.codebook = HiggsAudioV2TokenizerEuclideanCodebook()
-    self.project_in = tiny_nn.Linear(in_features=1024, out_features=64, bias=True)
-    self.project_out = tiny_nn.Linear(in_features=1024, out_features=64, bias=True)
+    self.project_in = nn.Linear(in_features=1024, out_features=64, bias=True)
+    self.project_out = nn.Linear(in_features=1024, out_features=64, bias=True)
 
 class HiggsAudioV2TokenizerResidualVectorQuantization:
   def __init__(self):
@@ -666,7 +666,7 @@ class HiggsAudioV2TokenizerResidualVectorQuantization:
       quantized = quantized.permute(0, 2, 1)
       residual = residual - quantized
       all_indices.append(indices)
-    out_indices = tiny_Tensor.stack(all_indices)
+    out_indices = Tensor.stack(all_indices)
     return out_indices
 
 class audio_tokenizer:
@@ -678,8 +678,8 @@ class audio_tokenizer:
     self.acoustic_encoder = DacEncoder()
     self.acoustic_decoder = DacDecoder()
     self.quantizer = HiggsAudioV2TokenizerResidualVectorQuantization()
-    self.fc = tiny_nn.Linear(1024, 1024)
-    self.fc2 = tiny_nn.Linear(1024, 256)
+    self.fc = nn.Linear(1024, 1024)
+    self.fc2 = nn.Linear(1024, 256)
 
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values):
@@ -688,7 +688,7 @@ class audio_tokenizer:
     e_acoustic = self.acoustic_encoder(input_values)
     e_semantic = to_tiny(e_semantic)
     e_acoustic = to_tiny(e_acoustic)
-    embeddings = tiny_Tensor.cat(e_acoustic, e_semantic, dim=1)
+    embeddings = Tensor.cat(e_acoustic, e_semantic, dim=1)
     embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
     audio_codes = self.quantizer.encode(embeddings)
     audio_codes = audio_codes.transpose(0, 1)
@@ -697,11 +697,11 @@ class audio_tokenizer:
   def _extract_semantic_features(self, input_values):
     input_values = to_tiny(input_values)
     input_values = input_values[:, 0, :]
-    input_values = tiny_Tensor.pad(input_values, (160, 160))
+    input_values = Tensor.pad(input_values, (160, 160))
     hidden_states = self.semantic_model(input_values)
     hidden_states = to_tiny(hidden_states)
 
-    stacked = tiny_Tensor.stack([h for h in hidden_states], dim=1)
+    stacked = Tensor.stack([h for h in hidden_states], dim=1)
     semantic_features = stacked.mean(axis=1)
     semantic_features = semantic_features[:, :: self.semantic_downsample_factor, :]
     return semantic_features
@@ -732,9 +732,9 @@ class omni:
   def __init__(self):
     self.audio_tokenizer = audio_tokenizer()
     self.llm = llm()
-    self.codebook_layer_offsets = (tiny_Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
-    self.audio_embeddings = tiny_nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
-    self.audio_heads = tiny_nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
+    self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
+    self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
+    self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
 
   def _prepare_embed_inputs(self, input_ids, audio_mask):
     input_ids = to_tiny(input_ids)
@@ -742,7 +742,7 @@ class omni:
     text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
     shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-    ret = tiny_Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+    ret = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
     return ret
 
   def __call__(
@@ -802,7 +802,7 @@ class omni:
       chunk_size = self.audio_tokenizer.hop_length
       clip_size = int(ref_wav.shape[-1] % chunk_size)
       ref_wav = ref_wav[:, :-clip_size] if clip_size > 0 else ref_wav
-      ref_wav_tensor = tiny_Tensor(ref_wav.astype(np.float32))
+      ref_wav_tensor = Tensor(ref_wav.astype(np.float32))
       ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).squeeze(0)
 
       return ref_audio_tokens
@@ -829,26 +829,26 @@ class omni:
       ref_audio_tokens = to_tiny(ref_audio_tokens)
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
-      style_tokens = tiny_Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
+      style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
 
       # Build text tokens
       full_text = ref_text.strip() + " " + text.strip()
       wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
-      text_tokens = tiny_Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
+      text_tokens = Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
 
       # Target: all MASK
-      target_audio_tokens = tiny_Tensor.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.long)
+      target_audio_tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.long)
 
       # Conditional input
       parts = [style_tokens, text_tokens]
       parts.append(ref_audio_tokens.unsqueeze(0))
       parts.append(target_audio_tokens)
-      cond_input_ids = tiny_Tensor.cat(*parts, dim=2)
+      cond_input_ids = Tensor.cat(*parts, dim=2)
       cond_total_length = cond_input_ids.shape[2]
       cond_audio_start_idx = cond_total_length - num_target_tokens
       cond_audio_start_idx -= ref_audio_tokens.size(-1)
 
-      cond_audio_mask = tiny_Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
+      cond_audio_mask = Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
       cond_audio_mask[0, cond_audio_start_idx:] = True
       return cond_input_ids, cond_audio_mask
 
@@ -883,9 +883,9 @@ class omni:
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
       c_len = cond_input_ids.size(2)
-      batch_input_ids = tiny_Tensor.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=dtypes.long)
-      batch_audio_mask = tiny_Tensor.zeros((2, c_len), dtype=dtypes.bool)
-      batch_attention_mask = tiny_Tensor.zeros((2, 1, c_len, c_len), dtype=dtypes.bool)
+      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=dtypes.long)
+      batch_audio_mask = Tensor.zeros((2, c_len), dtype=dtypes.bool)
+      batch_attention_mask = Tensor.zeros((2, 1, c_len, c_len), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
       batch_input_ids[0] = cond_input_ids[0]
@@ -897,10 +897,10 @@ class omni:
       batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
       batch_attention_mask[1, :, :target_length, :target_length] = True
 
-      pad_diag = tiny_Tensor.arange(target_length, c_len)
+      pad_diag = Tensor.arange(target_length, c_len)
       batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-      tokens = tiny_Tensor.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
+      tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
 
       timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
       timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -913,7 +913,7 @@ class omni:
           sched.append(int(num))
           rem -= int(num)
 
-      layer_ids = tiny_Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
+      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
 
       for step in range(NUM_STEPS):
           print("STEP",step,"of",NUM_STEPS)
@@ -935,10 +935,10 @@ class omni:
           scores = _gumbel_sample(scores, POSITION_TEMP)
 
           sample_tokens = tokens[0: 1, :, :target_length]
-          scores = tiny_Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
+          scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
 
 
-          _, topk_idx = tiny_Tensor.topk(scores.flatten(), sched[step])
+          _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
           shape = sample_tokens.shape
           
           sample_tokens = sample_tokens.flatten()
@@ -956,9 +956,9 @@ class omni:
       return tokens[0, :, : target_length]
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
-      c_log_probs = tiny_Tensor.log_softmax(c_logits, axis=-1)
-      u_log_probs = tiny_Tensor.log_softmax(u_logits, axis=-1)
-      log_probs = tiny_Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
+      c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
+      u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
+      log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
 
       log_probs[..., AUDIO_MASK_ID] = -float("inf")
       pred_tokens = log_probs.argmax(axis=-1)
@@ -969,170 +969,170 @@ import soundfile as sf
 import pickle
 from tinygrad.helpers import fetch
 from tinygrad.nn.state import safe_load
-from tinygrad import Tensor as tiny_Tensor, dtypes, nn as tiny_nn, TinyJit
+from tinygrad import Tensor, dtypes, nn, TinyJit
 
 def to_tiny(x):
   if type(x) == tuple: return tuple(to_tiny(y) for y in x)
-  if type(x) == tiny_Tensor: return x
-  return tiny_Tensor(x.cpu().detach().numpy())
+  if type(x) == Tensor: return x
+  return Tensor(x.cpu().detach().numpy())
 
 if __name__ == "__main__":
-  tiny_Tensor.manual_seed(0)
+  Tensor.manual_seed(0)
   model = omni()
 
   weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
   #for w in weights.keys(): print(w, type(weights[w]))
 
   for i in range(len(model.llm.layers)):
-    model.llm.layers[i].post_attention_layernorm.weight = tiny_Tensor(weights[f"llm.layers.{i}.post_attention_layernorm.weight"].numpy())
-    model.llm.layers[i].input_layernorm.weight = tiny_Tensor(weights[f"llm.layers.{i}.input_layernorm.weight"].numpy())
-    model.llm.layers[i].self_attn.q_norm.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.q_norm.weight"].numpy())
-    model.llm.layers[i].self_attn.k_norm.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.k_norm.weight"].numpy())
-    model.llm.layers[i].mlp.down_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.down_proj.weight"].numpy())
-    model.llm.layers[i].mlp.gate_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.gate_proj.weight"].numpy())
-    model.llm.layers[i].mlp.up_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.mlp.up_proj.weight"].numpy())
-    model.llm.layers[i].self_attn.q_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.q_proj.weight"].numpy())
-    model.llm.layers[i].self_attn.k_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.k_proj.weight"].numpy())
-    model.llm.layers[i].self_attn.v_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.v_proj.weight"].numpy())
-    model.llm.layers[i].self_attn.o_proj.weight = tiny_Tensor(weights[f"llm.layers.{i}.self_attn.o_proj.weight"].numpy())
-  model.llm.norm.weight = tiny_Tensor(weights[f"llm.norm.weight"].numpy())
-  model.llm.embed_tokens.weight = tiny_Tensor(weights["llm.embed_tokens.weight"].numpy()).cast(dtypes.float16)
-  model.audio_heads.weight = tiny_Tensor(weights["audio_heads.weight"].numpy())
-  model.audio_embeddings.weight = tiny_Tensor(weights["audio_embeddings.weight"].numpy())
+    model.llm.layers[i].post_attention_layernorm.weight = Tensor(weights[f"llm.layers.{i}.post_attention_layernorm.weight"].numpy())
+    model.llm.layers[i].input_layernorm.weight = Tensor(weights[f"llm.layers.{i}.input_layernorm.weight"].numpy())
+    model.llm.layers[i].self_attn.q_norm.weight = Tensor(weights[f"llm.layers.{i}.self_attn.q_norm.weight"].numpy())
+    model.llm.layers[i].self_attn.k_norm.weight = Tensor(weights[f"llm.layers.{i}.self_attn.k_norm.weight"].numpy())
+    model.llm.layers[i].mlp.down_proj.weight = Tensor(weights[f"llm.layers.{i}.mlp.down_proj.weight"].numpy())
+    model.llm.layers[i].mlp.gate_proj.weight = Tensor(weights[f"llm.layers.{i}.mlp.gate_proj.weight"].numpy())
+    model.llm.layers[i].mlp.up_proj.weight = Tensor(weights[f"llm.layers.{i}.mlp.up_proj.weight"].numpy())
+    model.llm.layers[i].self_attn.q_proj.weight = Tensor(weights[f"llm.layers.{i}.self_attn.q_proj.weight"].numpy())
+    model.llm.layers[i].self_attn.k_proj.weight = Tensor(weights[f"llm.layers.{i}.self_attn.k_proj.weight"].numpy())
+    model.llm.layers[i].self_attn.v_proj.weight = Tensor(weights[f"llm.layers.{i}.self_attn.v_proj.weight"].numpy())
+    model.llm.layers[i].self_attn.o_proj.weight = Tensor(weights[f"llm.layers.{i}.self_attn.o_proj.weight"].numpy())
+  model.llm.norm.weight = Tensor(weights[f"llm.norm.weight"].numpy())
+  model.llm.embed_tokens.weight = Tensor(weights["llm.embed_tokens.weight"].numpy()).cast(dtypes.float16)
+  model.audio_heads.weight = Tensor(weights["audio_heads.weight"].numpy())
+  model.audio_embeddings.weight = Tensor(weights["audio_embeddings.weight"].numpy())
   
   weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/audio_tokenizer/model.safetensors"))
   for w in weights.keys(): print(w, type(weights[w]))
 
   for i in range(len(model.audio_tokenizer.quantizer.quantizers)):
-    model.audio_tokenizer.quantizer.quantizers[i].codebook.embed.weight = tiny_Tensor(weights[f"quantizer.quantizers.{i}.codebook.embed"].numpy())
-    model.audio_tokenizer.quantizer.quantizers[i].project_in.weight = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_in.weight"].numpy())
-    model.audio_tokenizer.quantizer.quantizers[i].project_in.bias = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_in.bias"].numpy())
-    model.audio_tokenizer.quantizer.quantizers[i].project_out.weight = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_out.weight"].numpy())
-    model.audio_tokenizer.quantizer.quantizers[i].project_out.bias = tiny_Tensor(weights[f"quantizer.quantizers.{i}.project_out.bias"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].codebook.embed.weight = Tensor(weights[f"quantizer.quantizers.{i}.codebook.embed"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].project_in.weight = Tensor(weights[f"quantizer.quantizers.{i}.project_in.weight"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].project_in.bias = Tensor(weights[f"quantizer.quantizers.{i}.project_in.bias"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].project_out.weight = Tensor(weights[f"quantizer.quantizers.{i}.project_out.weight"].numpy())
+    model.audio_tokenizer.quantizer.quantizers[i].project_out.bias = Tensor(weights[f"quantizer.quantizers.{i}.project_out.bias"].numpy())
   
-  model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.weight = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.weight"].numpy())
-  model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.bias = tiny_Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.bias"].numpy())
+  model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.weight = Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.weight"].numpy())
+  model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[0].layer_norm.bias = Tensor(weights["semantic_model.feature_extractor.conv_layers.0.layer_norm.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.semantic_model.feature_extractor.conv_layers)):
-    model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[i].conv.weight = tiny_Tensor(weights[f"semantic_model.feature_extractor.conv_layers.{i}.conv.weight"].numpy())
+    model.audio_tokenizer.semantic_model.feature_extractor.conv_layers[i].conv.weight = Tensor(weights[f"semantic_model.feature_extractor.conv_layers.{i}.conv.weight"].numpy())
   
-  model.audio_tokenizer.semantic_model.encoder.layer_norm.weight = tiny_Tensor(weights[f"semantic_model.encoder.layer_norm.weight"].numpy())
-  model.audio_tokenizer.semantic_model.encoder.layer_norm.bias = tiny_Tensor(weights[f"semantic_model.encoder.layer_norm.bias"].numpy())
+  model.audio_tokenizer.semantic_model.encoder.layer_norm.weight = Tensor(weights[f"semantic_model.encoder.layer_norm.weight"].numpy())
+  model.audio_tokenizer.semantic_model.encoder.layer_norm.bias = Tensor(weights[f"semantic_model.encoder.layer_norm.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.semantic_model.encoder.layers)):
-    model.audio_tokenizer.semantic_model.encoder.layers[i].final_layer_norm.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.final_layer_norm.weight"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].final_layer_norm.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.final_layer_norm.bias"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].layer_norm.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.layer_norm.weight"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].layer_norm.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.layer_norm.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].final_layer_norm.weight = Tensor(weights[f"semantic_model.encoder.layers.{i}.final_layer_norm.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].final_layer_norm.bias = Tensor(weights[f"semantic_model.encoder.layers.{i}.final_layer_norm.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].layer_norm.weight = Tensor(weights[f"semantic_model.encoder.layers.{i}.layer_norm.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].layer_norm.bias = Tensor(weights[f"semantic_model.encoder.layers.{i}.layer_norm.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.semantic_model.encoder.layers)):
-    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.weight"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.k_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.k_proj.weight"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.v_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.v_proj.weight"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.out_proj.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.out_proj.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.weight = Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.k_proj.weight = Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.k_proj.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.v_proj.weight = Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.v_proj.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.out_proj.weight = Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.out_proj.weight"].numpy())
 
-    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.bias"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.k_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.k_proj.bias"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.v_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.v_proj.bias"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.out_proj.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.out_proj.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.q_proj.bias = Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.q_proj.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.k_proj.bias = Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.k_proj.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.v_proj.bias = Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.v_proj.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].attention.out_proj.bias = Tensor(weights[f"semantic_model.encoder.layers.{i}.attention.out_proj.bias"].numpy())
 
-    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.intermediate_dense.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.intermediate_dense.weight"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.intermediate_dense.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.intermediate_dense.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.intermediate_dense.weight = Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.intermediate_dense.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.intermediate_dense.bias = Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.intermediate_dense.bias"].numpy())
 
-    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.output_dense.weight = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.output_dense.weight"].numpy())
-    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.output_dense.bias = tiny_Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.output_dense.bias"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.output_dense.weight = Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.output_dense.weight"].numpy())
+    model.audio_tokenizer.semantic_model.encoder.layers[i].feed_forward.output_dense.bias = Tensor(weights[f"semantic_model.encoder.layers.{i}.feed_forward.output_dense.bias"].numpy())
 
-  model.audio_tokenizer.acoustic_encoder.snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.snake1.alpha"].numpy())
-  model.audio_tokenizer.acoustic_decoder.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.snake1.alpha"].numpy())
+  model.audio_tokenizer.acoustic_encoder.snake1.alpha = Tensor(weights[f"acoustic_encoder.snake1.alpha"].numpy())
+  model.audio_tokenizer.acoustic_decoder.snake1.alpha = Tensor(weights[f"acoustic_decoder.snake1.alpha"].numpy())
 
-  model.audio_tokenizer.acoustic_encoder.conv1.weight = tiny_Tensor(weights["acoustic_encoder.conv1.weight"].numpy())
-  model.audio_tokenizer.acoustic_encoder.conv1.bias = tiny_Tensor(weights["acoustic_encoder.conv1.bias"].numpy())
-  model.audio_tokenizer.acoustic_encoder.conv2.weight = tiny_Tensor(weights["acoustic_encoder.conv2.weight"].numpy())
-  model.audio_tokenizer.acoustic_encoder.conv2.bias = tiny_Tensor(weights["acoustic_encoder.conv2.bias"].numpy())
+  model.audio_tokenizer.acoustic_encoder.conv1.weight = Tensor(weights["acoustic_encoder.conv1.weight"].numpy())
+  model.audio_tokenizer.acoustic_encoder.conv1.bias = Tensor(weights["acoustic_encoder.conv1.bias"].numpy())
+  model.audio_tokenizer.acoustic_encoder.conv2.weight = Tensor(weights["acoustic_encoder.conv2.weight"].numpy())
+  model.audio_tokenizer.acoustic_encoder.conv2.bias = Tensor(weights["acoustic_encoder.conv2.bias"].numpy())
 
-  model.audio_tokenizer.acoustic_decoder.conv1.weight = tiny_Tensor(weights["acoustic_decoder.conv1.weight"].numpy())
-  model.audio_tokenizer.acoustic_decoder.conv1.bias = tiny_Tensor(weights["acoustic_decoder.conv1.bias"].numpy())
-  model.audio_tokenizer.acoustic_decoder.conv2.weight = tiny_Tensor(weights["acoustic_decoder.conv2.weight"].numpy())
-  model.audio_tokenizer.acoustic_decoder.conv2.bias = tiny_Tensor(weights["acoustic_decoder.conv2.bias"].numpy())
+  model.audio_tokenizer.acoustic_decoder.conv1.weight = Tensor(weights["acoustic_decoder.conv1.weight"].numpy())
+  model.audio_tokenizer.acoustic_decoder.conv1.bias = Tensor(weights["acoustic_decoder.conv1.bias"].numpy())
+  model.audio_tokenizer.acoustic_decoder.conv2.weight = Tensor(weights["acoustic_decoder.conv2.weight"].numpy())
+  model.audio_tokenizer.acoustic_decoder.conv2.bias = Tensor(weights["acoustic_decoder.conv2.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.acoustic_decoder.block)):
-    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.weight"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.bias"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.weight = Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.bias = Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.acoustic_encoder.block)):
-    model.audio_tokenizer.acoustic_encoder.block[i].snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].conv1.weight = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.conv1.weight"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].conv1.bias = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.conv1.bias"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].snake1.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].conv1.weight = Tensor(weights[f"acoustic_encoder.block.{i}.conv1.weight"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].conv1.bias = Tensor(weights[f"acoustic_encoder.block.{i}.conv1.bias"].numpy())
 
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.snake2.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.snake2.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.snake2.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.snake2.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.snake1.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.snake2.alpha = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.snake1.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.snake2.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.snake1.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.snake2.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.snake1.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.snake2.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.snake2.alpha"].numpy())
 
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.conv1.weight = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.conv1.weight"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.conv2.weight = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.conv2.weight"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.conv1.weight = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.conv1.weight"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.conv2.weight = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.conv2.weight"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv1.weight = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv1.weight"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv2.weight = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv2.weight"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.conv1.weight = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.conv1.weight"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.conv2.weight = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.conv2.weight"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.conv1.weight = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.conv1.weight"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.conv2.weight = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.conv2.weight"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv1.weight = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv1.weight"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv2.weight = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv2.weight"].numpy())
 
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.conv1.bias = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.conv1.bias"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.conv2.bias = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.conv2.bias"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.conv1.bias = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.conv1.bias"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.conv2.bias = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.conv2.bias"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv1.bias = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv1.bias"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv2.bias = tiny_Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv2.bias"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.conv1.bias = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.conv1.bias"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.conv2.bias = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.conv2.bias"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.conv1.bias = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.conv1.bias"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.conv2.bias = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.conv2.bias"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv1.bias = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv1.bias"].numpy())
+    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.conv2.bias = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.conv2.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.acoustic_decoder.block)):
-    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.weight"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.bias"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake2.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake2.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake1.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake2.alpha = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.weight = Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].conv_t1.bias = Tensor(weights[f"acoustic_decoder.block.{i}.conv_t1.bias"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].snake1.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake1.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake2.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake1.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake2.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake2.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake1.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake1.alpha"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake2.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake2.alpha"].numpy())
 
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.conv1.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.conv1.weight"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.conv2.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.conv2.weight"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv1.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv1.weight"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv2.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv2.weight"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv1.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv1.weight"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv2.weight = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv2.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.conv1.weight = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.conv1.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.conv2.weight = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.conv2.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv1.weight = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv1.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv2.weight = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv2.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv1.weight = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv1.weight"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv2.weight = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv2.weight"].numpy())
 
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.conv1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.conv1.bias"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.conv2.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.conv2.bias"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv1.bias"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv2.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv2.bias"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv1.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv1.bias"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv2.bias = tiny_Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv2.bias"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.conv1.bias = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.conv1.bias"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.conv2.bias = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.conv2.bias"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv1.bias = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv1.bias"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.conv2.bias = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.conv2.bias"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv1.bias = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv1.bias"].numpy())
+    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.conv2.bias = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.conv2.bias"].numpy())
 
-  model.audio_tokenizer.encoder_semantic.conv.weight = tiny_Tensor(weights[f"encoder_semantic.conv.weight"].numpy())
-  model.audio_tokenizer.encoder_semantic.conv_blocks[0].conv.weight = tiny_Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.weight"].numpy())
-  model.audio_tokenizer.encoder_semantic.conv_blocks[0].conv.bias = tiny_Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.bias"].numpy())
-  model.audio_tokenizer.encoder_semantic.conv_blocks[1].conv.weight = tiny_Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.weight"].numpy())
-  model.audio_tokenizer.encoder_semantic.conv_blocks[1].conv.bias = tiny_Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.bias"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv.weight = Tensor(weights[f"encoder_semantic.conv.weight"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv_blocks[0].conv.weight = Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.weight"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv_blocks[0].conv.bias = Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.bias"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv_blocks[1].conv.weight = Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.weight"].numpy())
+  model.audio_tokenizer.encoder_semantic.conv_blocks[1].conv.bias = Tensor(weights[f"decoder_semantic.conv_blocks.0.conv.bias"].numpy())
 
   for i in range(len(model.audio_tokenizer.encoder_semantic.conv_blocks)):
-    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[0].conv1.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.0.conv1.weight"].numpy())
-    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[0].conv2.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.0.conv2.weight"].numpy())
-    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[1].conv1.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.1.conv1.weight"].numpy())
-    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[1].conv2.weight = tiny_Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.1.conv2.weight"].numpy())
+    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[0].conv1.weight = Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.0.conv1.weight"].numpy())
+    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[0].conv2.weight = Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.0.conv2.weight"].numpy())
+    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[1].conv1.weight = Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.1.conv1.weight"].numpy())
+    model.audio_tokenizer.encoder_semantic.conv_blocks[i].res_units[1].conv2.weight = Tensor(weights[f"encoder_semantic.conv_blocks.{i}.res_units.1.conv2.weight"].numpy())
 
-  model.audio_tokenizer.fc.weight = tiny_Tensor(weights["fc.weight"].numpy())
-  model.audio_tokenizer.fc.bias = tiny_Tensor(weights["fc.bias"].numpy())
-  model.audio_tokenizer.fc2.weight = tiny_Tensor(weights["fc2.weight"].numpy())
-  model.audio_tokenizer.fc2.bias = tiny_Tensor(weights["fc2.bias"].numpy())
-  model.audio_tokenizer.semantic_model.encoder.pos_conv_embed.conv.bias = tiny_Tensor(weights["semantic_model.encoder.pos_conv_embed.conv.bias"].numpy())
-  model.audio_tokenizer.semantic_model.feature_projection.layer_norm.weight = tiny_Tensor(weights["semantic_model.feature_projection.layer_norm.weight"].numpy())
-  model.audio_tokenizer.semantic_model.feature_projection.layer_norm.bias = tiny_Tensor(weights["semantic_model.feature_projection.layer_norm.bias"].numpy())
-  model.audio_tokenizer.semantic_model.feature_projection.projection.weight = tiny_Tensor(weights["semantic_model.feature_projection.projection.weight"].numpy())
-  model.audio_tokenizer.semantic_model.feature_projection.projection.bias = tiny_Tensor(weights["semantic_model.feature_projection.projection.bias"].numpy())
+  model.audio_tokenizer.fc.weight = Tensor(weights["fc.weight"].numpy())
+  model.audio_tokenizer.fc.bias = Tensor(weights["fc.bias"].numpy())
+  model.audio_tokenizer.fc2.weight = Tensor(weights["fc2.weight"].numpy())
+  model.audio_tokenizer.fc2.bias = Tensor(weights["fc2.bias"].numpy())
+  model.audio_tokenizer.semantic_model.encoder.pos_conv_embed.conv.bias = Tensor(weights["semantic_model.encoder.pos_conv_embed.conv.bias"].numpy())
+  model.audio_tokenizer.semantic_model.feature_projection.layer_norm.weight = Tensor(weights["semantic_model.feature_projection.layer_norm.weight"].numpy())
+  model.audio_tokenizer.semantic_model.feature_projection.layer_norm.bias = Tensor(weights["semantic_model.feature_projection.layer_norm.bias"].numpy())
+  model.audio_tokenizer.semantic_model.feature_projection.projection.weight = Tensor(weights["semantic_model.feature_projection.projection.weight"].numpy())
+  model.audio_tokenizer.semantic_model.feature_projection.projection.bias = Tensor(weights["semantic_model.feature_projection.projection.bias"].numpy())
   
-  tiny_Tensor.manual_seed(42)
+  Tensor.manual_seed(42)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
@@ -1143,7 +1143,7 @@ if __name__ == "__main__":
   sf.write("out.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
-  tiny_Tensor.manual_seed(42)
+  Tensor.manual_seed(42)
   audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black. That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
       ref_audio="voice.wav",
@@ -1154,7 +1154,7 @@ if __name__ == "__main__":
   sf.write("out_long.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
   exit()
-  tiny_Tensor.manual_seed(0)
+  Tensor.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice2.wav",
