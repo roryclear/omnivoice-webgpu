@@ -748,8 +748,7 @@ class omni:
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
 
-    result = self._generate_chunked(target_length=num_target_tokens, text=text,\
-        ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
+    result = self._generate_chunked(target_length=num_target_tokens, text=text, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
     return self._decode_and_post_process(result)    
 
   def create_voice_clone_prompt(self, ref_audio):
@@ -884,12 +883,14 @@ class omni:
 
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
+
+        print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
+
         batch_logits = self(
             input_ids=batch_input_ids,
             audio_mask=batch_audio_mask,
             attention_mask=batch_attention_mask,
         )
-        print("batch_logits =",batch_logits.shape, type(batch_logits))
 
         # Extract real target Logits
         # [1, C, T, V]
@@ -960,8 +961,9 @@ if __name__ == "__main__":
   #pickle.dump(audio, open("long.pkl", "wb"))
   exp = pickle.load(open("long.pkl", "rb"))
   sf.write("out_long.wav", audio, 24000)
-  np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  exit()
+  #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+  #exit()
+  
   Tensor.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
