@@ -87,7 +87,7 @@ class SimpleTokenizer:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
   
-
+MAX_LEN = 2000
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 NUM_STEPS = 32
@@ -849,12 +849,12 @@ class omni:
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
       c_len = cond_input_ids.size(2)
-      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=dtypes.long)
+      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.long)
       batch_audio_mask = Tensor.zeros((2, c_len), dtype=dtypes.bool)
       batch_attention_mask = Tensor.zeros((2, 1, c_len, c_len), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
-      batch_input_ids[0] = cond_input_ids[0]
+      batch_input_ids[0:, :, 0:c_len] = cond_input_ids[0]
       batch_audio_mask[0] = cond_audio_mask[0]
       batch_attention_mask[0, :, :c_len, :c_len] = True
 
@@ -887,7 +887,7 @@ class omni:
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
 
         batch_logits = self(
-            input_ids=batch_input_ids,
+            input_ids=batch_input_ids[:, :, 0:c_len],
             audio_mask=batch_audio_mask,
             attention_mask=batch_attention_mask,
         )
@@ -904,7 +904,6 @@ class omni:
 
         sample_tokens = tokens[0: 1, :, :target_length]
         scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
-
 
         _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
         shape = sample_tokens.shape
