@@ -274,7 +274,7 @@ class llm:
     for i in range(28):
       self.layers.append(Qwen3DecoderLayer())
 
-  def __call__(self, attention_mask=None, position_ids=None, inputs_embeds=None):
+  def __call__(self, inputs_embeds=None):
       position_ids = Tensor.arange(inputs_embeds.shape[1])
       position_ids = position_ids.unsqueeze(0)
 
@@ -282,7 +282,7 @@ class llm:
       position_embeddings = self.rotary_emb(position_ids)
       
       for decoder_layer in self.layers:
-        hidden_states = decoder_layer(hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings,)
+        hidden_states = decoder_layer(hidden_states, attention_mask=None, position_embeddings=position_embeddings,)
 
       return self.norm(hidden_states)
 
@@ -712,25 +712,12 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  def _prepare_embed_inputs(self, input_ids, audio_mask):
-    text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
-    shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
-    audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-    ret = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-    return ret
-
-  def __call__(
-      self,
-      input_ids,
-      audio_mask,
-      attention_mask=None,
-  ):
-      inputs_embeds = self._prepare_embed_inputs(input_ids, audio_mask)  
-      hidden_states = self.llm(
-          inputs_embeds=inputs_embeds,
-          attention_mask=attention_mask,
-          position_ids=None,
-      )
+  def __call__(self, input_ids, audio_mask):
+      text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
+      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+      audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+      inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+      hidden_states = self.llm(inputs_embeds=inputs_embeds)
 
       # Shape: [B, S, C * Vocab]
       batch_size, seq_len, _ = hidden_states.shape
@@ -879,11 +866,7 @@ class omni:
 
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
 
-        batch_logits = self(
-            input_ids=batch_input_ids[:, :, 0:c_len],
-            audio_mask=batch_audio_mask[:, 0:c_len],
-            attention_mask=batch_attention_mask[:, :, 0:c_len, 0:c_len],
-        )
+        batch_logits = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len])
 
         # Extract real target Logits
         # [1, C, T, V]
@@ -933,7 +916,7 @@ from tinygrad import Tensor, dtypes, nn, TinyJit
 if __name__ == "__main__":
   model = omni()
 
-  Tensor.manual_seed(42)
+  Tensor.manual_seed(4)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
