@@ -886,9 +886,8 @@ class omni:
         tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(tokens.dtype)
         tokens = tokens.reshape(shape)
 
-        batch_input_ids = batch_input_ids.clone()
         batch_input_ids[0: 1, :, c_len - target_length : c_len] = tokens
-        batch_input_ids[1: 2, :, :target_length] = tokens
+        batch_input_ids[1:2, :, :target_length] = tokens
         batch_input_ids.realize()
       return tokens
 
