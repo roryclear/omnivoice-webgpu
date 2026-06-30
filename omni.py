@@ -851,19 +851,19 @@ class omni:
       c_len = cond_input_ids.size(2)
       batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.long)
       batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
-      batch_attention_mask = Tensor.zeros((2, 1, c_len, c_len), dtype=dtypes.bool)
+      batch_attention_mask = Tensor.zeros((2, 1, MAX_LEN, MAX_LEN), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
       batch_input_ids[0:, :, 0:c_len] = cond_input_ids[0]
       batch_audio_mask[0:, 0:c_len] = cond_audio_mask[0]
-      batch_attention_mask[0, :, :c_len, :c_len] = True
+      batch_attention_mask[0, :, 0:c_len, 0:c_len] = True
 
       # Uncond (B ~ 2B-1)
       batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
       batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
-      batch_attention_mask[1, :, :target_length, :target_length] = True
+      batch_attention_mask[1, :, 0:target_length, 0:target_length] = True
 
-      pad_diag = Tensor.arange(target_length, c_len)
+      pad_diag = Tensor.arange(target_length, MAX_LEN)
       batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
       tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
@@ -889,7 +889,7 @@ class omni:
         batch_logits = self(
             input_ids=batch_input_ids[:, :, 0:c_len],
             audio_mask=batch_audio_mask[:, 0:c_len],
-            attention_mask=batch_attention_mask,
+            attention_mask=batch_attention_mask[:, :, 0:c_len, 0:c_len],
         )
 
         # Extract real target Logits
