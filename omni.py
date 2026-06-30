@@ -858,7 +858,7 @@ class omni:
       pad_diag = Tensor.arange(target_length, MAX_LEN)
       batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-      tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
+      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
 
       timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
       timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -877,24 +877,20 @@ class omni:
         pred_tokens, scores = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
                                    ,c_len=c_len, target_length=target_length)
 
-        sample_tokens = tokens[0: 1, :, :target_length]
-        scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
+        scores = Tensor.where(tokens == AUDIO_MASK_ID, scores, -float("inf"))
 
         _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
-        shape = sample_tokens.shape
+        shape = tokens.shape
         
-        sample_tokens = sample_tokens.flatten()
-        sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(sample_tokens.dtype)
-        sample_tokens = sample_tokens.reshape(shape)
+        tokens = tokens.flatten()
+        tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(tokens.dtype)
+        tokens = tokens.reshape(shape)
 
-        # Update individual slices into batched structure
-        tokens = tokens.clone()
-        tokens[0: 1, :, :target_length] = sample_tokens
         batch_input_ids = batch_input_ids.clone()
-        batch_input_ids[0: 1, :, c_len - target_length : c_len] = sample_tokens
-        batch_input_ids[1: 2, :, :target_length] = sample_tokens
+        batch_input_ids[0: 1, :, c_len - target_length : c_len] = tokens
+        batch_input_ids[1: 2, :, :target_length] = tokens
         batch_input_ids.realize()
-      return tokens[0, :, : target_length]
+      return tokens
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
       c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
