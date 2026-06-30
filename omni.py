@@ -469,6 +469,8 @@ class SemanticEncoder:
     return hidden_state
 
 class Snake1d:
+  def __init__(self, sz): self.alpha = Tensor.zeros(1, sz, 1)
+
   def __call__(self, hidden_states):
     shape = hidden_states.shape
     hidden_states = hidden_states.reshape(shape[0], shape[1], -1)
@@ -481,7 +483,7 @@ class DacEncoderBlock:
     self.res_unit1 = DacResidualUnit(in_ch=in_ch, out_ch=in_ch, p1=3, d1=1)
     self.res_unit2 = DacResidualUnit(in_ch=in_ch, out_ch=in_ch, p1=9, d1=3)
     self.res_unit3 = DacResidualUnit(in_ch=in_ch, out_ch=in_ch, p1=27, d1=9)
-    self.snake1 = Snake1d()
+    self.snake1 = Snake1d(in_ch)
     self.conv1 = nn.Conv1d(in_ch, out_ch, kernel_size=k, stride=s, padding=p)
 
   def __call__(self, hidden_state):
@@ -500,7 +502,7 @@ class DacEncoder:
                   DacEncoderBlock(256, 512, 8, 4, 2),
                   DacEncoderBlock(512, 1024, 4, 2, 1),
                   DacEncoderBlock(1024, 2048, 6, 3, 2)]
-    self.snake1 = Snake1d()
+    self.snake1 = Snake1d(2048)
   
   def __call__(self, hidden_state):
     hidden_state = self.conv1(hidden_state)
@@ -549,8 +551,8 @@ class DacResidualUnit:
   def __init__(self, in_ch, out_ch, p1, d1):
     self.conv1 = nn.Conv1d(in_ch, out_ch, kernel_size=7, stride=1, padding=p1, dilation=d1)
     self.conv2 = nn.Conv1d(in_ch, out_ch, kernel_size=1, stride=1, padding=0, dilation=1)
-    self.snake1 = Snake1d()
-    self.snake2 = Snake1d()
+    self.snake1 = Snake1d(in_ch)
+    self.snake2 = Snake1d(in_ch)
 
   def __call__(self, hidden_state):
     output_tensor = hidden_state
@@ -568,7 +570,7 @@ class DacResidualUnit:
 
 class DacDecoderBlock:
   def __init__(self, in_ch, n, s, p, op):
-    self.snake1 = Snake1d()
+    self.snake1 = Snake1d(in_ch*2)
     self.conv_t1 = ConvTranspose1d(in_ch=in_ch, n=n, s=s, p=p, op=op) # todo
     self.res_unit1 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=3, d1=1)
     self.res_unit2 = DacResidualUnit(out_ch=in_ch, in_ch=in_ch, p1=9, d1=3)
@@ -591,7 +593,7 @@ class DacDecoder:
                   DacDecoderBlock(128, 8, s=4, p=2, op=0),
                   DacDecoderBlock(64, 4, s=2, p=1, op=0),
                   DacDecoderBlock(32, 6, s=3, p=2, op=1)]
-    self.snake1 = Snake1d()
+    self.snake1 = Snake1d(32)
   
   def __call__(self, hidden_state):
       hidden_state = self.conv1(hidden_state)
@@ -694,6 +696,8 @@ class audio_tokenizer:
 class omni:
   def __init__(self):
     self.llm = llm()
+    self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
+    self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
     weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
     load_state_dict(self, weights)
     #https://github.com/huggingface/transformers/blob/f73cc1b1fe0477053638fc929546bac8b3697007/src/transformers/models/qwen3/modeling_qwen3.py#L130-L132
@@ -707,8 +711,6 @@ class omni:
       weights[f"quantizer.quantizers.{i}.codebook.embed.weight"] = weights[f"quantizer.quantizers.{i}.codebook.embed"]
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
-    self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
-    self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
 
   def _prepare_embed_inputs(self, input_ids, audio_mask):
     text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
@@ -938,37 +940,6 @@ from tinygrad import Tensor, dtypes, nn, TinyJit
 if __name__ == "__main__":
   model = omni()
 
-  weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
-  #for w in weights.keys(): print(w, type(weights[w]))
-
-  model.audio_heads.weight = Tensor(weights["audio_heads.weight"].numpy())
-  model.audio_embeddings.weight = Tensor(weights["audio_embeddings.weight"].numpy())
-  
-  weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/audio_tokenizer/model.safetensors"))
-  for w in weights.keys(): print(w, type(weights[w]))
-
-  model.audio_tokenizer.acoustic_encoder.snake1.alpha = Tensor(weights[f"acoustic_encoder.snake1.alpha"].numpy())
-  model.audio_tokenizer.acoustic_decoder.snake1.alpha = Tensor(weights[f"acoustic_decoder.snake1.alpha"].numpy())
-
-  for i in range(len(model.audio_tokenizer.acoustic_encoder.block)):
-    model.audio_tokenizer.acoustic_encoder.block[i].snake1.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.snake1.alpha"].numpy())
-
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.snake1.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit1.snake2.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit1.snake2.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.snake1.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit2.snake2.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit2.snake2.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.snake1.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_encoder.block[i].res_unit3.snake2.alpha = Tensor(weights[f"acoustic_encoder.block.{i}.res_unit3.snake2.alpha"].numpy())
-
-  for i in range(len(model.audio_tokenizer.acoustic_decoder.block)):
-    model.audio_tokenizer.acoustic_decoder.block[i].snake1.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake1.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit1.snake2.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit1.snake2.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake1.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit2.snake2.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit2.snake2.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake1.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake1.alpha"].numpy())
-    model.audio_tokenizer.acoustic_decoder.block[i].res_unit3.snake2.alpha = Tensor(weights[f"acoustic_decoder.block.{i}.res_unit3.snake2.alpha"].numpy())
-
   Tensor.manual_seed(42)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
@@ -1001,3 +972,4 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
+
