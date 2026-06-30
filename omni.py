@@ -786,13 +786,7 @@ class omni:
       estimated_duration = target_weight / speed_factor
       return int(estimated_duration)
 
-  def _prepare_inference_inputs(
-      self,
-      text: str,
-      num_target_tokens: int,
-      ref_text=None,
-      ref_audio_tokens=None,
-  ):  
+  def _prepare_inference_inputs(self, text: str, num_target_tokens: int, ref_text=None, ref_audio_tokens=None,):  
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
       style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
@@ -837,15 +831,14 @@ class omni:
       print("CHUNKS", len(chunks))
       chunk_results = []
       for i in range(len(chunks)):
-        target_length = self._estimate_target_tokens(chunks[i], ref_text, ref_audio_tokens.size(-1))
-        ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
+        ret = self._generate_iterative(text=chunks[i], ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
         chunk_results.append(ret)
       
       return chunk_results
 
 
-  def _generate_iterative(
-      self, text, target_length, ref_text, ref_audio_tokens):
+  def _generate_iterative(self, text, ref_text, ref_audio_tokens):
+      target_length = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1))
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
       c_len = cond_input_ids.size(2)
@@ -878,9 +871,9 @@ class omni:
           num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
           sched.append(int(num))
           rem -= int(num)
-
+      print("SCHED =",sched)
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
-
+    
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
 
