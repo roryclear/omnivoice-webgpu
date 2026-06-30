@@ -715,7 +715,7 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   @TinyJit
-  def __call__(self, input_ids, audio_mask):
+  def __call__(self, input_ids, audio_mask, c_len, target_length):
       text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
@@ -732,7 +732,12 @@ class omni:
           NUM_AUDIO_CODEBOOK,
           AUDIO_VOCAB_SIZE,
       ).permute(0, 2, 1, 3)
-      return audio_logits
+  
+      c_logits = audio_logits[0: 1, :, c_len - target_length : c_len, :]
+      u_logits = audio_logits[1: 2, :, :target_length, :]
+
+      pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
+      return pred_tokens, scores
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
@@ -865,15 +870,9 @@ class omni:
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
     
       for step in range(NUM_STEPS):
-
-        batch_logits = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len])
-
-        # Extract real target Logits
-        # [1, C, T, V]
-        c_logits = batch_logits[0: 1, :, c_len - target_length : c_len, :]
-        u_logits = batch_logits[1: 2, :, :target_length, :]
-
-        pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
+        print("STEP",step,"of",NUM_STEPS)
+        pred_tokens, scores = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
+                                   ,c_len=c_len, target_length=target_length)
 
         scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
         scores = _gumbel_sample(scores, POSITION_TEMP)
