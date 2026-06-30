@@ -715,7 +715,7 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   @TinyJit
-  def __call__(self, input_ids, audio_mask, c_len, target_length):
+  def __call__(self, input_ids, audio_mask, c_len, target_length, tokens):
       text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
@@ -740,7 +740,7 @@ class omni:
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
       scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
       scores = _gumbel_sample(scores, POSITION_TEMP)
-    
+      scores = Tensor.where(tokens == AUDIO_MASK_ID, scores, -float("inf"))
       return pred_tokens, scores
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
@@ -875,13 +875,10 @@ class omni:
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         pred_tokens, scores = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
-                                   ,c_len=c_len, target_length=target_length)
-
-        scores = Tensor.where(tokens == AUDIO_MASK_ID, scores, -float("inf"))
+                                   ,c_len=c_len, target_length=target_length, tokens=tokens.clone())
 
         _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
         shape = tokens.shape
-        
         tokens = tokens.flatten()
         tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(tokens.dtype)
         tokens = tokens.reshape(shape)
