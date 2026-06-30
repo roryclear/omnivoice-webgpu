@@ -576,9 +576,7 @@ class DacDecoderBlock:
    
   def __call__(self, hidden_state):
     hidden_state = self.snake1(hidden_state)
-    print(hidden_state.shape)
     hidden_state = self.conv_t1(hidden_state)
-    print(hidden_state.shape)
     hidden_state = self.res_unit1(hidden_state)
     hidden_state = self.res_unit2(hidden_state)
     hidden_state = self.res_unit3(hidden_state)
@@ -824,13 +822,13 @@ class omni:
           else:
               chunks.append(chunks_small[i])
               j+=1
-
+      print("CHUNKS", len(chunks))
       chunk_results = []
       for i in range(len(chunks)):
         target_length = self._estimate_target_tokens(chunks[i], ref_text, ref_audio_tokens.size(-1))
         ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
         chunk_results.append(ret)
-
+      
       return chunk_results
 
 
@@ -872,43 +870,42 @@ class omni:
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
 
       for step in range(NUM_STEPS):
-          print("STEP",step,"of",NUM_STEPS)
-          batch_logits = self(
-              input_ids=batch_input_ids,
-              audio_mask=batch_audio_mask,
-              attention_mask=batch_attention_mask,
-          )
-          print("batch_logits =",batch_logits.shape, type(batch_logits))
+        print("STEP",step,"of",NUM_STEPS)
+        batch_logits = self(
+            input_ids=batch_input_ids,
+            audio_mask=batch_audio_mask,
+            attention_mask=batch_attention_mask,
+        )
+        print("batch_logits =",batch_logits.shape, type(batch_logits))
 
-          # Extract real target Logits
-          # [1, C, T, V]
-          c_logits = batch_logits[0: 1, :, c_len - target_length : c_len, :]
-          u_logits = batch_logits[1: 2, :, :target_length, :]
+        # Extract real target Logits
+        # [1, C, T, V]
+        c_logits = batch_logits[0: 1, :, c_len - target_length : c_len, :]
+        u_logits = batch_logits[1: 2, :, :target_length, :]
 
-          pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
+        pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
 
-          scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
-          scores = _gumbel_sample(scores, POSITION_TEMP)
+        scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
+        scores = _gumbel_sample(scores, POSITION_TEMP)
 
-          sample_tokens = tokens[0: 1, :, :target_length]
-          scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
+        sample_tokens = tokens[0: 1, :, :target_length]
+        scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
 
 
-          _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
-          shape = sample_tokens.shape
-          
-          sample_tokens = sample_tokens.flatten()
-          sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(sample_tokens.dtype)
-          sample_tokens = sample_tokens.reshape(shape)
+        _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
+        shape = sample_tokens.shape
+        
+        sample_tokens = sample_tokens.flatten()
+        sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(sample_tokens.dtype)
+        sample_tokens = sample_tokens.reshape(shape)
 
-          # Update individual slices into batched structure
-          tokens = tokens.clone()
-          tokens[0: 1, :, :target_length] = sample_tokens
-          batch_input_ids = batch_input_ids.clone()
-          batch_input_ids[0: 1, :, c_len - target_length : c_len] = sample_tokens
-          batch_input_ids[1: 2, :, :target_length] = sample_tokens
-          batch_input_ids.realize() # todo
-
+        # Update individual slices into batched structure
+        tokens = tokens.clone()
+        tokens[0: 1, :, :target_length] = sample_tokens
+        batch_input_ids = batch_input_ids.clone()
+        batch_input_ids[0: 1, :, c_len - target_length : c_len] = sample_tokens
+        batch_input_ids[1: 2, :, :target_length] = sample_tokens
+        batch_input_ids.realize()
       return tokens[0, :, : target_length]
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
@@ -1093,13 +1090,13 @@ if __name__ == "__main__":
   exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
+  
   Tensor.manual_seed(42)
   audio = model.generate(
-      text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black. That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
+      text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
-  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   pickle.dump(audio, open("long.pkl", "wb"))
   exp = pickle.load(open("long.pkl", "rb"))
   sf.write("out_long.wav", audio, 24000)
