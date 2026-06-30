@@ -737,6 +737,10 @@ class omni:
       u_logits = audio_logits[1: 2, :, :target_length, :]
 
       pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
+      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
+      scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
+      scores = _gumbel_sample(scores, POSITION_TEMP)
+    
       return pred_tokens, scores
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
@@ -867,15 +871,11 @@ class omni:
           sched.append(int(num))
           rem -= int(num)
       print("SCHED =",sched)
-      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
     
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         pred_tokens, scores = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
                                    ,c_len=c_len, target_length=target_length)
-
-        scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
-        scores = _gumbel_sample(scores, POSITION_TEMP)
 
         sample_tokens = tokens[0: 1, :, :target_length]
         scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
