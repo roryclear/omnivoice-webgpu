@@ -850,12 +850,12 @@ class omni:
 
       c_len = cond_input_ids.size(2)
       batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.long)
-      batch_audio_mask = Tensor.zeros((2, c_len), dtype=dtypes.bool)
+      batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
       batch_attention_mask = Tensor.zeros((2, 1, c_len, c_len), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
       batch_input_ids[0:, :, 0:c_len] = cond_input_ids[0]
-      batch_audio_mask[0] = cond_audio_mask[0]
+      batch_audio_mask[0:, 0:c_len] = cond_audio_mask[0]
       batch_attention_mask[0, :, :c_len, :c_len] = True
 
       # Uncond (B ~ 2B-1)
@@ -888,7 +888,7 @@ class omni:
 
         batch_logits = self(
             input_ids=batch_input_ids[:, :, 0:c_len],
-            audio_mask=batch_audio_mask,
+            audio_mask=batch_audio_mask[:, 0:c_len],
             attention_mask=batch_attention_mask,
         )
 
