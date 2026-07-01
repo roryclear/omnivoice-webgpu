@@ -796,7 +796,29 @@ class omni:
       estimated_duration = target_weight / speed_factor
       return int(estimated_duration)
 
-  def _prepare_inference_inputs(self, text: str, num_target_tokens: int, ref_text=None, ref_audio_tokens=None,):  
+  def _generate_chunked(self, target_length, text, ref_text, ref_audio_tokens):
+      avg_tokens_per_char = target_length / len(text)
+      text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
+
+      chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
+      chunks = [""]
+      j = 0
+      for i in range(len(chunks_small)):
+          if chunks_small[i][0] == " ": chunks_small[i] = chunks_small[i][1:]
+          if len(chunks[j]) < text_chunk_len + len(chunks_small[i]):
+              chunks[j] += chunks_small[i]
+          else:
+              chunks.append(chunks_small[i])
+              j+=1
+      print("CHUNKS", len(chunks))
+      chunk_results = []
+      for i in range(len(chunks)):
+        ret = self._generate_iterative(text=chunks[i], ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
+        chunk_results.append(ret)
+      
+      return chunk_results
+
+  def _prepare_inference_inputs(self, text: str, num_target_tokens: int, ref_text=None, ref_audio_tokens=None, target_length=None):  
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
       style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
@@ -820,56 +842,25 @@ class omni:
 
       cond_audio_mask = Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
       cond_audio_mask[0, cond_audio_start_idx:] = True
-      return cond_input_ids, cond_audio_mask
-
-
-  def _generate_chunked(
-      self, target_length, text, ref_text, ref_audio_tokens):
-      avg_tokens_per_char = target_length / len(text)
-      text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
-
-      chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
-      chunks = [""]
-      j = 0
-      for i in range(len(chunks_small)):
-          if chunks_small[i][0] == " ": chunks_small[i] = chunks_small[i][1:]
-          if len(chunks[j]) < text_chunk_len + len(chunks_small[i]):
-              chunks[j] += chunks_small[i]
-          else:
-              chunks.append(chunks_small[i])
-              j+=1
-      print("CHUNKS", len(chunks))
-      chunk_results = []
-      for i in range(len(chunks)):
-        ret = self._generate_iterative(text=chunks[i], ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
-        chunk_results.append(ret)
-      
-      return chunk_results
-
-
-  def _generate_iterative(self, text, ref_text, ref_audio_tokens):
-      target_length = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1))
-      cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
       c_len = cond_input_ids.size(2)
       batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.long)
       batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
-      batch_attention_mask = Tensor.zeros((2, 1, MAX_LEN, MAX_LEN), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
       batch_input_ids[0:, :, 0:c_len] = cond_input_ids[0]
       batch_audio_mask[0:, 0:c_len] = cond_audio_mask[0]
-      batch_attention_mask[0, :, 0:c_len, 0:c_len] = True
 
       # Uncond (B ~ 2B-1)
       batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
       batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
-      batch_attention_mask[1, :, 0:target_length, 0:target_length] = True
-
-      pad_diag = Tensor.arange(target_length, MAX_LEN)
-      batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
       tokens = Tensor.full((NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
+      return batch_input_ids, batch_audio_mask, tokens, c_len
+
+  def _generate_iterative(self, text, ref_text, ref_audio_tokens):
+      target_length = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1))
+      batch_input_ids, batch_audio_mask, tokens, c_len = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens, target_length)
 
       timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
       timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
