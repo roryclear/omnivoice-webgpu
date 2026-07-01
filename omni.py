@@ -739,7 +739,7 @@ class omni:
       scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
       scores = _gumbel_sample(scores, POSITION_TEMP)
       scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, target_length) == AUDIO_MASK_ID, scores, -float("inf"))
-      pred_tokens, scores = pred_tokens.flatten().cast(dtypes.long), scores.flatten()
+      pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
   
       _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
       inv = order.argsort()
@@ -829,7 +829,7 @@ class omni:
       text_tokens = Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
 
       # Target: all MASK
-      target_audio_tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.long)
+      target_audio_tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.int)
 
       # Conditional input
       parts = [style_tokens, text_tokens]
@@ -844,7 +844,7 @@ class omni:
       cond_audio_mask[0, cond_audio_start_idx:] = True
 
       c_len = cond_input_ids.size(2)
-      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.long)
+      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
       batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
@@ -855,7 +855,7 @@ class omni:
       batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
       batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
 
-      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
+      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.int)
       return batch_input_ids, batch_audio_mask, tokens, c_len
 
   def _generate_iterative(self, text, ref_text, ref_audio_tokens):
