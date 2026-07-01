@@ -716,8 +716,8 @@ class omni:
 
   @TinyJit
   def __call__(self, input_ids, audio_mask, c_len, target_length, tokens, k):
-      text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
-      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+      text_embeds = self.llm.embed_tokens(input_ids[:, :, 0:c_len][:, 0, :])
+      shifted_ids = (input_ids[:, :, 0:c_len] * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
       inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
       hidden_states = self.llm(inputs_embeds=inputs_embeds)
@@ -743,7 +743,7 @@ class omni:
       scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, target_length) == AUDIO_MASK_ID, scores, -float("inf"))
       pred_tokens, scores = pred_tokens.flatten().cast(dtypes.long), scores.flatten()
   
-      _, order = Tensor.sort(scores, descending=True)
+      _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
       inv = order.argsort()
       tokens_sorted = tokens[order]
       pred_sorted = pred_tokens[order]
@@ -751,7 +751,10 @@ class omni:
       tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
       tokens = tokens_sorted[inv]
       tokens.realize()
-      return tokens
+      input_ids = input_ids.clone()
+      input_ids[0: 1, :, c_len - target_length : c_len] = tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
+      input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
+      return tokens, input_ids
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
@@ -885,11 +888,8 @@ class omni:
       tokens = tokens.flatten()
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        tokens = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
+        tokens, batch_input_ids = self(input_ids=batch_input_ids, audio_mask=batch_audio_mask[:, 0:c_len]
                                    ,c_len=c_len, target_length=target_length, tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]))
-        
-        batch_input_ids[0: 1, :, c_len - target_length : c_len] = tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
-        batch_input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
         batch_input_ids.realize()
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
