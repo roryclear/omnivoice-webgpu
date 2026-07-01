@@ -818,7 +818,7 @@ class omni:
       
       return chunk_results
 
-  def _prepare_inference_inputs(self, text: str, num_target_tokens: int, ref_text=None, ref_audio_tokens=None, target_length=None):  
+  def _prepare_inference_inputs(self, text: str, ref_text=None, ref_audio_tokens=None, target_length=None):  
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
       style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
@@ -829,7 +829,7 @@ class omni:
       text_tokens = Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
 
       # Target: all MASK
-      target_audio_tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.int)
+      target_audio_tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.int)
 
       # Conditional input
       parts = [style_tokens, text_tokens]
@@ -837,7 +837,7 @@ class omni:
       parts.append(target_audio_tokens)
       cond_input_ids = Tensor.cat(*parts, dim=2)
       cond_total_length = cond_input_ids.shape[2]
-      cond_audio_start_idx = cond_total_length - num_target_tokens
+      cond_audio_start_idx = cond_total_length - target_length
       cond_audio_start_idx -= ref_audio_tokens.size(-1)
 
       cond_audio_mask = Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
@@ -860,7 +860,7 @@ class omni:
 
   def _generate_iterative(self, text, ref_text, ref_audio_tokens):
       target_length = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1))
-      batch_input_ids, batch_audio_mask, tokens, c_len = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens, target_length)
+      batch_input_ids, batch_audio_mask, tokens, c_len = self._prepare_inference_inputs(text, ref_text, ref_audio_tokens, target_length)
 
       timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
       timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
