@@ -714,7 +714,7 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  @TinyJit
+  @TinyJit # todo, jit only works for one size rn
   def __call__(self, input_ids, audio_mask, c_len, target_length, tokens, k):
       text_embeds = self.llm.embed_tokens(input_ids[:, :, 0:c_len][:, 0, :])
       shifted_ids = (input_ids[:, :, 0:c_len] * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
@@ -738,7 +738,7 @@ class omni:
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
       scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
       scores = _gumbel_sample(scores, POSITION_TEMP)
-      scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, target_length) == AUDIO_MASK_ID, scores, -float("inf"))
+      scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, -1) == AUDIO_MASK_ID, scores, -float("inf"))
       pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
   
       _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
@@ -750,8 +750,8 @@ class omni:
       tokens = tokens_sorted[inv]
       tokens.realize()
       input_ids = input_ids.clone()
-      input_ids[0: 1, :, c_len - target_length : c_len] = tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
-      input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
+      input_ids[0: 1, :, c_len - target_length : c_len] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
+      input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
       return tokens, input_ids
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
