@@ -890,7 +890,6 @@ class omni:
         print("STEP",step,"of",NUM_STEPS)
         tokens, batch_input_ids = self(input_ids=batch_input_ids, audio_mask=batch_audio_mask[:, 0:c_len]
                                    ,c_len=c_len, target_length=target_length, tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]))
-        batch_input_ids.realize()
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
