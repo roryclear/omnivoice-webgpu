@@ -716,7 +716,7 @@ class omni:
 
   @TinyJit # todo, jit only works for one size rn
   def __call__(self, input_ids, audio_mask, c_len, target_length, tokens, k):
-      text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
+      text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
       inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
