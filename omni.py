@@ -716,8 +716,8 @@ class omni:
 
   @TinyJit # todo, jit only works for one size rn
   def __call__(self, input_ids, audio_mask, c_len, target_length, tokens, k):
-      text_embeds = self.llm.embed_tokens(input_ids[:, :, 0:c_len][:, 0, :])
-      shifted_ids = (input_ids[:, :, 0:c_len] * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+      text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
+      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
       inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
       hidden_states = self.llm(inputs_embeds=inputs_embeds)
@@ -750,7 +750,7 @@ class omni:
       tokens = tokens_sorted[inv]
       tokens.realize()
       input_ids = input_ids.clone()
-      input_ids[0: 1, :, c_len - target_length : c_len] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
+      input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
       input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
       return tokens, input_ids
 
@@ -877,7 +877,7 @@ class omni:
       tokens = tokens.flatten()
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        tokens, batch_input_ids = self(input_ids=batch_input_ids, audio_mask=batch_audio_mask[:, 0:c_len]
+        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
                                    ,c_len=c_len, target_length=target_length, tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]))
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
