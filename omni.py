@@ -741,7 +741,8 @@ class omni:
       scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
       scores = _gumbel_sample(scores, POSITION_TEMP)
       scores = Tensor.where(tokens == AUDIO_MASK_ID, scores, -float("inf"))
-      return pred_tokens, scores
+      _, order = Tensor.sort(-scores.flatten())
+      return pred_tokens, order
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
@@ -874,13 +875,12 @@ class omni:
     
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        pred_tokens, scores = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
+        pred_tokens, order = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
                                    ,c_len=c_len, target_length=target_length, tokens=tokens.clone())
-
-        _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
         shape = tokens.shape
         tokens = tokens.flatten()
-        tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(tokens.dtype)
+        idx = order[:sched[step]]
+        tokens[idx] = pred_tokens.flatten()[idx].cast(tokens.dtype)
         tokens = tokens.reshape(shape)
 
         batch_input_ids[0: 1, :, c_len - target_length : c_len] = tokens
