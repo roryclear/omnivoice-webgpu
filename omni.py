@@ -714,46 +714,6 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  @TinyJit # todo, jit only works for one size rn
-  def __call__(self, input_ids, audio_mask, c_len, target_length, tokens, k):
-      text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
-      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
-      audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-      inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-      hidden_states = self.llm(inputs_embeds=inputs_embeds)
-
-      batch_size, seq_len, _ = hidden_states.shape
-      audio_logits = self.audio_heads(hidden_states)
-      audio_logits = audio_logits.view(
-          batch_size,
-          seq_len,
-          NUM_AUDIO_CODEBOOK,
-          AUDIO_VOCAB_SIZE,
-      ).permute(0, 2, 1, 3)
-      
-      c_logits = audio_logits[0: 1, :, c_len - target_length : c_len, :]
-      u_logits = audio_logits[1: 2, :, :target_length, :]
-
-      pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
-      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
-      scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
-      scores = _gumbel_sample(scores, POSITION_TEMP)
-      scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, -1) == AUDIO_MASK_ID, scores, -float("inf"))
-      pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
-  
-      _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
-      inv = order.argsort()
-      tokens_sorted = tokens[order]
-      pred_sorted = pred_tokens[order]
-      mask = Tensor.arange(order.shape[0]) < k
-      tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
-      tokens = tokens_sorted[inv]
-      tokens.realize()
-      input_ids = input_ids.clone()
-      input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
-      input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
-      return tokens, input_ids
-
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
@@ -877,9 +837,54 @@ class omni:
       tokens = tokens.flatten()
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
-                                   ,c_len=c_len, target_length=target_length, tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]))
+        hidden_states = self.call2(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len])
+        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len],
+                                   c_len=c_len, target_length=target_length, tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]), 
+                                   hidden_states=hidden_states)
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
+
+  @TinyJit
+  def call2(self, input_ids, audio_mask):
+    text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
+    shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+    audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+    inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+    hidden_states = self.llm(inputs_embeds=inputs_embeds)
+    return hidden_states
+
+  @TinyJit # todo, jit only works for one size rn
+  def __call__(self, input_ids, c_len, target_length, tokens, k, hidden_states):
+      batch_size, seq_len, _ = hidden_states.shape
+      audio_logits = self.audio_heads(hidden_states)
+      audio_logits = audio_logits.view(
+          batch_size,
+          seq_len,
+          NUM_AUDIO_CODEBOOK,
+          AUDIO_VOCAB_SIZE,
+      ).permute(0, 2, 1, 3)
+      
+      c_logits = audio_logits[0: 1, :, c_len - target_length : c_len, :]
+      u_logits = audio_logits[1: 2, :, :target_length, :]
+
+      pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
+      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
+      scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
+      scores = _gumbel_sample(scores, POSITION_TEMP)
+      scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, -1) == AUDIO_MASK_ID, scores, -float("inf"))
+      pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
+  
+      _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
+      inv = order.argsort()
+      tokens_sorted = tokens[order]
+      pred_sorted = pred_tokens[order]
+      mask = Tensor.arange(order.shape[0]) < k
+      tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
+      tokens = tokens_sorted[inv]
+      tokens.realize()
+      input_ids = input_ids.clone()
+      input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
+      input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
+      return tokens, input_ids
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
       c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
