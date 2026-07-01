@@ -740,7 +740,7 @@ class omni:
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
       scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
       scores = _gumbel_sample(scores, POSITION_TEMP)
-      scores = Tensor.where(tokens == AUDIO_MASK_ID, scores, -float("inf"))
+      scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, target_length) == AUDIO_MASK_ID, scores, -float("inf"))
       return pred_tokens.flatten(), scores.flatten()
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
@@ -871,24 +871,21 @@ class omni:
           sched.append(int(num))
           rem -= int(num)
       print("SCHED =",sched)
-    
+      
+      tokens = tokens.flatten()
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         pred_tokens, scores = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
                                    ,c_len=c_len, target_length=target_length, tokens=tokens.clone())
         
-        shape = tokens.shape
-        tokens = tokens.flatten()
-
         _, order = Tensor.sort(-scores)
         idx = order[:sched[step]]
         tokens[idx] = pred_tokens[idx].cast(tokens.dtype)
-        tokens = tokens.reshape(shape)
 
-        batch_input_ids[0: 1, :, c_len - target_length : c_len] = tokens
-        batch_input_ids[1:2, :, :target_length] = tokens
+        batch_input_ids[0: 1, :, c_len - target_length : c_len] = tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
+        batch_input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
         batch_input_ids.realize()
-      return tokens
+      return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
       c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
