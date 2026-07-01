@@ -7,7 +7,7 @@ import numpy as np
 
 from tinygrad.helpers import partition, fetch
 from tinygrad.nn.state import safe_load, load_state_dict
-from tinygrad import Tensor, dtypes, nn, TinyJit
+from tinygrad import Tensor, dtypes, nn, TinyJit, Variable
 import json, urllib.request, typing, unicodedata, sys
 
 class SimpleTokenizer:
