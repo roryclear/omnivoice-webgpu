@@ -145,8 +145,6 @@ def _gumbel_sample(logits, temperature, len):
     scaled_logits = logits / temperature
     u = Tensor.rand(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
     gumbel_noise = -Tensor.log(-Tensor.log(u + 1e-10) + 1e-10)
-    #print(scaled_logits.shape,"\n\n\n", gumbel_noise.shape)
-
     ret = scaled_logits[:, :, :len] + gumbel_noise[:, :, :len]
     return ret
 
@@ -717,7 +715,7 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   @TinyJit # todo, jit only works for one size rn
-  def __call__(self, input_ids, audio_mask, target_length_var, target_length, tokens, k, c_len):
+  def __call__(self, input_ids, audio_mask, target_length_var, tokens):
       text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
@@ -751,18 +749,19 @@ class omni:
 
       scores = scores.flatten()
 
-      tokens = tokens[:, :, :target_length]
       pred_tokens = pred_tokens.flatten().cast(dtypes.int)
+      return scores, pred_tokens
 
+  def call2(self, input_ids, tokens, pred_tokens, scores, target_length, c_len, k):
       scores = scores[:NUM_AUDIO_CODEBOOK*target_length]
+      pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
+      tokens = tokens[:, :, :target_length]
+
       _, order = Tensor.sort(scores, descending=True)
       inv = order.argsort()
       tokens_sorted = tokens.flatten()[order]
-      pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
       pred_sorted = pred_tokens[order]
       mask = Tensor.arange(order.shape[0]) < k
-      
-
       tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
       tokens = tokens_sorted[inv]
       tokens.realize()
@@ -901,8 +900,9 @@ class omni:
       tokens = tokens.pad(((0, 0), (0, target_length - tokens.shape[-1]))).unsqueeze(0)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        tokens, input_ids = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
-                                       target_length=target_length,tokens=tokens.clone()[:,:,:target_length_var], k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
+        scores, pred_tokens = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
+                                  tokens=tokens[:,:,:target_length_var].clone())
+        tokens, input_ids = self.call2(input_ids=input_ids[:, :, 0:c_len_var], tokens=tokens, pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=Variable("sz",0,MAX_LEN).bind(sched[step]))
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
@@ -931,7 +931,8 @@ if __name__ == "__main__":
   exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, 24000)
   #np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  exit()
+  #exit()
+
   Tensor.manual_seed(42)
   audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
