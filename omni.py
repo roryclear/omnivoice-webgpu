@@ -750,8 +750,6 @@ class omni:
       tokens = tokens_sorted[inv]
       tokens.realize()
       input_ids = input_ids.clone()
-      input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
-      input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
       return tokens, input_ids
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
@@ -875,10 +873,14 @@ class omni:
       print("SCHED =",sched)
       
       tokens = tokens.flatten()
+      c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len]
+        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var]
                                    ,c_len=c_len, target_length=target_length, tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]))
+        batch_input_ids = batch_input_ids[:,:,:c_len]
+        batch_input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
+        batch_input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
