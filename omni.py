@@ -714,7 +714,7 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  @TinyJit # todo, jit only works for one size rn
+  @TinyJit
   def __call__(self, input_ids, audio_mask, target_length_var, tokens):
       text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
