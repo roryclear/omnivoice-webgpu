@@ -749,11 +749,12 @@ class omni:
       
       scores = Tensor.where(tokens == AUDIO_MASK_ID, scores, -float("inf"))
 
-      scores = scores[:, :, :target_length]
-      tokens = tokens[:, :, :target_length]
+      scores = scores.flatten()
 
-      pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
-  
+      tokens = tokens[:, :, :target_length]
+      pred_tokens = pred_tokens.flatten().cast(dtypes.int)
+
+      scores = scores[:NUM_AUDIO_CODEBOOK*target_length]
       _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
       inv = order.argsort()
       tokens_sorted = tokens.flatten()[order]
