@@ -92,7 +92,7 @@ class SimpleTokenizer:
 MAX_LEN = 2000
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
-NUM_STEPS = 8
+NUM_STEPS = 32
 POSITION_TEMP = 5.0
 LAYER_PENTALTY_FACTOR = 5.0
 GUIDANCE_SCALE = 2.0
@@ -903,7 +903,7 @@ class omni:
         print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
         scores, pred_tokens = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
                                   tokens=tokens[:,:,:target_length_var].clone())
-        tokens2, input_ids2 = self.call2(input_ids=input_ids[:, :, 0:c_len_var].clone(), tokens=tokens[:,:,:target_length_var].clone(), pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=Variable("sz",0,MAX_LEN).bind(sched[step]))
+        tokens2, input_ids2 = self.call2(input_ids=input_ids[:, :, 0:c_len].clone(), tokens=tokens[:,:,:target_length].clone(), pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=sched[step])
         tokens[:,:,:tokens2.shape[-1]].assign(tokens2)
         input_ids[:,:,:input_ids2.shape[-1]].assign(input_ids2)
       return tokens[:,:,:target_length].reshape(NUM_AUDIO_CODEBOOK, target_length)
