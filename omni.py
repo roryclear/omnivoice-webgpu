@@ -714,7 +714,7 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   @TinyJit # todo, jit only works for one size rn
-  def __call__(self, input_ids, audio_mask, target_length_var, target_length, tokens, k):
+  def __call__(self, input_ids, audio_mask, target_length_var, target_length, tokens, k, c_len):
       text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
@@ -755,6 +755,10 @@ class omni:
       tokens = tokens_sorted[inv]
       tokens.realize()
       input_ids = input_ids.clone()
+
+      input_ids = input_ids[:,:,:c_len]
+      input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
+      input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
       return tokens, input_ids
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
@@ -882,10 +886,8 @@ class omni:
       target_length_var = Variable("len",1,MAX_LEN).bind(target_length)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var, target_length=target_length,tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]))
-        batch_input_ids = batch_input_ids[:,:,:c_len]
-        batch_input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
-        batch_input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
+        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
+                                       target_length=target_length,tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
