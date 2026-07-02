@@ -929,7 +929,7 @@ if __name__ == "__main__":
   ).numpy()
   #pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
-  sf.write("out.wav", audio, 24000)
+  sf.write("out.wav", audio, SAMPLING_RATE)
   #np.testing.assert_allclose(exp, audio, rtol=1e-5)
   #exit()
   Tensor.manual_seed(42)
@@ -940,7 +940,7 @@ if __name__ == "__main__":
   ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("long.pkl", "wb"))
   exp = pickle.load(open("long.pkl", "rb"))
-  sf.write("out_long.wav", audio, 24000)
+  sf.write("out_long.wav", audio, SAMPLING_RATE)
   #np.testing.assert_allclose(exp, audio, rtol=1e-5)
   #exit()
   
@@ -952,5 +952,5 @@ if __name__ == "__main__":
   ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("short2.pkl", "wb"))
   exp = pickle.load(open("short2.pkl", "rb"))
-  sf.write("out2.wav", audio, 24000)
+  sf.write("out2.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
