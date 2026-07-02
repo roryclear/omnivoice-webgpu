@@ -752,13 +752,11 @@ class omni:
       scores = scores[:, :, :target_length]
       tokens = tokens[:, :, :target_length]
 
-      tokens = tokens.flatten()
-
       pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
   
       _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
       inv = order.argsort()
-      tokens_sorted = tokens[order]
+      tokens_sorted = tokens.flatten()[order]
       pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
       pred_sorted = pred_tokens[order]
       mask = Tensor.arange(order.shape[0]) < k
