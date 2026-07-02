@@ -92,7 +92,7 @@ class SimpleTokenizer:
 MAX_LEN = 2000
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
-NUM_STEPS = 32
+NUM_STEPS = 8
 POSITION_TEMP = 5.0
 LAYER_PENTALTY_FACTOR = 5.0
 GUIDANCE_SCALE = 2.0
@@ -765,7 +765,6 @@ class omni:
       tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
       tokens = tokens_sorted[inv]
       tokens.realize()
-      input_ids = input_ids.clone()
 
       input_ids = input_ids[:,:,:c_len]
       input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
@@ -901,10 +900,13 @@ class omni:
       print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
+        print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
         scores, pred_tokens = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
                                   tokens=tokens[:,:,:target_length_var].clone())
-        tokens, input_ids = self.call2(input_ids=input_ids[:, :, 0:c_len_var], tokens=tokens[:,:,:target_length_var], pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=Variable("sz",0,MAX_LEN).bind(sched[step]))
-      return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
+        tokens2, input_ids2 = self.call2(input_ids=input_ids[:, :, 0:c_len_var].clone(), tokens=tokens[:,:,:target_length_var].clone(), pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=Variable("sz",0,MAX_LEN).bind(sched[step]))
+        tokens[:,:,:tokens2.shape[-1]].assign(tokens2)
+        input_ids[:,:,:input_ids2.shape[-1]].assign(input_ids2)
+      return tokens[:,:,:target_length].reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
       c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
