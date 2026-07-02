@@ -755,7 +755,7 @@ class omni:
       pred_tokens = pred_tokens.flatten().cast(dtypes.int)
 
       scores = scores[:NUM_AUDIO_CODEBOOK*target_length]
-      _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
+      _, order = Tensor.sort(scores, descending=True)
       inv = order.argsort()
       tokens_sorted = tokens.flatten()[order]
       pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
@@ -866,23 +866,23 @@ class omni:
       cond_audio_mask[0, cond_audio_start_idx:] = True
 
       c_len = cond_input_ids.size(2)
-      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
-      batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
+      input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
+      audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
-      batch_input_ids[0:, :, 0:c_len] = cond_input_ids[0]
-      batch_audio_mask[0:, 0:c_len] = cond_audio_mask[0]
+      input_ids[0:, :, 0:c_len] = cond_input_ids[0]
+      audio_mask[0:, 0:c_len] = cond_audio_mask[0]
 
       # Uncond (B ~ 2B-1)
-      batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
-      batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
+      input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
+      audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
 
       tokens = Tensor.full((NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.int)
-      return batch_input_ids, batch_audio_mask, tokens, c_len
+      return input_ids, audio_mask, tokens, c_len
 
   def _generate_iterative(self, text, ref_text, ref_audio_tokens):
       target_length = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1))
-      batch_input_ids, batch_audio_mask, tokens, c_len = self._prepare_inference_inputs(text, ref_text, ref_audio_tokens, target_length)
+      input_ids, audio_mask, tokens, c_len = self._prepare_inference_inputs(text, ref_text, ref_audio_tokens, target_length)
 
       timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
       timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -901,7 +901,7 @@ class omni:
       tokens = tokens.pad(((0, 0), (0, target_length - tokens.shape[-1]))).unsqueeze(0)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
+        tokens, input_ids = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
                                        target_length=target_length,tokens=tokens.clone()[:,:,:target_length_var], k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
