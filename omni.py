@@ -141,11 +141,14 @@ def load_audio(audio_path: str, sampling_rate: int):
     data = resample_numpy(data, sr, sampling_rate)
     return data
 
-def _gumbel_sample(logits, temperature: float):
+def _gumbel_sample(logits, temperature, len):
     scaled_logits = logits / temperature
-    u = Tensor.rand_like(scaled_logits)
+    u = Tensor.rand(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
     gumbel_noise = -Tensor.log(-Tensor.log(u + 1e-10) + 1e-10)
-    return scaled_logits + gumbel_noise
+    #print(scaled_logits.shape,"\n\n\n", gumbel_noise.shape)
+
+    ret = scaled_logits[:, :, :len] + gumbel_noise[:, :, :len]
+    return ret
 
 _NONVERBAL_PATTERN = re.compile(
     r"\[(laughter|sigh|confirmation-en|question-en|question-ah|question-oh|"
@@ -736,19 +739,22 @@ class omni:
 
       u_logits = audio_logits[1: 2, :, :target_length_var, :]
 
-      c_logits = c_logits[:,:,:target_length]
-      u_logits = u_logits[:,:,:target_length]
+      c_logits = c_logits[:,:,:target_length_var]
+      u_logits = u_logits[:,:,:target_length_var]
 
       pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
       scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
-      scores = _gumbel_sample(scores, POSITION_TEMP)
+      scores = _gumbel_sample(scores, POSITION_TEMP, target_length_var)
+
+      scores = scores[:, :, :target_length]
       scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, -1) == AUDIO_MASK_ID, scores, -float("inf"))
       pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
   
       _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
       inv = order.argsort()
       tokens_sorted = tokens[order]
+      pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
       pred_sorted = pred_tokens[order]
       mask = Tensor.arange(order.shape[0]) < k
       tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
