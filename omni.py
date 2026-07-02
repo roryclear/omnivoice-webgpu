@@ -903,7 +903,32 @@ class omni:
         print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
         scores, pred_tokens = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
                                   tokens=tokens[:,:,:target_length_var].clone())
-        tokens2, input_ids2 = self.call2(input_ids=input_ids[:, :, 0:c_len].clone(), tokens=tokens[:,:,:target_length].clone(), pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=sched[step])
+        #tokens2, input_ids2 = self.call2(input_ids=input_ids[:, :, 0:c_len].clone(), tokens=tokens[:,:,:target_length].clone(), pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=sched[step])
+
+        tokens2 = tokens[:,:,:target_length].clone()
+        input_ids2 = input_ids[:, :, 0:c_len].clone()
+
+        scores = scores[:NUM_AUDIO_CODEBOOK*target_length]
+        pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
+        tokens2 = tokens2[:, :, :target_length]
+
+        _, order = Tensor.sort(scores, descending=True)
+        inv = order.argsort()
+        tokens_sorted = tokens2.flatten()[order]
+        pred_sorted = pred_tokens[order]
+        mask = Tensor.arange(order.shape[0]) < sched[step]
+        tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
+        tokens2 = tokens_sorted[inv]
+        tokens2.realize()
+
+        input_ids2 = input_ids2[:,:,:c_len]
+        input_ids2[0: 1, :, c_len - target_length:] = tokens2.reshape(NUM_AUDIO_CODEBOOK, -1)
+        input_ids2[1:2, :, :target_length] = tokens2.reshape(NUM_AUDIO_CODEBOOK, -1)
+        # todo
+        tokens2 = tokens2.reshape(NUM_AUDIO_CODEBOOK, -1).unsqueeze(0)
+        tokens2 = tokens2.pad(((0, 0), (0, 0), (0, target_length - tokens2.shape[-1])))
+
+
         tokens[:,:,:tokens2.shape[-1]].assign(tokens2)
         input_ids[:,:,:input_ids2.shape[-1]].assign(input_ids2)
       return tokens[:,:,:target_length].reshape(NUM_AUDIO_CODEBOOK, target_length)
@@ -930,8 +955,30 @@ if __name__ == "__main__":
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ).numpy()
   #pickle.dump(audio, open("short.pkl", "wb"))
-  exp = pickle.load(open("short.pkl", "rb"))
+  #exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, SAMPLING_RATE)
+
+  Tensor.manual_seed(4)
+  audio = model.generate(
+      text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? extra text here",
+      ref_audio="voice.wav",
+      ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
+  ).numpy()
+  #pickle.dump(audio, open("short.pkl", "wb"))
+  #exp = pickle.load(open("short.pkl", "rb"))
+  sf.write("out1.wav", audio, SAMPLING_RATE)
+
+  Tensor.manual_seed(4)
+  audio = model.generate(
+      text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
+      ref_audio="voice.wav",
+      ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
+  ).numpy()
+  #pickle.dump(audio, open("short.pkl", "wb"))
+  #exp = pickle.load(open("short.pkl", "rb"))
+  sf.write("out2.wav", audio, SAMPLING_RATE)
+  exit()
+
   #np.testing.assert_allclose(exp, audio, rtol=1e-5)
   #exit()
   Tensor.manual_seed(42)
