@@ -876,7 +876,7 @@ class omni:
       input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
       audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
 
-      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.int)
+      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
       return input_ids, audio_mask, tokens, c_len
 
   def _generate_iterative(self, text, ref_text, ref_audio_tokens):
@@ -897,12 +897,13 @@ class omni:
       
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
       target_length_var = Variable("len",1,MAX_LEN).bind(target_length)
-      tokens = tokens.pad(((0, 0), (0, target_length - tokens.shape[-1]))).unsqueeze(0)
+      tokens = tokens.unsqueeze(0)
+      print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         scores, pred_tokens = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
                                   tokens=tokens[:,:,:target_length_var].clone())
-        tokens, input_ids = self.call2(input_ids=input_ids[:, :, 0:c_len_var], tokens=tokens, pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=Variable("sz",0,MAX_LEN).bind(sched[step]))
+        tokens, input_ids = self.call2(input_ids=input_ids[:, :, 0:c_len_var], tokens=tokens[:,:,:target_length_var], pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=Variable("sz",0,MAX_LEN).bind(sched[step]))
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
@@ -920,7 +921,6 @@ import pickle
 
 if __name__ == "__main__":
   model = omni()
-
   Tensor.manual_seed(4)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
@@ -932,7 +932,6 @@ if __name__ == "__main__":
   sf.write("out.wav", audio, 24000)
   #np.testing.assert_allclose(exp, audio, rtol=1e-5)
   #exit()
-
   Tensor.manual_seed(42)
   audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
