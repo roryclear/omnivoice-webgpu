@@ -714,7 +714,7 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   @TinyJit # todo, jit only works for one size rn
-  def __call__(self, input_ids, audio_mask, target_length, tokens, k):
+  def __call__(self, input_ids, audio_mask, target_length_var, target_length, tokens, k):
       text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
@@ -731,10 +731,13 @@ class omni:
       ).permute(0, 2, 1, 3)
       
       flipped = audio_logits.flip(2)
-      c_logits_flipped = flipped[0:1, :, :target_length, :]
+      c_logits_flipped = flipped[0:1, :, :target_length_var, :]
       c_logits = c_logits_flipped.flip(2)
 
-      u_logits = audio_logits[1: 2, :, :target_length, :]
+      u_logits = audio_logits[1: 2, :, :target_length_var, :]
+
+      c_logits = c_logits[:,:,:target_length]
+      u_logits = u_logits[:,:,:target_length]
 
       pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
@@ -876,9 +879,10 @@ class omni:
       
       tokens = tokens.flatten()
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
+      target_length_var = Variable("len",1,MAX_LEN).bind(target_length)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var] ,target_length=target_length, tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]))
+        tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var, target_length=target_length,tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]))
         batch_input_ids = batch_input_ids[:,:,:c_len]
         batch_input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
         batch_input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
