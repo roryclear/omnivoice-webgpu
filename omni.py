@@ -751,7 +751,7 @@ class omni:
 
       tokens = tokens[:NUM_AUDIO_CODEBOOK*target_length]
 
-      scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, -1) == AUDIO_MASK_ID, scores, -float("inf"))
+      scores = Tensor.where(tokens == AUDIO_MASK_ID, scores.flatten(), -float("inf"))
       pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
   
       _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
@@ -893,13 +893,11 @@ class omni:
       tokens = tokens.flatten()
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
       target_length_var = Variable("len",1,MAX_LEN).bind(target_length)
-      tok_len = tokens.shape[0]
-      tok_len_var = Variable("tok_len",1,MAX_LEN).bind(tok_len)
-      tokens = tokens.pad(((0, MAX_LEN - tok_len)))
+      tokens = tokens.pad(((0, MAX_LEN - tokens.shape[0])))
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
-                                       target_length=target_length,tokens=tokens.clone()[:tok_len_var], k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
+                                       target_length=target_length,tokens=tokens.clone()[:NUM_AUDIO_CODEBOOK*c_len_var], k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
@@ -951,4 +949,5 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
+
 
