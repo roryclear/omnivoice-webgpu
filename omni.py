@@ -748,6 +748,9 @@ class omni:
       scores = _gumbel_sample(scores, POSITION_TEMP, target_length_var)
 
       scores = scores[:, :, :target_length]
+
+      tokens = tokens[:NUM_AUDIO_CODEBOOK*target_length]
+
       scores = Tensor.where(tokens.reshape(NUM_AUDIO_CODEBOOK, -1) == AUDIO_MASK_ID, scores, -float("inf"))
       pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
   
@@ -890,10 +893,13 @@ class omni:
       tokens = tokens.flatten()
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
       target_length_var = Variable("len",1,MAX_LEN).bind(target_length)
+      tok_len = tokens.shape[0]
+      tok_len_var = Variable("tok_len",1,MAX_LEN).bind(tok_len)
+      tokens = tokens.pad(((0, MAX_LEN - tok_len)))
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
-                                       target_length=target_length,tokens=tokens.clone(), k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
+                                       target_length=target_length,tokens=tokens.clone()[:tok_len_var], k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
