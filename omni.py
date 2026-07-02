@@ -746,12 +746,14 @@ class omni:
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
       scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
       scores = _gumbel_sample(scores, POSITION_TEMP, target_length_var)
+      
+      scores = Tensor.where(tokens == AUDIO_MASK_ID, scores, -float("inf"))
 
       scores = scores[:, :, :target_length]
+      tokens = tokens[:, :, :target_length]
 
-      tokens = tokens[:NUM_AUDIO_CODEBOOK*target_length]
+      tokens = tokens.flatten()
 
-      scores = Tensor.where(tokens == AUDIO_MASK_ID, scores.flatten(), -float("inf"))
       pred_tokens, scores = pred_tokens.flatten().cast(dtypes.int), scores.flatten()
   
       _, order = Tensor.sort(scores, descending=True) # todo, can use topk instead?
@@ -760,6 +762,8 @@ class omni:
       pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
       pred_sorted = pred_tokens[order]
       mask = Tensor.arange(order.shape[0]) < k
+      
+
       tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
       tokens = tokens_sorted[inv]
       tokens.realize()
@@ -768,6 +772,9 @@ class omni:
       input_ids = input_ids[:,:,:c_len]
       input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
       input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
+      # todo
+      tokens = tokens.reshape(NUM_AUDIO_CODEBOOK, -1).unsqueeze(0)
+      tokens = tokens.pad(((0, 0), (0, 0), (0, target_length - tokens.shape[-1])))
       return tokens, input_ids
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
@@ -890,14 +897,13 @@ class omni:
           rem -= int(num)
       print("SCHED =",sched)
       
-      tokens = tokens.flatten()
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
       target_length_var = Variable("len",1,MAX_LEN).bind(target_length)
-      tokens = tokens.pad(((0, MAX_LEN - tokens.shape[0])))
+      tokens = tokens.pad(((0, 0), (0, target_length - tokens.shape[-1]))).unsqueeze(0)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         tokens, batch_input_ids = self(input_ids=batch_input_ids[:, :, 0:c_len_var], audio_mask=batch_audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
-                                       target_length=target_length,tokens=tokens.clone()[:NUM_AUDIO_CODEBOOK*c_len_var], k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
+                                       target_length=target_length,tokens=tokens.clone()[:,:,:target_length_var], k=Variable("sz",0,1000).bind(sched[step]), c_len=c_len)
       return tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
@@ -949,5 +955,3 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
-
