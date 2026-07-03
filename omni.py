@@ -5,7 +5,9 @@ import pickle
 
 import numpy as np
 
-from tinygrad.helpers import partition
+from tinygrad.helpers import fetch, partition
+from tinygrad.nn.state import safe_load, load_state_dict
+from tinygrad import Tensor, dtypes, nn, TinyJit, Variable
 import json, urllib.request, typing, unicodedata, sys
 
 class SimpleTokenizer:
@@ -805,6 +807,10 @@ class omni:
       
       return chunk_results
 
+  @TinyJit
+  def __call__(self, batch_input_ids):
+     text_embeds = self.llm.embed_tokens(batch_input_ids)
+     return text_embeds
 
   def _generate_iterative(self, text, ref_text, ref_audio_tokens):
       target_length = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1))
@@ -842,12 +848,12 @@ class omni:
           rem -= int(num)
       print("SCHED =",sched)
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
-    
+      c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-
-
-        text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, 0:c_len])
+        print("rory shape =",batch_input_ids.shape)
+        text_embeds = self(batch_input_ids[:, 0, 0:c_len_var])
+        text_embeds = text_embeds[:, :c_len, :]
         shifted_ids = (batch_input_ids[:, :, 0:c_len] * batch_audio_mask[:, 0:c_len].unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
         audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
         inputs_embeds = Tensor.where(batch_audio_mask[:, 0:c_len].unsqueeze(-1), audio_embeds, text_embeds)
@@ -905,9 +911,6 @@ class omni:
 
 import soundfile as sf
 import pickle
-from tinygrad.helpers import fetch
-from tinygrad.nn.state import safe_load, load_state_dict
-from tinygrad import Tensor, dtypes, nn, TinyJit
 
 if __name__ == "__main__":
   model = omni()
