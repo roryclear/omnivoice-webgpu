@@ -752,28 +752,6 @@ class omni:
       pred_tokens = pred_tokens.flatten().cast(dtypes.int)
       return scores, pred_tokens
 
-  def call2(self, input_ids, tokens, pred_tokens, scores, target_length, c_len, k):
-      scores = scores[:NUM_AUDIO_CODEBOOK*target_length]
-      pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
-      tokens = tokens[:, :, :target_length]
-
-      _, order = Tensor.sort(scores, descending=True)
-      inv = order.argsort()
-      tokens_sorted = tokens.flatten()[order]
-      pred_sorted = pred_tokens[order]
-      mask = Tensor.arange(order.shape[0]) < k
-      tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
-      tokens = tokens_sorted[inv]
-      tokens.realize()
-
-      input_ids = input_ids[:,:,:c_len]
-      input_ids[0: 1, :, c_len - target_length:] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
-      input_ids[1:2, :, :target_length] = tokens.reshape(NUM_AUDIO_CODEBOOK, -1)
-      # todo
-      tokens = tokens.reshape(NUM_AUDIO_CODEBOOK, -1).unsqueeze(0)
-      tokens = tokens.pad(((0, 0), (0, 0), (0, target_length - tokens.shape[-1])))
-      return tokens, input_ids
-
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
@@ -895,15 +873,14 @@ class omni:
       print("SCHED =",sched)
       
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
-      target_length_var = Variable("len",1,MAX_LEN).bind(target_length)
+      target_length_var = Variable("t_len",1,MAX_LEN).bind(target_length)
       tokens = tokens.unsqueeze(0)
       print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
         scores, pred_tokens = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
-                                  tokens=tokens[:,:,:target_length_var].clone())
-        #tokens2, input_ids2 = self.call2(input_ids=input_ids[:, :, 0:c_len].clone(), tokens=tokens[:,:,:target_length].clone(), pred_tokens=pred_tokens, scores=scores, target_length=target_length, c_len=c_len, k=sched[step])
+                                  tokens=tokens[:,:,:target_length_var])
 
         tokens2 = tokens[:,:,:target_length].clone()
         input_ids2 = input_ids[:, :, 0:c_len].clone()
