@@ -92,7 +92,7 @@ class SimpleTokenizer:
 MAX_LEN = 2000
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
-NUM_STEPS = 32
+NUM_STEPS = 8
 POSITION_TEMP = 5.0
 LAYER_PENTALTY_FACTOR = 5.0
 GUIDANCE_SCALE = 2.0
@@ -715,8 +715,7 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   @TinyJit
-  def __call__(self, input_ids, audio_mask, target_length_var, tokens):
-      text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
+  def __call__(self, input_ids, audio_mask, target_length_var, tokens, text_embeds):
       shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
       audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
       inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
@@ -879,8 +878,10 @@ class omni:
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
+
+        text_embeds = self.llm.embed_tokens(input_ids[0, 0, 0:c_len_var])
         scores, pred_tokens = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
-                                  tokens=tokens[:,:,:target_length_var])
+                                  tokens=tokens[:,:,:target_length_var], text_embeds=text_embeds)
 
         tokens2 = tokens[:,:,:target_length].clone()
         input_ids2 = input_ids[:, :, 0:c_len].clone()
