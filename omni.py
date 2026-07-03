@@ -855,7 +855,8 @@ class omni:
         text_embeds, shifted_ids = self(batch_input_ids[:, :, 0:c_len_var], batch_audio_mask[:, 0:c_len_var])
         text_embeds = text_embeds[:, :c_len, :]
         shifted_ids = shifted_ids[:, :, :c_len]
-        audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+        audio_embeds = self.audio_embeddings(shifted_ids)
+        audio_embeds = audio_embeds.sum(axis=1)
         inputs_embeds = Tensor.where(batch_audio_mask[:, 0:c_len].unsqueeze(-1), audio_embeds, text_embeds)
         hidden_states = self.llm(inputs_embeds=inputs_embeds)
 
