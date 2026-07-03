@@ -90,7 +90,7 @@ class SimpleTokenizer:
 MAX_LEN = 2000
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
-NUM_STEPS = 32
+NUM_STEPS = 8
 POSITION_TEMP = 5.0
 LAYER_PENTALTY_FACTOR = 5.0
 GUIDANCE_SCALE = 2.0
@@ -712,24 +712,6 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  def __call__(self, input_ids, audio_mask):
-      text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
-      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
-      audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-      inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-      hidden_states = self.llm(inputs_embeds=inputs_embeds)
-
-      # Shape: [B, S, C * Vocab]
-      batch_size, seq_len, _ = hidden_states.shape
-      logits_flat = self.audio_heads(hidden_states)
-      # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
-      audio_logits = logits_flat.view(
-          batch_size,
-          seq_len,
-          NUM_AUDIO_CODEBOOK,
-          AUDIO_VOCAB_SIZE,
-      ).permute(0, 2, 1, 3)
-      return audio_logits
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
@@ -864,9 +846,23 @@ class omni:
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
 
-        print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
 
-        batch_logits = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len])
+        text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, 0:c_len])
+        shifted_ids = (batch_input_ids[:, :, 0:c_len] * batch_audio_mask[:, 0:c_len].unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+        audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+        inputs_embeds = Tensor.where(batch_audio_mask[:, 0:c_len].unsqueeze(-1), audio_embeds, text_embeds)
+        hidden_states = self.llm(inputs_embeds=inputs_embeds)
+
+        # Shape: [B, S, C * Vocab]
+        batch_size, seq_len, _ = hidden_states.shape
+        logits_flat = self.audio_heads(hidden_states)
+        # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
+        batch_logits = logits_flat.view(
+            batch_size,
+            seq_len,
+            NUM_AUDIO_CODEBOOK,
+            AUDIO_VOCAB_SIZE,
+        ).permute(0, 2, 1, 3)
 
         # Extract real target Logits
         # [1, C, T, V]
@@ -927,7 +923,7 @@ if __name__ == "__main__":
   sf.write("out.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
-  Tensor.manual_seed(4)
+  Tensor.manual_seed(420)
   audio = model.generate(
       text="Testing testing one two three, this is another test with different text, can you hear me? thank you very much",
       ref_audio="voice2.wav",
