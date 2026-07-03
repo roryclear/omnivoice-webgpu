@@ -5,9 +5,7 @@ import pickle
 
 import numpy as np
 
-from tinygrad.helpers import fetch, partition
-from tinygrad.nn.state import safe_load, load_state_dict
-from tinygrad import Tensor, dtypes, nn, TinyJit, Variable
+from tinygrad.helpers import partition
 import json, urllib.request, typing, unicodedata, sys
 
 class SimpleTokenizer:
@@ -714,6 +712,24 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
+  def __call__(self, input_ids, audio_mask):
+      text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
+      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+      audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+      inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+      hidden_states = self.llm(inputs_embeds=inputs_embeds)
+
+      # Shape: [B, S, C * Vocab]
+      batch_size, seq_len, _ = hidden_states.shape
+      logits_flat = self.audio_heads(hidden_states)
+      # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
+      audio_logits = logits_flat.view(
+          batch_size,
+          seq_len,
+          NUM_AUDIO_CODEBOOK,
+          AUDIO_VOCAB_SIZE,
+      ).permute(0, 2, 1, 3)
+      return audio_logits
 
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
@@ -807,11 +823,6 @@ class omni:
       
       return chunk_results
 
-  @TinyJit
-  def __call__(self, batch_input_ids, batch_audio_mask):
-     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
-     shifted_ids = (batch_input_ids * batch_audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
-     return text_embeds, shifted_ids
 
   def _generate_iterative(self, text, ref_text, ref_audio_tokens):
       target_length = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1))
@@ -849,27 +860,13 @@ class omni:
           rem -= int(num)
       print("SCHED =",sched)
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
-      c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
+    
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        text_embeds, shifted_ids = self(batch_input_ids[:, :, 0:c_len_var], batch_audio_mask[:, 0:c_len_var])
-        text_embeds = text_embeds[:, :c_len, :]
-        shifted_ids = shifted_ids[:, :, :c_len]
-        audio_embeds = self.audio_embeddings(shifted_ids)
-        audio_embeds = audio_embeds.sum(axis=1)
-        inputs_embeds = Tensor.where(batch_audio_mask[:, 0:c_len].unsqueeze(-1), audio_embeds, text_embeds)
-        hidden_states = self.llm(inputs_embeds=inputs_embeds)
 
-        # Shape: [B, S, C * Vocab]
-        batch_size, seq_len, _ = hidden_states.shape
-        logits_flat = self.audio_heads(hidden_states)
-        # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
-        batch_logits = logits_flat.view(
-            batch_size,
-            seq_len,
-            NUM_AUDIO_CODEBOOK,
-            AUDIO_VOCAB_SIZE,
-        ).permute(0, 2, 1, 3)
+        print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
+
+        batch_logits = self(input_ids=batch_input_ids[:, :, 0:c_len], audio_mask=batch_audio_mask[:, 0:c_len])
 
         # Extract real target Logits
         # [1, C, T, V]
@@ -912,6 +909,9 @@ class omni:
 
 import soundfile as sf
 import pickle
+from tinygrad.helpers import fetch
+from tinygrad.nn.state import safe_load, load_state_dict
+from tinygrad import Tensor, dtypes, nn, TinyJit
 
 if __name__ == "__main__":
   model = omni()
@@ -922,14 +922,14 @@ if __name__ == "__main__":
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ).numpy()
-  #pickle.dump(audio, open("short.pkl", "wb"))
+  pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
-  Tensor.manual_seed(420)
+  Tensor.manual_seed(4)
   audio = model.generate(
-      text="Testing testing one two three, this is another test with different text, can you hear me? thank you very much",
+      text="Testing testing one two three, this is another test with different text, can you hear me? thank you very much for listening. Here's even more text to make it even more longer",
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
   ).numpy()
@@ -946,7 +946,7 @@ if __name__ == "__main__":
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ).numpy()
   #pickle.dump(audio, open("short2.pkl", "wb"))
-  #exp = pickle.load(open("short2.pkl", "rb"))
+  exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   #np.testing.assert_allclose(exp, audio, rtol=1e-5)
   exit()
@@ -974,5 +974,3 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   sf.write("out2.wav", audio, 24000)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
-
