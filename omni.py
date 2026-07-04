@@ -881,8 +881,6 @@ class omni:
 
         log_probs = log_probs[:, :, :target_length, :]
 
-        log_probs = log_probs.clone() # todo
-        log_probs[..., AUDIO_MASK_ID] -float("inf")
         pred_tokens = log_probs.argmax(axis=-1)
         scores = log_probs.max(axis=-1)[0]
 
@@ -908,16 +906,6 @@ class omni:
         batch_input_ids[1: 2, :, :target_length] = sample_tokens
         batch_input_ids.realize()
       return tokens[:, : target_length]
-
-  def _predict_tokens_with_scoring(self, c_logits, u_logits):
-      c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
-      u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
-      log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
-      log_probs = log_probs.clone() # todo
-      log_probs[..., AUDIO_MASK_ID] = -float("inf")
-      pred_tokens = log_probs.argmax(axis=-1)
-      confidence_scores = log_probs.max(axis=-1)[0]
-      return pred_tokens, confidence_scores
 
 import soundfile as sf
 import pickle
