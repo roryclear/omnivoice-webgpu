@@ -825,12 +825,12 @@ class omni:
 
       c_len = cond_input_ids.size(2)
       batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=dtypes.int)
-      batch_audio_mask = Tensor.zeros((2, c_len), dtype=dtypes.bool)
+      batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
       batch_attention_mask = Tensor.zeros((2, 1, c_len, c_len), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
       batch_input_ids[0] = cond_input_ids[0]
-      batch_audio_mask[0] = cond_audio_mask[0]
+      batch_audio_mask[0, :c_len] = cond_audio_mask[0]
       batch_attention_mask[0, :, :c_len, :c_len] = True
 
       # Uncond (B ~ 2B-1)
@@ -866,9 +866,10 @@ class omni:
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
         
         text_embeds = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], len_var=c_len_var)
-        shifted_ids = (batch_input_ids[:, :, :c_len] * batch_audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+        shifted_ids = (batch_input_ids[:, :, :c_len] * batch_audio_mask[:, :c_len].unsqueeze(1))
+        shifted_ids += self.codebook_layer_offsets.view(1, -1, 1)
         audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-        inputs_embeds = Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds[:, :c_len, :])
+        inputs_embeds = Tensor.where(batch_audio_mask[:, :c_len].unsqueeze(-1), audio_embeds, text_embeds[:, :c_len, :])
 
         hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
 
