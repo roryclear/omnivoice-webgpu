@@ -815,13 +815,12 @@ class omni:
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, len_var):
-    inputs_embeds = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
     hidden_states = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-    inputs_embeds[:, :len_var, :] += Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-    hidden_states[:, :len_var, :] += self.llm(inputs_embeds=inputs_embeds[:, :len_var, :], attention_mask=batch_attention_mask)
+    inputs_embeds = Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+    hidden_states[:, :len_var, :] += self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
     return hidden_states
 
   def _generate_iterative(
@@ -870,18 +869,11 @@ class omni:
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
         hidden_states = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
                             batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], len_var=c_len_var)
-        hidden_states = hidden_states[:, :c_len, :]
 
         # Shape: [B, S, C * Vocab]
-        batch_size, seq_len, _ = hidden_states.shape
-        logits_flat = self.audio_heads(hidden_states)
+        logits_flat = self.audio_heads(hidden_states[:, :c_len, :])
         # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
-        batch_logits = logits_flat.view(
-            batch_size,
-            seq_len,
-            NUM_AUDIO_CODEBOOK,
-            AUDIO_VOCAB_SIZE,
-        ).permute(0, 2, 1, 3)
+        batch_logits = logits_flat.view(2, c_len, NUM_AUDIO_CODEBOOK, AUDIO_VOCAB_SIZE).permute(0, 2, 1, 3)
 
         # Extract real target Logits
         # [1, C, T, V]
