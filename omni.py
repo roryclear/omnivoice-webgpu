@@ -87,7 +87,7 @@ class SimpleTokenizer:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
   
-
+MAX_LEN = 2000
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 NUM_STEPS = 16
@@ -712,38 +712,6 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  def _prepare_embed_inputs(self, input_ids, audio_mask):
-    text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
-    shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
-    audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-    ret = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-    return ret
-
-  def __call__(
-      self,
-      input_ids,
-      audio_mask,
-      attention_mask=None,
-  ):
-      inputs_embeds = self._prepare_embed_inputs(input_ids, audio_mask)  
-      hidden_states = self.llm(
-          inputs_embeds=inputs_embeds,
-          attention_mask=attention_mask,
-          position_ids=None,
-      )
-
-      # Shape: [B, S, C * Vocab]
-      batch_size, seq_len, _ = hidden_states.shape
-      logits_flat = self.audio_heads(hidden_states)
-      # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
-      audio_logits = logits_flat.view(
-          batch_size,
-          seq_len,
-          NUM_AUDIO_CODEBOOK,
-          AUDIO_VOCAB_SIZE,
-      ).permute(0, 2, 1, 3)
-      return audio_logits
-
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
@@ -886,11 +854,24 @@ class omni:
 
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
 
-        batch_logits = self(
-            input_ids=batch_input_ids,
-            audio_mask=batch_audio_mask,
-            attention_mask=batch_attention_mask,
-        )
+
+        text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
+        shifted_ids = (batch_input_ids * batch_audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
+        audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+        inputs_embeds = Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+
+        hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
+
+        # Shape: [B, S, C * Vocab]
+        batch_size, seq_len, _ = hidden_states.shape
+        logits_flat = self.audio_heads(hidden_states)
+        # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
+        batch_logits = logits_flat.view(
+            batch_size,
+            seq_len,
+            NUM_AUDIO_CODEBOOK,
+            AUDIO_VOCAB_SIZE,
+        ).permute(0, 2, 1, 3)
 
         # Extract real target Logits
         # [1, C, T, V]
