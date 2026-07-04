@@ -880,7 +880,13 @@ class omni:
         c_logits = c_logits[:, :, :target_length, :]
         u_logits = u_logits[:, :, :target_length, :]
 
-        pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
+        c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
+        u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
+        log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
+        log_probs = log_probs.clone() # todo
+        log_probs[..., AUDIO_MASK_ID] -float("inf")
+        pred_tokens = log_probs.argmax(axis=-1)
+        scores = log_probs.max(axis=-1)[0]
 
         scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
         scores = _gumbel_sample(scores, POSITION_TEMP)
