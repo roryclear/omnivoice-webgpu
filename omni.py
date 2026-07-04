@@ -814,16 +814,20 @@ class omni:
       return chunk_results
 
   @TinyJit
-  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, c_len_var):
-    batch_logits = Tensor.zeros(2, NUM_AUDIO_CODEBOOK, MAX_LEN, AUDIO_VOCAB_SIZE)
+  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, c_len_var, t_len_var):
+    c_logits = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN, AUDIO_VOCAB_SIZE)
+    u_logits = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN, AUDIO_VOCAB_SIZE)
     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
     inputs_embeds = Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
     hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
     logits_flat = self.audio_heads(hidden_states)
-    batch_logits[:, :, :c_len_var, :] += logits_flat.view(2, c_len_var, NUM_AUDIO_CODEBOOK, AUDIO_VOCAB_SIZE).permute(0, 2, 1, 3)
-    return batch_logits
+    batch_logits = logits_flat.view(2, c_len_var, NUM_AUDIO_CODEBOOK, AUDIO_VOCAB_SIZE).permute(0, 2, 1, 3)
+    
+    u_logits[:, :, :t_len_var, :] += batch_logits[1, :, :t_len_var, :]
+    c_logits[:, :, :t_len_var, :] += batch_logits.flip(2)[0, :, :t_len_var, :].flip(1)
+    return c_logits, u_logits
 
   def _generate_iterative(
       self, text, target_length, ref_text, ref_audio_tokens):
@@ -863,18 +867,18 @@ class omni:
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
       
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
+      t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
 
       batch_input_ids = batch_input_ids.pad(((0,0), (0,0), (0, MAX_LEN-batch_input_ids.shape[-1])))
 
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
-        batch_logits = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
-                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], c_len_var=c_len_var)
+        c_logits, u_logits = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
+                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], c_len_var=c_len_var, t_len_var=t_len_var)
 
-        batch_logits = batch_logits[:, :, :c_len, :]
-        c_logits = batch_logits[0: 1, :, c_len - target_length : c_len, :]
-        u_logits = batch_logits[1: 2, :, :target_length, :]
+        c_logits = c_logits[:, :, :target_length, :]
+        u_logits = u_logits[:, :, :target_length, :]
 
         pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
 
