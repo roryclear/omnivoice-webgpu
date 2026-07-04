@@ -815,7 +815,8 @@ class omni:
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, c_len_var, t_len_var):
-    log_probs = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN, AUDIO_VOCAB_SIZE)
+    pred_tokens = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
+    scores = Tensor.zeros(NUM_AUDIO_CODEBOOK, MAX_LEN)
     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
@@ -828,8 +829,11 @@ class omni:
     c_logits = batch_logits.flip(2)[0, :, :t_len_var, :].flip(1)
     c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
     u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
-    log_probs[:, :, :t_len_var, :] += Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
-    return log_probs
+    log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
+
+    pred_tokens[:, :, :t_len_var] += log_probs.argmax(axis=-1)
+    scores[:, :t_len_var] += log_probs.max(axis=-1)[0]
+    return pred_tokens, scores
 
   def _generate_iterative(
       self, text, target_length, ref_text, ref_audio_tokens):
@@ -876,20 +880,17 @@ class omni:
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
-        log_probs = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
+        pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
                             batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], c_len_var=c_len_var, t_len_var=t_len_var)
 
-        log_probs = log_probs[:, :, :target_length, :]
-
-        pred_tokens = log_probs.argmax(axis=-1)
-        scores = log_probs.max(axis=-1)[0]
+        pred_tokens = pred_tokens[:, :, :target_length]
+        scores = scores[:, :target_length]
 
         scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
         scores = _gumbel_sample(scores, POSITION_TEMP)
 
         sample_tokens = tokens[:, :target_length]
         scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
-
 
         _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
         shape = sample_tokens.shape
@@ -912,7 +913,6 @@ import pickle
 
 if __name__ == "__main__":
   model = omni()
-
   Tensor.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
