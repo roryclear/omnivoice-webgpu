@@ -815,13 +815,11 @@ class omni:
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, len_var):
-    text_embeds = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
-    audio_embeds = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
     inputs_embeds = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
-    text_embeds[:, :len_var, :] += self.llm.embed_tokens(batch_input_ids[:, 0, :])
+    text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
-    audio_embeds[:, :len_var, :] += self.audio_embeddings(shifted_ids).sum(axis=1)
-    inputs_embeds[:, :len_var, :] += Tensor.where(batch_audio_mask[:, :len_var].unsqueeze(-1), audio_embeds[:, :len_var, :], text_embeds[:, :len_var, :])
+    audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+    inputs_embeds[:, :len_var, :] += Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
     return inputs_embeds
 
   def _generate_iterative(
