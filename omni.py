@@ -817,10 +817,12 @@ class omni:
   def __call__(self, batch_input_ids, batch_audio_mask, len_var):
     text_embeds = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
     audio_embeds = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
+    inputs_embeds = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
     text_embeds[:, :len_var, :] += self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds[:, :len_var, :] += self.audio_embeddings(shifted_ids).sum(axis=1)
-    return text_embeds, audio_embeds
+    inputs_embeds[:, :len_var, :] += Tensor.where(batch_audio_mask[:, :len_var].unsqueeze(-1), audio_embeds[:, :len_var, :], text_embeds[:, :len_var, :])
+    return inputs_embeds
 
   def _generate_iterative(
       self, text, target_length, ref_text, ref_audio_tokens):
@@ -867,8 +869,8 @@ class omni:
         print("STEP",step,"of",NUM_STEPS)
 
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
-        text_embeds, audio_embeds = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], len_var=c_len_var)
-        inputs_embeds = Tensor.where(batch_audio_mask[:, :c_len].unsqueeze(-1), audio_embeds[:, :c_len, :], text_embeds[:, :c_len, :])
+        inputs_embeds = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], len_var=c_len_var)
+        inputs_embeds = inputs_embeds[:, :c_len, :]
 
         hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
 
