@@ -814,13 +814,15 @@ class omni:
       return chunk_results
 
   @TinyJit
-  def __call__(self, batch_input_ids, batch_audio_mask, len_var):
+  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, len_var):
     inputs_embeds = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
+    hidden_states = Tensor.zeros(2, MAX_LEN, HIDDEN_SIZE)
     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
     inputs_embeds[:, :len_var, :] += Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-    return inputs_embeds
+    hidden_states[:, :len_var, :] += self.llm(inputs_embeds=inputs_embeds[:, :len_var, :], attention_mask=batch_attention_mask)
+    return hidden_states
 
   def _generate_iterative(
       self, text, target_length, ref_text, ref_audio_tokens):
@@ -829,7 +831,7 @@ class omni:
       c_len = cond_input_ids.size(2)
       batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=dtypes.int)
       batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
-      batch_attention_mask = Tensor.zeros((2, 1, c_len, c_len), dtype=dtypes.bool)
+      batch_attention_mask = Tensor.zeros((2, 1, MAX_LEN, MAX_LEN), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
       batch_input_ids[0] = cond_input_ids[0]
@@ -865,10 +867,10 @@ class omni:
 
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
-        inputs_embeds = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], len_var=c_len_var)
-        hidden_states = self.llm(inputs_embeds=inputs_embeds[:, :c_len, :], attention_mask=batch_attention_mask)
+        hidden_states = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
+                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], len_var=c_len_var)
+        hidden_states = hidden_states[:, :c_len, :]
 
         # Shape: [B, S, C * Vocab]
         batch_size, seq_len, _ = hidden_states.shape
@@ -915,7 +917,7 @@ class omni:
       c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
       u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
       log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
-
+      log_probs = log_probs.clone() # todo
       log_probs[..., AUDIO_MASK_ID] = -float("inf")
       pred_tokens = log_probs.argmax(axis=-1)
       confidence_scores = log_probs.max(axis=-1)[0]
