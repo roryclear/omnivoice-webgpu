@@ -834,7 +834,7 @@ class omni:
       pad_diag = Tensor.arange(target_length, c_len)
       batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-      tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
+      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.long)
 
       timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
       timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -883,7 +883,7 @@ class omni:
         scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
         scores = _gumbel_sample(scores, POSITION_TEMP)
 
-        sample_tokens = tokens[0: 1, :, :target_length]
+        sample_tokens = tokens[:, :target_length]
         scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
 
 
@@ -896,12 +896,12 @@ class omni:
 
         # Update individual slices into batched structure
         tokens = tokens.clone()
-        tokens[0: 1, :, :target_length] = sample_tokens
+        tokens[:, :target_length] = sample_tokens
         batch_input_ids = batch_input_ids.clone()
-        batch_input_ids[0: 1, :, c_len - target_length : c_len] = sample_tokens
+        batch_input_ids[0: 1, :,  -target_length:] = sample_tokens
         batch_input_ids[1: 2, :, :target_length] = sample_tokens
         batch_input_ids.realize()
-      return tokens[0, :, : target_length]
+      return tokens[:, : target_length]
 
   def _predict_tokens_with_scoring(self, c_logits, u_logits):
       c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
