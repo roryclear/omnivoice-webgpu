@@ -815,14 +815,15 @@ class omni:
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, len_var):
-    logits_flat = Tensor.zeros(2, MAX_LEN, AUDIO_VOCAB_SIZE*NUM_AUDIO_CODEBOOK)
+    batch_logits = Tensor.zeros(2, NUM_AUDIO_CODEBOOK, MAX_LEN, AUDIO_VOCAB_SIZE)
     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
     inputs_embeds = Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
     hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
-    logits_flat[:, :len_var, :] += self.audio_heads(hidden_states)
-    return logits_flat
+    logits_flat = self.audio_heads(hidden_states)
+    batch_logits[:, :, :len_var, :] += logits_flat.view(2, len_var, NUM_AUDIO_CODEBOOK, AUDIO_VOCAB_SIZE).permute(0, 2, 1, 3)
+    return batch_logits
 
   def _generate_iterative(
       self, text, target_length, ref_text, ref_audio_tokens):
@@ -868,14 +869,10 @@ class omni:
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
-        logits_flat = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
+        batch_logits = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
                             batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], len_var=c_len_var)
 
-        logits_flat = logits_flat[:, :c_len, :]
-        # Shape: [B, S, C, Vocab] -> [B, C, S, Vocab]
-        batch_logits = logits_flat.view(2, c_len, NUM_AUDIO_CODEBOOK, AUDIO_VOCAB_SIZE).permute(0, 2, 1, 3)
-        # Extract real target Logits
-        # [1, C, T, V]
+        batch_logits = batch_logits[:, :, :c_len, :]
         c_logits = batch_logits[0: 1, :, c_len - target_length : c_len, :]
         u_logits = batch_logits[1: 2, :, :target_length, :]
 
