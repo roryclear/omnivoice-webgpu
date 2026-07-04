@@ -815,8 +815,7 @@ class omni:
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, c_len_var, t_len_var):
-    c_log_probs = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN, AUDIO_VOCAB_SIZE)
-    u_log_probs = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN, AUDIO_VOCAB_SIZE)
+    log_probs = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN, AUDIO_VOCAB_SIZE)
     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
@@ -827,9 +826,10 @@ class omni:
     
     u_logits = batch_logits[1, :, :t_len_var, :]
     c_logits = batch_logits.flip(2)[0, :, :t_len_var, :].flip(1)
-    c_log_probs[:, :, :t_len_var, :] += Tensor.log_softmax(c_logits, axis=-1)
-    u_log_probs[:, :, :t_len_var, :] += Tensor.log_softmax(u_logits, axis=-1)
-    return c_log_probs, u_log_probs
+    c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
+    u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
+    log_probs[:, :, :t_len_var, :] += Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
+    return log_probs
 
   def _generate_iterative(
       self, text, target_length, ref_text, ref_audio_tokens):
@@ -876,13 +876,11 @@ class omni:
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
-        c_log_probs, u_log_probs = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
+        log_probs = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
                             batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], c_len_var=c_len_var, t_len_var=t_len_var)
 
-        c_log_probs = c_log_probs[:, :, :target_length, :]
-        u_log_probs = u_log_probs[:, :, :target_length, :]
+        log_probs = log_probs[:, :, :target_length, :]
 
-        log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
         log_probs = log_probs.clone() # todo
         log_probs[..., AUDIO_MASK_ID] -float("inf")
         pred_tokens = log_probs.argmax(axis=-1)
