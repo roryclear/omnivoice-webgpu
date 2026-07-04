@@ -868,9 +868,7 @@ class omni:
 
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
         inputs_embeds = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], len_var=c_len_var)
-        inputs_embeds = inputs_embeds[:, :c_len, :]
-
-        hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
+        hidden_states = self.llm(inputs_embeds=inputs_embeds[:, :c_len, :], attention_mask=batch_attention_mask)
 
         # Shape: [B, S, C * Vocab]
         batch_size, seq_len, _ = hidden_states.shape
