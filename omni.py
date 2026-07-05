@@ -856,7 +856,7 @@ class omni:
       pad_diag = Tensor.arange(target_length, c_len)
       batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.int)
+      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
 
       timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
       timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -893,7 +893,7 @@ class omni:
         shape = sample_tokens.shape
         
         sample_tokens = sample_tokens.flatten()
-        sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(sample_tokens.dtype)
+        sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
         sample_tokens = sample_tokens.reshape(shape)
 
         # Update individual slices into batched structure
