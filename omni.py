@@ -141,12 +141,6 @@ def load_audio(audio_path: str, sampling_rate: int):
     data = resample_numpy(data, sr, sampling_rate)
     return data
 
-def _gumbel_sample(logits, temperature: float):
-    scaled_logits = logits / temperature
-    u = Tensor.rand_like(scaled_logits)
-    gumbel_noise = -Tensor.log(-Tensor.log(u + 1e-10) + 1e-10)
-    return scaled_logits + gumbel_noise
-
 _NONVERBAL_PATTERN = re.compile(
     r"\[(laughter|sigh|confirmation-en|question-en|question-ah|question-oh|"
     r"question-ei|question-yi|surprise-ah|surprise-oh|surprise-wa|"
@@ -887,7 +881,10 @@ class omni:
         pred_tokens = pred_tokens[:, :, :target_length]
         scores = scores[:, :target_length]
 
-        scores = _gumbel_sample(scores, POSITION_TEMP)
+        scaled_logits = scores / POSITION_TEMP
+        u = Tensor.rand_like(scaled_logits)
+        gumbel_noise = -Tensor.log(-Tensor.log(u + 1e-10) + 1e-10)
+        scores = scaled_logits + gumbel_noise
 
         sample_tokens = tokens[:, :target_length]
         scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
