@@ -808,7 +808,7 @@ class omni:
       return chunk_results
 
   @TinyJit
-  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, layer_ids, c_len_var, t_len_var):
+  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, tokens, layer_ids, c_len_var, t_len_var):
     pred_tokens = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
     shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
@@ -830,9 +830,11 @@ class omni:
     scaled_logits = scores / POSITION_TEMP
     u = Tensor.rand(NUM_AUDIO_CODEBOOK, MAX_LEN)
     gumbel_noise = -Tensor.log(-Tensor.log(u + 1e-10) + 1e-10)
-    scores = Tensor.zeros(NUM_AUDIO_CODEBOOK, MAX_LEN)
-    scores[:, :t_len_var] += scaled_logits[:, :t_len_var] + gumbel_noise[:, :t_len_var]
-    return pred_tokens, scores
+    scores = scaled_logits + gumbel_noise[:, :t_len_var]
+
+    scores_out = Tensor.zeros(NUM_AUDIO_CODEBOOK, MAX_LEN)
+    scores_out[:, :t_len_var] += Tensor.where(tokens[:, :t_len_var] == AUDIO_MASK_ID, scores[:, :t_len_var], -float("inf"))
+    return pred_tokens, scores_out
 
   def _generate_iterative(
       self, text, target_length, ref_text, ref_audio_tokens):
@@ -880,16 +882,14 @@ class omni:
         print("STEP",step,"of",NUM_STEPS)
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
         pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
-                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], layer_ids=layer_ids.clone(),
+                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids.clone(),
                             c_len_var=c_len_var, t_len_var=t_len_var)
 
         pred_tokens = pred_tokens[:, :, :target_length]
         scores = scores[:, :target_length]
 
-        sample_tokens = tokens[:, :target_length]
-        scores = Tensor.where(sample_tokens == AUDIO_MASK_ID, scores, -float("inf"))
-
         _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
+        sample_tokens = tokens[:, :target_length]
         shape = sample_tokens.shape
         
         sample_tokens = sample_tokens.flatten()
