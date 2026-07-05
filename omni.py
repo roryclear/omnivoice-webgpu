@@ -888,15 +888,14 @@ class omni:
         pred_tokens = pred_tokens[:, :, :target_length]
         scores = scores[:, :target_length]
 
-        _, topk_idx = Tensor.topk(scores.flatten(), sched[step])
+        sorted_idx = Tensor.argsort(scores.flatten(), descending=True)
+        topk_idx = sorted_idx[:sched[step]]
         sample_tokens = tokens[:, :target_length]
         shape = sample_tokens.shape
-        
         sample_tokens = sample_tokens.flatten()
         sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
         sample_tokens = sample_tokens.reshape(shape)
 
-        # Update individual slices into batched structure
         tokens = tokens.clone()
         tokens[:, :target_length] = sample_tokens
         batch_input_ids = batch_input_ids.clone()
