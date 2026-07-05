@@ -5,7 +5,7 @@ import pickle
 
 import numpy as np
 
-from tinygrad.helpers import partition, fetch
+from tinygrad.helpers import fetch, partition
 from tinygrad.nn.state import safe_load, load_state_dict
 from tinygrad import Tensor, dtypes, nn, TinyJit, Variable
 import json, urllib.request, typing, unicodedata, sys
@@ -92,7 +92,7 @@ class SimpleTokenizer:
 MAX_LEN = 2000
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
-NUM_STEPS = 32
+NUM_STEPS = 16
 POSITION_TEMP = 5.0
 LAYER_PENTALTY_FACTOR = 5.0
 GUIDANCE_SCALE = 2.0
@@ -140,13 +140,6 @@ def load_audio(audio_path: str, sampling_rate: int):
     data = np.mean(data, axis=0, keepdims=True)
     data = resample_numpy(data, sr, sampling_rate)
     return data
-
-def _gumbel_sample(logits, temperature, len):
-    scaled_logits = logits / temperature
-    u = Tensor.rand(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
-    gumbel_noise = -Tensor.log(-Tensor.log(u + 1e-10) + 1e-10)
-    ret = scaled_logits[:, :, :len] + gumbel_noise[:, :, :len]
-    return ret
 
 _NONVERBAL_PATTERN = re.compile(
     r"\[(laughter|sigh|confirmation-en|question-en|question-ah|question-oh|"
@@ -277,7 +270,7 @@ class llm:
     for i in range(28):
       self.layers.append(Qwen3DecoderLayer())
 
-  def __call__(self, inputs_embeds=None):
+  def __call__(self, attention_mask=None, position_ids=None, inputs_embeds=None):
       position_ids = Tensor.arange(inputs_embeds.shape[1])
       position_ids = position_ids.unsqueeze(0)
 
@@ -285,7 +278,7 @@ class llm:
       position_embeddings = self.rotary_emb(position_ids)
       
       for decoder_layer in self.layers:
-        hidden_states = decoder_layer(hidden_states, attention_mask=None, position_embeddings=position_embeddings,)
+        hidden_states = decoder_layer(hidden_states, attention_mask=attention_mask, position_embeddings=position_embeddings,)
 
       return self.norm(hidden_states)
 
@@ -535,6 +528,7 @@ class ConvTranspose1d:
     weight_flipped = self.weight.flip(-1)
     weight_conv = weight_flipped.permute(1, 0, 2)
 
+
     out = Tensor.conv2d(
         upsampled.unsqueeze(2),
         weight_conv.unsqueeze(2),
@@ -714,44 +708,6 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  @TinyJit
-  def __call__(self, input_ids, audio_mask, target_length_var, tokens):
-      text_embeds = self.llm.embed_tokens(input_ids[0, 0, :])
-      shifted_ids = (input_ids * audio_mask.unsqueeze(1)) + self.codebook_layer_offsets.view(1, -1, 1)
-      audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-      inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-      hidden_states = self.llm(inputs_embeds=inputs_embeds)
-
-      batch_size, seq_len, _ = hidden_states.shape
-      audio_logits = self.audio_heads(hidden_states)
-      audio_logits = audio_logits.view(
-          batch_size,
-          seq_len,
-          NUM_AUDIO_CODEBOOK,
-          AUDIO_VOCAB_SIZE,
-      ).permute(0, 2, 1, 3)
-      
-      flipped = audio_logits.flip(2)
-      c_logits_flipped = flipped[0:1, :, :target_length_var, :]
-      c_logits = c_logits_flipped.flip(2)
-
-      u_logits = audio_logits[1: 2, :, :target_length_var, :]
-
-      c_logits = c_logits[:,:,:target_length_var]
-      u_logits = u_logits[:,:,:target_length_var]
-
-      pred_tokens, scores = self._predict_tokens_with_scoring(c_logits, u_logits)
-      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
-      scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
-      scores = _gumbel_sample(scores, POSITION_TEMP, target_length_var)
-      
-      scores = Tensor.where(tokens == AUDIO_MASK_ID, scores, -float("inf"))
-
-      scores = scores.flatten()
-
-      pred_tokens = pred_tokens.flatten().cast(dtypes.int)
-      return scores, pred_tokens
-
   def generate(self, text=None, ref_text=None, ref_audio=None):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
@@ -794,7 +750,41 @@ class omni:
       estimated_duration = target_weight / speed_factor
       return int(estimated_duration)
 
-  def _generate_chunked(self, target_length, text, ref_text, ref_audio_tokens):
+  def _prepare_inference_inputs(
+      self,
+      text: str,
+      num_target_tokens: int,
+      ref_text=None,
+      ref_audio_tokens=None,
+  ):  
+      # todo add lang / instruct?
+      style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
+      style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
+
+      # Build text tokens
+      full_text = ref_text.strip() + " " + text.strip()
+      wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
+      text_tokens = Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
+
+      # Target: all MASK
+      target_audio_tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.int)
+
+      # Conditional input
+      parts = [style_tokens, text_tokens]
+      parts.append(ref_audio_tokens.unsqueeze(0))
+      parts.append(target_audio_tokens)
+      cond_input_ids = Tensor.cat(*parts, dim=2)
+      cond_total_length = cond_input_ids.shape[2]
+      cond_audio_start_idx = cond_total_length - num_target_tokens
+      cond_audio_start_idx -= ref_audio_tokens.size(-1)
+
+      cond_audio_mask = Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
+      cond_audio_mask[0, cond_audio_start_idx:] = True
+      return cond_input_ids, cond_audio_mask
+
+
+  def _generate_chunked(
+      self, target_length, text, ref_text, ref_audio_tokens):
       avg_tokens_per_char = target_length / len(text)
       text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
 
@@ -811,54 +801,64 @@ class omni:
       print("CHUNKS", len(chunks))
       chunk_results = []
       for i in range(len(chunks)):
-        ret = self._generate_iterative(text=chunks[i], ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
+        target_length = self._estimate_target_tokens(chunks[i], ref_text, ref_audio_tokens.size(-1))
+        ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
         chunk_results.append(ret)
       
       return chunk_results
 
-  def _prepare_inference_inputs(self, text: str, ref_text=None, ref_audio_tokens=None, target_length=None):  
-      # todo add lang / instruct?
-      style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
-      style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
+  @TinyJit
+  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, tokens, layer_ids, c_len_var, t_len_var):
+    pred_tokens = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
+    text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
+    shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
+    audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
+    inputs_embeds = Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+    hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
+    logits_flat = self.audio_heads(hidden_states)
+    batch_logits = logits_flat.view(2, c_len_var, NUM_AUDIO_CODEBOOK, AUDIO_VOCAB_SIZE).permute(0, 2, 1, 3)
+    
+    u_logits = batch_logits[1, :, :t_len_var, :]
+    c_logits = batch_logits.flip(2)[0, :, :t_len_var, :].flip(1)
+    c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
+    u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
+    log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
 
-      # Build text tokens
-      full_text = ref_text.strip() + " " + text.strip()
-      wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
-      text_tokens = Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
+    pred_tokens[:, :, :t_len_var] += log_probs.argmax(axis=-1)
+    scores = log_probs.max(axis=-1)[0] - (layer_ids * LAYER_PENTALTY_FACTOR)
 
-      # Target: all MASK
-      target_audio_tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, target_length), AUDIO_MASK_ID, dtype=dtypes.int)
+    scaled_logits = scores / POSITION_TEMP
+    u = Tensor.rand(NUM_AUDIO_CODEBOOK, MAX_LEN)
+    gumbel_noise = -Tensor.log(-Tensor.log(u + 1e-10) + 1e-10)
+    scores = scaled_logits + gumbel_noise[:, :t_len_var]
 
-      # Conditional input
-      parts = [style_tokens, text_tokens]
-      parts.append(ref_audio_tokens.unsqueeze(0))
-      parts.append(target_audio_tokens)
-      cond_input_ids = Tensor.cat(*parts, dim=2)
-      cond_total_length = cond_input_ids.shape[2]
-      cond_audio_start_idx = cond_total_length - target_length
-      cond_audio_start_idx -= ref_audio_tokens.size(-1)
+    scores_out = Tensor.zeros(NUM_AUDIO_CODEBOOK, MAX_LEN)
+    scores_out[:, :t_len_var] += Tensor.where(tokens[:, :t_len_var] == AUDIO_MASK_ID, scores[:, :t_len_var], -float("inf"))
+    return pred_tokens, scores_out
 
-      cond_audio_mask = Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
-      cond_audio_mask[0, cond_audio_start_idx:] = True
+  def _generate_iterative(
+      self, text, target_length, ref_text, ref_audio_tokens):
+      cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
       c_len = cond_input_ids.size(2)
-      input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
-      audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
+      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=dtypes.int)
+      batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
+      batch_attention_mask = Tensor.zeros((2, 1, MAX_LEN, MAX_LEN), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
-      input_ids[0:, :, 0:c_len] = cond_input_ids[0]
-      audio_mask[0:, 0:c_len] = cond_audio_mask[0]
+      batch_input_ids[0] = cond_input_ids[0]
+      batch_audio_mask[0, :c_len] = cond_audio_mask[0]
+      batch_attention_mask[0, :, :c_len, :c_len] = True
 
       # Uncond (B ~ 2B-1)
-      input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
-      audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
+      batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
+      batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
+      batch_attention_mask[1, :, :target_length, :target_length] = True
+
+      pad_diag = Tensor.arange(target_length, c_len)
+      batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
       tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
-      return input_ids, audio_mask, tokens, c_len
-
-  def _generate_iterative(self, text, ref_text, ref_audio_tokens):
-      target_length = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1))
-      input_ids, audio_mask, tokens, c_len = self._prepare_inference_inputs(text, ref_text, ref_audio_tokens, target_length)
 
       timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
       timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -870,94 +870,68 @@ class omni:
           num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
           sched.append(int(num))
           rem -= int(num)
-      print("SCHED =",sched)
+
+      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).unsqueeze(-1)
       
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
-      target_length_var = Variable("t_len",1,MAX_LEN).bind(target_length)
-      tokens = tokens.unsqueeze(0)
-      print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
+      t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
+
+      batch_input_ids = batch_input_ids.pad(((0,0), (0,0), (0, MAX_LEN-batch_input_ids.shape[-1])))
+
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
-        print("shapes =", input_ids.shape, audio_mask.shape, tokens.shape)
-        scores, pred_tokens = self(input_ids=input_ids[:, :, 0:c_len_var], audio_mask=audio_mask[:, 0:c_len_var] ,target_length_var=target_length_var,
-                                  tokens=tokens[:,:,:target_length_var])
+        print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
+        pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
+                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids.clone(),
+                            c_len_var=c_len_var, t_len_var=t_len_var)
 
-        tokens2 = tokens[:,:,:target_length].clone()
-        input_ids2 = input_ids[:, :, 0:c_len].clone()
+        pred_tokens = pred_tokens[:, :, :target_length]
+        scores = scores[:, :target_length]
 
-        scores = scores[:NUM_AUDIO_CODEBOOK*target_length]
-        pred_tokens = pred_tokens[:target_length*NUM_AUDIO_CODEBOOK]
-        tokens2 = tokens2[:, :, :target_length]
+        sorted_idx = Tensor.argsort(scores.flatten(), descending=True)
+        topk_idx = sorted_idx[:sched[step]]
+        sample_tokens = tokens[:, :target_length]
+        shape = sample_tokens.shape
+        sample_tokens = sample_tokens.flatten()
+        sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
+        sample_tokens = sample_tokens.reshape(shape)
 
-        _, order = Tensor.sort(scores, descending=True)
-        inv = order.argsort()
-        tokens_sorted = tokens2.flatten()[order]
-        pred_sorted = pred_tokens[order]
-        mask = Tensor.arange(order.shape[0]) < sched[step]
-        tokens_sorted = Tensor.where(mask, pred_sorted, tokens_sorted)
-        tokens2 = tokens_sorted[inv]
-        tokens2.realize()
-
-        input_ids2 = input_ids2[:,:,:c_len]
-        input_ids2[0: 1, :, c_len - target_length:] = tokens2.reshape(NUM_AUDIO_CODEBOOK, -1)
-        input_ids2[1:2, :, :target_length] = tokens2.reshape(NUM_AUDIO_CODEBOOK, -1)
-        # todo
-        tokens2 = tokens2.reshape(NUM_AUDIO_CODEBOOK, -1).unsqueeze(0)
-        tokens2 = tokens2.pad(((0, 0), (0, 0), (0, target_length - tokens2.shape[-1])))
-
-
-        tokens[:,:,:tokens2.shape[-1]].assign(tokens2)
-        input_ids[:,:,:input_ids2.shape[-1]].assign(input_ids2)
-      return tokens[:,:,:target_length].reshape(NUM_AUDIO_CODEBOOK, target_length)
-
-  def _predict_tokens_with_scoring(self, c_logits, u_logits):
-      c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
-      u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
-      log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
-      log_probs = log_probs.clone() # todo why
-      log_probs[..., AUDIO_MASK_ID] = -float("inf")
-      pred_tokens = log_probs.argmax(axis=-1)
-      confidence_scores = log_probs.max(axis=-1)[0]
-      return pred_tokens, confidence_scores
+        tokens = tokens.clone()
+        tokens[:, :target_length] = sample_tokens
+        batch_input_ids = batch_input_ids.clone()
+        batch_input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
+        batch_input_ids[1: 2, :, :target_length] = sample_tokens
+        batch_input_ids.realize()
+      return tokens[:, : target_length]
 
 import soundfile as sf
 import pickle
 
 if __name__ == "__main__":
   model = omni()
-  Tensor.manual_seed(4)
+  Tensor.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ).numpy()
   #pickle.dump(audio, open("short.pkl", "wb"))
-  #exp = pickle.load(open("short.pkl", "rb"))
+  exp = pickle.load(open("short.pkl", "rb"))
   sf.write("out.wav", audio, SAMPLING_RATE)
+  np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
-  Tensor.manual_seed(4)
+  Tensor.manual_seed(0)
   audio = model.generate(
-      text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? extra text here",
-      ref_audio="voice.wav",
-      ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
-  ).numpy()
-  #pickle.dump(audio, open("short.pkl", "wb"))
-  #exp = pickle.load(open("short.pkl", "rb"))
+      text="Testing testing one two three, this has different text for me to read, so I can test that the tiny jit is working, thank you for listening",
+      ref_audio="voice2.wav",
+      ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
+  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  #pickle.dump(audio, open("short1.pkl", "wb"))
+  exp = pickle.load(open("short1.pkl", "rb"))
   sf.write("out1.wav", audio, SAMPLING_RATE)
-
-  Tensor.manual_seed(4)
-  audio = model.generate(
-      text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
-      ref_audio="voice.wav",
-      ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
-  ).numpy()
-  #pickle.dump(audio, open("short.pkl", "wb"))
-  #exp = pickle.load(open("short.pkl", "rb"))
-  sf.write("out2.wav", audio, SAMPLING_RATE)
+  np.testing.assert_allclose(exp, audio, rtol=1e-5)
   exit()
 
-  #np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  #exit()
   Tensor.manual_seed(42)
   audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
@@ -965,18 +939,7 @@ if __name__ == "__main__":
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
   ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("long.pkl", "wb"))
-  exp = pickle.load(open("long.pkl", "rb"))
-  sf.write("out_long.wav", audio, SAMPLING_RATE)
+  #exp = pickle.load(open("long.pkl", "rb"))
+  sf.write("out_long.wav", audio, 24000)
   #np.testing.assert_allclose(exp, audio, rtol=1e-5)
   #exit()
-  
-  Tensor.manual_seed(0)
-  audio = model.generate(
-      text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
-      ref_audio="voice2.wav",
-      ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
-  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  #pickle.dump(audio, open("short2.pkl", "wb"))
-  exp = pickle.load(open("short2.pkl", "rb"))
-  sf.write("out2.wav", audio, SAMPLING_RATE)
-  np.testing.assert_allclose(exp, audio, rtol=1e-5)
