@@ -814,7 +814,7 @@ class omni:
       return chunk_results
 
   @TinyJit
-  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, c_len_var, t_len_var):
+  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, layer_ids, c_len_var, t_len_var):
     pred_tokens = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
     scores = Tensor.zeros(NUM_AUDIO_CODEBOOK, MAX_LEN)
     text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
@@ -832,7 +832,7 @@ class omni:
     log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
 
     pred_tokens[:, :, :t_len_var] += log_probs.argmax(axis=-1)
-    scores[:, :t_len_var] += log_probs.max(axis=-1)[0]
+    scores[:, :t_len_var] += log_probs.max(axis=-1)[0] - (layer_ids * LAYER_PENTALTY_FACTOR)
     return pred_tokens, scores
 
   def _generate_iterative(
@@ -870,7 +870,7 @@ class omni:
           sched.append(int(num))
           rem -= int(num)
 
-      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).view(1, -1, 1)
+      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).unsqueeze(-1)
       
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
       t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
@@ -881,12 +881,12 @@ class omni:
         print("STEP",step,"of",NUM_STEPS)
         print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
         pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
-                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], c_len_var=c_len_var, t_len_var=t_len_var)
+                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], layer_ids=layer_ids.clone(),
+                            c_len_var=c_len_var, t_len_var=t_len_var)
 
         pred_tokens = pred_tokens[:, :, :target_length]
         scores = scores[:, :target_length]
 
-        scores = scores - (layer_ids * LAYER_PENTALTY_FACTOR)
         scores = _gumbel_sample(scores, POSITION_TEMP)
 
         sample_tokens = tokens[:, :target_length]
