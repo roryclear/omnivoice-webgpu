@@ -162,18 +162,18 @@ def load_waveform(audio_path: str):
 
 def resample_numpy(data, orig_sr, target_sr):
     # data is always multi-channel, shape (channels, samples)
-    duration = data.shape[1] / orig_sr
-    orig_times = np.linspace(0, duration, data.shape[1], endpoint=False)
+    duration = len(data[0]) / orig_sr
+    orig_times = np.linspace(0, duration, len(data[0]), endpoint=False)
     new_times = np.linspace(0, duration, int(duration * target_sr), endpoint=False)
     
     resampled_channels = [np.interp(new_times, orig_times, channel) for channel in data]
     return np.array(resampled_channels)
 
 def load_audio(audio_path: str, sampling_rate: int):
-    data, sr = load_waveform(audio_path)
-    data = np.mean(data, axis=0, keepdims=True)
-    data = resample_numpy(data, sr, sampling_rate)
-    return data
+  data, sr = load_waveform(audio_path)
+  data = [[sum(samples) / len(samples) for samples in zip(*data)]]
+  data = resample_numpy(data, sr, sampling_rate)
+  return data
 
 _NONVERBAL_PATTERN = re.compile(
     r"\[(laughter|sigh|confirmation-en|question-en|question-ah|question-oh|"
