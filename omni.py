@@ -114,11 +114,7 @@ special_tokens = {item['content']: item['id'] for item in special_tokens}
 tok = SimpleTokenizer(normal_tokens=data["model"]["vocab"], special_tokens=special_tokens)
 
 def write_waveform(path: str, audio: np.ndarray, sample_rate: int):
-  if audio.ndim == 1:
-    audio = audio[np.newaxis, :]
-  elif audio.shape[0] > audio.shape[1]:
-    # assume (samples, channels) -> transpose
-    audio = audio.T
+  audio = audio[np.newaxis, :]
   channels, _ = audio.shape
   audio_clipped = np.clip(audio, -1.0, 1.0)
   audio_int16 = (audio_clipped * 32767.0).astype(np.int16)
