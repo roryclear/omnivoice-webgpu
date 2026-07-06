@@ -841,12 +841,12 @@ class omni:
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
 
       c_len = cond_input_ids.size(2)
-      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, c_len), AUDIO_MASK_ID, dtype=dtypes.int)
+      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
       batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
       batch_attention_mask = Tensor.zeros((2, 1, MAX_LEN, MAX_LEN), dtype=dtypes.bool)
 
       # Cond (0 ~ B-1)
-      batch_input_ids[0] = cond_input_ids[0]
+      batch_input_ids[0, :, :c_len] = cond_input_ids[0]
       batch_audio_mask[0, :c_len] = cond_audio_mask[0]
       batch_attention_mask[0, :, :c_len, :c_len] = True
 
@@ -875,8 +875,6 @@ class omni:
       
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
       t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
-
-      batch_input_ids = batch_input_ids.pad(((0,0), (0,0), (0, MAX_LEN-batch_input_ids.shape[-1])))
 
       for step in range(NUM_STEPS):
         print("STEP",step,"of",NUM_STEPS)
