@@ -114,14 +114,12 @@ special_tokens = {item['content']: item['id'] for item in special_tokens}
 tok = SimpleTokenizer(normal_tokens=data["model"]["vocab"], special_tokens=special_tokens)
 
 def write_waveform(path: str, audio: np.ndarray, sample_rate: int):
-  audio = audio[np.newaxis, :]
-  channels, _ = audio.shape
+  channels = 1
   audio_clipped = np.clip(audio, -1.0, 1.0)
   audio_int16 = (audio_clipped * 32767.0).astype(np.int16)
-  interleaved = audio_int16.T.flatten()
   byte_rate = sample_rate * channels * 2
   block_align = channels * 2
-  data_size = len(interleaved) * 2
+  data_size = len(audio_int16) * 2
   chunk_size = 36 + data_size
 
   with open(path, "wb") as f:
@@ -138,7 +136,7 @@ def write_waveform(path: str, audio: np.ndarray, sample_rate: int):
     f.write(struct.pack('<H', 16))            # bits per sample
     f.write(b'data')
     f.write(struct.pack('<I', data_size))
-    f.write(struct.pack(f'<{len(interleaved)}h', *interleaved))
+    f.write(struct.pack(f'<{len(audio_int16)}h', *audio_int16))
 
 def load_waveform(audio_path: str):
   with open(audio_path, "rb") as f: data = f.read()
