@@ -113,7 +113,6 @@ special_tokens = data["added_tokens"]
 special_tokens = {item['content']: item['id'] for item in special_tokens}
 tok = SimpleTokenizer(normal_tokens=data["model"]["vocab"], special_tokens=special_tokens)
 
-
 def write_waveform(path: str, audio: np.ndarray, sample_rate: int):
   if audio.ndim == 1:
     audio = audio[np.newaxis, :]
@@ -146,17 +145,20 @@ def write_waveform(path: str, audio: np.ndarray, sample_rate: int):
     f.write(struct.pack(f'<{len(interleaved)}h', *interleaved))
 
 def load_waveform(audio_path: str):
-    data = open(audio_path, "rb").read()
-    sample_rate = struct.unpack_from('<I', data, 24)[0]
-    channels = struct.unpack_from('<H', data, 22)[0]
-    data_offset = data.find(b'data') + 8
-    raw_samples = data[data_offset:]
-    n_samples = len(raw_samples) // 2  # 2 bytes per int16
-    samples = struct.unpack(f'<{n_samples}h', raw_samples)  # 'h' = int16
-    audio = np.array(samples, dtype=np.float32).reshape(-1, channels)
-    # Normalize to [-1.0, 1.0] (matching typical float32 WAV/libraries)
-    audio /= 32768.0
-    return audio.T, sample_rate
+  with open(audio_path, "rb") as f: data = f.read()
+  sample_rate = struct.unpack_from('<I', data, 24)[0]
+  channels = struct.unpack_from('<H', data, 22)[0]
+  data_offset = data.find(b'data') + 8
+  raw_samples = data[data_offset:]
+  n_samples = len(raw_samples) // 2  # int16 = 2 bytes
+  samples = struct.unpack(f'<{n_samples}h', raw_samples)
+  audio = [[] for _ in range(channels)]
+  for i in range(0, len(samples), channels):
+    frame = samples[i:i + channels]
+    for ch in range(channels):
+      audio[ch].append(frame[ch] / 32768.0)
+
+  return audio, sample_rate
 
 def resample_numpy(data, orig_sr, target_sr):
     # data is always multi-channel, shape (channels, samples)
