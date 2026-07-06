@@ -781,14 +781,11 @@ class omni:
               ref_duration,
           )
 
-      ref_wav = np.array([ref_wav])
-
       chunk_size = self.audio_tokenizer.hop_length
-      clip_size = int(ref_wav.shape[-1] % chunk_size)
-      ref_wav = ref_wav[:, :-clip_size] if clip_size > 0 else ref_wav
-      ref_wav_tensor = Tensor(ref_wav.astype(np.float32))
+      clip_size = int(len(ref_wav) % chunk_size)
+      ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
+      ref_wav_tensor = Tensor([ref_wav])
       ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).squeeze(0)
-
       return ref_audio_tokens
 
   def _decode_and_post_process(self, tokens):
