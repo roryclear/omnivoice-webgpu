@@ -113,6 +113,38 @@ special_tokens = data["added_tokens"]
 special_tokens = {item['content']: item['id'] for item in special_tokens}
 tok = SimpleTokenizer(normal_tokens=data["model"]["vocab"], special_tokens=special_tokens)
 
+
+def write_waveform(path: str, audio: np.ndarray, sample_rate: int):
+  if audio.ndim == 1:
+    audio = audio[np.newaxis, :]
+  elif audio.shape[0] > audio.shape[1]:
+    # assume (samples, channels) -> transpose
+    audio = audio.T
+  channels, _ = audio.shape
+  audio_clipped = np.clip(audio, -1.0, 1.0)
+  audio_int16 = (audio_clipped * 32767.0).astype(np.int16)
+  interleaved = audio_int16.T.flatten()
+  byte_rate = sample_rate * channels * 2
+  block_align = channels * 2
+  data_size = len(interleaved) * 2
+  chunk_size = 36 + data_size
+
+  with open(path, "wb") as f:
+    f.write(b'RIFF')
+    f.write(struct.pack('<I', chunk_size))
+    f.write(b'WAVE')
+    f.write(b'fmt ')
+    f.write(struct.pack('<I', 16))            # PCM chunk size
+    f.write(struct.pack('<H', 1))             # PCM format
+    f.write(struct.pack('<H', channels))
+    f.write(struct.pack('<I', sample_rate))
+    f.write(struct.pack('<I', byte_rate))
+    f.write(struct.pack('<H', block_align))
+    f.write(struct.pack('<H', 16))            # bits per sample
+    f.write(b'data')
+    f.write(struct.pack('<I', data_size))
+    f.write(struct.pack(f'<{len(interleaved)}h', *interleaved))
+
 def load_waveform(audio_path: str):
     data = open(audio_path, "rb").read()
     sample_rate = struct.unpack_from('<I', data, 24)[0]
@@ -900,7 +932,6 @@ class omni:
         batch_input_ids.realize()
       return tokens[:, : target_length]
 
-import soundfile as sf
 import pickle
 
 if __name__ == "__main__":
@@ -913,7 +944,7 @@ if __name__ == "__main__":
   ).numpy()
   #pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
-  sf.write("out.wav", audio, SAMPLING_RATE)
+  write_waveform("out.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
   Tensor.manual_seed(0)
@@ -924,7 +955,7 @@ if __name__ == "__main__":
   ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("short1.pkl", "wb"))
   exp = pickle.load(open("short1.pkl", "rb"))
-  sf.write("out1.wav", audio, SAMPLING_RATE)
+  write_waveform("out1.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
   exit()
 
@@ -936,6 +967,6 @@ if __name__ == "__main__":
   ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("long.pkl", "wb"))
   #exp = pickle.load(open("long.pkl", "rb"))
-  sf.write("out_long.wav", audio, 24000)
+  write_waveform("out_long.wav", audio, 24000)
   #np.testing.assert_allclose(exp, audio, rtol=1e-5)
   #exit()
