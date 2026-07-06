@@ -160,6 +160,26 @@ def load_waveform(audio_path: str):
 
   return audio, sample_rate
 
+import bisect
+
+def interp_1d(x, xp, fp):
+  out = []
+  n = len(xp)
+
+  for xi in x:
+    if xi <= xp[0]:
+      out.append(fp[0])
+    elif xi >= xp[-1]:
+      out.append(fp[-1])
+    else:
+      i = bisect.bisect_left(xp, xi)
+      x0, x1 = xp[i - 1], xp[i]
+      y0, y1 = fp[i - 1], fp[i]
+      t = (xi - x0) / (x1 - x0)
+      out.append(y0 + t * (y1 - y0))
+
+  return out
+
 def resample_numpy(data, orig_sr, target_sr):
   # data is always multi-channel, shape (channels, samples)
   duration = len(data[0]) / orig_sr
@@ -168,7 +188,7 @@ def resample_numpy(data, orig_sr, target_sr):
   new_length = int(duration * target_sr)
   new_times = [i * duration / new_length for i in range(new_length)]
   
-  resampled_channels = [np.interp(new_times, orig_times, channel) for channel in data]
+  resampled_channels = [interp_1d(new_times, orig_times, channel) for channel in data]
   return np.array(resampled_channels)
 
 def load_audio(audio_path: str, sampling_rate: int):
