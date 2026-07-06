@@ -895,7 +895,6 @@ class omni:
         sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
         sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
-        tokens = tokens.clone()
         tokens[:, :target_length] = sample_tokens
         batch_input_ids = batch_input_ids.clone()
         batch_input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
