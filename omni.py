@@ -183,7 +183,7 @@ def resample_numpy(data, orig_sr, target_sr):
   new_times = [i * duration / new_length for i in range(new_length)]
   
   resampled_channels = [interp_1d(new_times, orig_times, channel) for channel in data]
-  return np.array(resampled_channels)
+  return resampled_channels
 
 def load_audio(audio_path: str, sampling_rate: int):
   data, sr = load_waveform(audio_path)
@@ -766,12 +766,13 @@ class omni:
     return self._decode_and_post_process(result)    
 
   def create_voice_clone_prompt(self, ref_audio):
-      ref_wav = load_audio(ref_audio, SAMPLING_RATE)
-      ref_rms = float(np.sqrt(np.mean(ref_wav**2)))
+      ref_wav = load_audio(ref_audio, SAMPLING_RATE)[0]
+      ref_rms = math.sqrt(sum(x * x for x in ref_wav) / len(ref_wav))
       if 0 < ref_rms < 0.1:
-          ref_wav = ref_wav * 0.1 / ref_rms
+        scale = 0.1 / ref_rms
+        ref_wav = [x * scale for x in ref_wav]
 
-      ref_duration = ref_wav.shape[-1] / SAMPLING_RATE
+      ref_duration = len(ref_wav) / SAMPLING_RATE
       if ref_duration > 20.0: # todo just limit it to 20s on front end?
           print(
               "Reference audio is %.1fs long (>20s). This may cause slower "
@@ -779,6 +780,8 @@ class omni:
               "quality. We recommend trimming it to 3-10s.",
               ref_duration,
           )
+
+      ref_wav = np.array([ref_wav])
 
       chunk_size = self.audio_tokenizer.hop_length
       clip_size = int(ref_wav.shape[-1] % chunk_size)
