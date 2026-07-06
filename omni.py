@@ -161,13 +161,15 @@ def load_waveform(audio_path: str):
   return audio, sample_rate
 
 def resample_numpy(data, orig_sr, target_sr):
-    # data is always multi-channel, shape (channels, samples)
-    duration = len(data[0]) / orig_sr
-    orig_times = np.linspace(0, duration, len(data[0]), endpoint=False)
-    new_times = np.linspace(0, duration, int(duration * target_sr), endpoint=False)
-    
-    resampled_channels = [np.interp(new_times, orig_times, channel) for channel in data]
-    return np.array(resampled_channels)
+  # data is always multi-channel, shape (channels, samples)
+  duration = len(data[0]) / orig_sr
+
+  orig_times = [i * duration / len(data[0]) for i in range(len(data[0]))]
+  new_length = int(duration * target_sr)
+  new_times = [i * duration / new_length for i in range(new_length)]
+  
+  resampled_channels = [np.interp(new_times, orig_times, channel) for channel in data]
+  return np.array(resampled_channels)
 
 def load_audio(audio_path: str, sampling_rate: int):
   data, sr = load_waveform(audio_path)
