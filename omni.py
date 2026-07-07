@@ -174,7 +174,7 @@ def interp_1d(x, xp, fp):
 
   return out
 
-def resample_numpy(data, orig_sr, target_sr):
+def resample(data, orig_sr, target_sr):
   # data is always multi-channel, shape (channels, samples)
   duration = len(data[0]) / orig_sr
 
@@ -187,8 +187,14 @@ def resample_numpy(data, orig_sr, target_sr):
 
 def load_audio(audio_path: str, sampling_rate: int):
   data, sr = load_waveform(audio_path)
-  data = [[sum(samples) / len(samples) for samples in zip(*data)]]
-  data = resample_numpy(data, sr, sampling_rate)
+  data = [sum(samples) / len(samples) for samples in zip(*data)]
+  data = resample([data], sr, sampling_rate)[0]
+
+  rms = math.sqrt(sum(x * x for x in data) / len(data))
+  if 0 < rms < 0.1:
+    scale = 0.1 / rms
+    data = [x * scale for x in data]
+
   return data
 
 _NONVERBAL_PATTERN = re.compile(
@@ -775,11 +781,7 @@ class omni:
     return self._decode_and_post_process(res)    
 
   def create_voice_clone_prompt(self, ref_audio):
-      ref_wav = load_audio(ref_audio, SAMPLING_RATE)[0]
-      ref_rms = math.sqrt(sum(x * x for x in ref_wav) / len(ref_wav))
-      if 0 < ref_rms < 0.1:
-        scale = 0.1 / ref_rms
-        ref_wav = [x * scale for x in ref_wav]
+      ref_wav = load_audio(ref_audio, SAMPLING_RATE)
 
       ref_duration = len(ref_wav) / SAMPLING_RATE
       if ref_duration > 20.0: # todo just limit it to 20s on front end?
