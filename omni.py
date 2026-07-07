@@ -811,8 +811,7 @@ class omni:
       cond_total_length = len(cond_input_ids[0])
       cond_audio_start_idx = cond_total_length - num_target_tokens - len(ref_audio_tokens[0])
 
-      cond_audio_mask = Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
-      cond_audio_mask[0, cond_audio_start_idx:] = True
+      cond_audio_mask = [[False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)]
       return cond_input_ids, cond_audio_mask
 
 
@@ -871,6 +870,7 @@ class omni:
   def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens):
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
       cond_input_ids = Tensor(cond_input_ids)
+      cond_audio_mask = Tensor(cond_audio_mask)
       cond_input_ids = cond_input_ids.unsqueeze(0)
       c_len = cond_input_ids.size(2)
       batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
