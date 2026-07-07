@@ -762,9 +762,29 @@ class omni:
 
   def generate(self, text, ref_text, ref_audio):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
-    num_target_tokens = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
-    result = self._generate_chunked(target_length=num_target_tokens, text=text, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
-    return self._decode_and_post_process(result)    
+    target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
+
+    avg_tokens_per_char = target_length / len(text)
+    text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
+
+    chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
+    chunks = [""]
+    j = 0
+    for i in range(len(chunks_small)):
+      if chunks_small[i][0] == " ": chunks_small[i] = chunks_small[i][1:]
+      if len(chunks[j]) < text_chunk_len + len(chunks_small[i]):
+        chunks[j] += chunks_small[i]
+      else:
+        chunks.append(chunks_small[i])
+        j+=1
+    print("CHUNKS", len(chunks))
+    res = []
+    for i in range(len(chunks)):
+      target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
+      ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
+      res.append(ret)
+
+    return self._decode_and_post_process(res)    
 
   def create_voice_clone_prompt(self, ref_audio):
       ref_wav = load_audio(ref_audio, SAMPLING_RATE)[0]
@@ -815,28 +835,6 @@ class omni:
       return cond_input_ids, cond_audio_mask
 
 
-  def _generate_chunked(self, target_length, text, ref_text, ref_audio_tokens):
-      avg_tokens_per_char = target_length / len(text)
-      text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
-
-      chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
-      chunks = [""]
-      j = 0
-      for i in range(len(chunks_small)):
-          if chunks_small[i][0] == " ": chunks_small[i] = chunks_small[i][1:]
-          if len(chunks[j]) < text_chunk_len + len(chunks_small[i]):
-              chunks[j] += chunks_small[i]
-          else:
-              chunks.append(chunks_small[i])
-              j+=1
-      print("CHUNKS", len(chunks))
-      chunk_results = []
-      for i in range(len(chunks)):
-        target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
-        ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
-        chunk_results.append(ret)
-      
-      return chunk_results
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, tokens, layer_ids, c_len_var, t_len_var):
