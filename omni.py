@@ -699,6 +699,7 @@ class audio_tokenizer:
     self.fc = nn.Linear(1024, 1024)
     self.fc2 = nn.Linear(1024, 256)
 
+  # todo jit
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values):
     e_semantic_input = self._extract_semantic_features(input_values)
@@ -719,6 +720,7 @@ class audio_tokenizer:
     semantic_features = semantic_features[:, :: self.semantic_downsample_factor, :]
     return semantic_features
 
+  # todo jit
   def decode(self, audio_codes,):
       audio_codes = audio_codes.transpose(0, 1)
       quantized_out = 0.0
@@ -809,10 +811,7 @@ class omni:
 
       style_tokens = Tensor(style_tokens)
       text_tokens = Tensor(text_tokens)
-      parts = [style_tokens, text_tokens]
-      parts.append(ref_audio_tokens)
-      parts.append(target_audio_tokens)
-      cond_input_ids = Tensor.cat(*parts, dim=1)
+      cond_input_ids = Tensor.cat(style_tokens, text_tokens, ref_audio_tokens, target_audio_tokens, dim=1)
       cond_total_length = cond_input_ids.shape[1]
       cond_audio_start_idx = cond_total_length - num_target_tokens
       cond_audio_start_idx -= ref_audio_tokens.size(-1)
