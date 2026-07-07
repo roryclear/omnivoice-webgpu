@@ -762,8 +762,7 @@ class omni:
 
   def generate(self, text, ref_text, ref_audio):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
-    num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
-
+    num_target_tokens = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
     result = self._generate_chunked(target_length=num_target_tokens, text=text, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens) 
     return self._decode_and_post_process(result)    
 
@@ -787,7 +786,7 @@ class omni:
       clip_size = int(len(ref_wav) % chunk_size)
       ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
       ref_audio_tokens = self.audio_tokenizer.encode(Tensor([[ref_wav]])).squeeze(0)
-      return ref_audio_tokens
+      return ref_audio_tokens.numpy()
 
   def _decode_and_post_process(self, tokens):
       chunk_audios = [self.audio_tokenizer.decode(t.unsqueeze(0))[0] for t in tokens]
@@ -808,9 +807,9 @@ class omni:
       text_tokens = [tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")] * NUM_AUDIO_CODEBOOK
 
       target_audio_tokens = Tensor.full((NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.int)
-
       style_tokens = Tensor(style_tokens)
       text_tokens = Tensor(text_tokens)
+      ref_audio_tokens = Tensor(ref_audio_tokens)
       cond_input_ids = Tensor.cat(style_tokens, text_tokens, ref_audio_tokens, target_audio_tokens, dim=1)
       cond_total_length = cond_input_ids.shape[1]
       cond_audio_start_idx = cond_total_length - num_target_tokens
@@ -838,7 +837,7 @@ class omni:
       print("CHUNKS", len(chunks))
       chunk_results = []
       for i in range(len(chunks)):
-        target_length = self._estimate_target_tokens(chunks[i], ref_text, ref_audio_tokens.size(-1))
+        target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
         ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
         chunk_results.append(ret)
       
