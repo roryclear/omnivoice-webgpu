@@ -809,22 +809,22 @@ class omni:
   ):  
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
-      style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
+      style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1)
 
       # Build text tokens
       full_text = ref_text.strip() + " " + text.strip()
       wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
-      text_tokens = Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1).unsqueeze(0)
+      text_tokens = Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1)
 
       # Target: all MASK
-      target_audio_tokens = Tensor.full((1, NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.int)
+      target_audio_tokens = Tensor.full((NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.int)
 
       # Conditional input
       parts = [style_tokens, text_tokens]
-      parts.append(ref_audio_tokens.unsqueeze(0))
+      parts.append(ref_audio_tokens)
       parts.append(target_audio_tokens)
-      cond_input_ids = Tensor.cat(*parts, dim=2)
-      cond_total_length = cond_input_ids.shape[2]
+      cond_input_ids = Tensor.cat(*parts, dim=1)
+      cond_total_length = cond_input_ids.shape[1]
       cond_audio_start_idx = cond_total_length - num_target_tokens
       cond_audio_start_idx -= ref_audio_tokens.size(-1)
 
@@ -889,7 +889,7 @@ class omni:
   def _generate_iterative(
       self, text, target_length, ref_text, ref_audio_tokens):
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
-
+      cond_input_ids = cond_input_ids.unsqueeze(0)
       c_len = cond_input_ids.size(2)
       batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
       batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
