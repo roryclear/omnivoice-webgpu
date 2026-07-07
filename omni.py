@@ -801,18 +801,14 @@ class omni:
 
   def _prepare_inference_inputs(self, text, num_target_tokens, ref_text ,ref_audio_tokens):  
       # todo add lang / instruct?
-      style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
-      style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1)
 
-      # Build text tokens
-      full_text = ref_text.strip() + " " + text.strip()
-      wrapped_text = f"<|text_start|>{full_text}<|text_end|>"
-      text_tokens = Tensor(tok.encode(wrapped_text)).repeat(NUM_AUDIO_CODEBOOK, 1)
+      style_tokens = [tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")] * NUM_AUDIO_CODEBOOK
+      text_tokens = [tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")] * NUM_AUDIO_CODEBOOK
 
-      # Target: all MASK
       target_audio_tokens = Tensor.full((NUM_AUDIO_CODEBOOK, num_target_tokens), AUDIO_MASK_ID, dtype=dtypes.int)
 
-      # Conditional input
+      style_tokens = Tensor(style_tokens)
+      text_tokens = Tensor(text_tokens)
       parts = [style_tokens, text_tokens]
       parts.append(ref_audio_tokens)
       parts.append(target_audio_tokens)
