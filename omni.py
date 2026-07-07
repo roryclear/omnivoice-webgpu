@@ -758,7 +758,7 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  def generate(self, text=None, ref_text=None, ref_audio=None):
+  def generate(self, text, ref_text, ref_audio):
     ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     num_target_tokens = self._estimate_target_tokens(text, ref_text, ref_audio_tokens.size(-1),)
 
@@ -800,13 +800,7 @@ class omni:
       estimated_duration = target_weight / speed_factor
       return int(estimated_duration)
 
-  def _prepare_inference_inputs(
-      self,
-      text: str,
-      num_target_tokens: int,
-      ref_text=None,
-      ref_audio_tokens=None,
-  ):  
+  def _prepare_inference_inputs(self, text, num_target_tokens, ref_text ,ref_audio_tokens):  
       # todo add lang / instruct?
       style_text = "<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>"
       style_tokens = Tensor([tok.encode(style_text)]).repeat(NUM_AUDIO_CODEBOOK, 1)
@@ -833,8 +827,7 @@ class omni:
       return cond_input_ids, cond_audio_mask
 
 
-  def _generate_chunked(
-      self, target_length, text, ref_text, ref_audio_tokens):
+  def _generate_chunked(self, target_length, text, ref_text, ref_audio_tokens):
       avg_tokens_per_char = target_length / len(text)
       text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
 
@@ -886,8 +879,7 @@ class omni:
     scores_out[:, :t_len_var] += Tensor.where(tokens[:, :t_len_var] == AUDIO_MASK_ID, scores[:, :t_len_var], -float("inf"))
     return pred_tokens, scores_out
 
-  def _generate_iterative(
-      self, text, target_length, ref_text, ref_audio_tokens):
+  def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens):
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
       cond_input_ids = cond_input_ids.unsqueeze(0)
       c_len = cond_input_ids.size(2)
