@@ -793,12 +793,15 @@ class omni:
       chunk_size = self.audio_tokenizer.hop_length
       clip_size = int(len(ref_wav) % chunk_size)
       ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
-      ref_audio_tokens = self.encode(Tensor([[ref_wav]])).squeeze(0)
+      wav_len = len(ref_wav)
+      ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
+      ref_audio_tokens = self.encode(Tensor([[ref_wav]]), wav_len=wav_len).squeeze(0)
       return ref_audio_tokens.numpy()
 
   # todo jit, move back to audio_tokenizer?
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
-  def encode(self, input_values):
+  def encode(self, input_values, wav_len):
+    input_values = input_values[:, :, :wav_len]
     e_semantic_input = self.audio_tokenizer._extract_semantic_features(input_values)
     e_semantic = self.audio_tokenizer.encoder_semantic(e_semantic_input.transpose(1, 2))
     e_acoustic = self.audio_tokenizer.acoustic_encoder(input_values)
@@ -833,8 +836,6 @@ class omni:
 
       cond_audio_mask = [[False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)]
       return cond_input_ids, cond_audio_mask
-
-
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, tokens, layer_ids, c_len_var, t_len_var):
