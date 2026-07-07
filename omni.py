@@ -934,8 +934,8 @@ import pickle
 
 if __name__ == "__main__":
   model = omni()
+  # todo, I think the voice files have to be longer than a chunk to work
   Tensor.manual_seed(0)
-  
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
@@ -956,13 +956,13 @@ if __name__ == "__main__":
   exp = pickle.load(open("short1.pkl", "rb"))
   write_waveform("out1.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
+  
   Tensor.manual_seed(0)
   audio = model.generate(
       # todo, why is end bad??
       text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
       ref_audio="voice3.wav",
-      ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see",
+      ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
   ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("short2.pkl", "wb"))
   exp = pickle.load(open("short2.pkl", "rb"))
