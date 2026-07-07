@@ -801,16 +801,16 @@ class omni:
   @TinyJit
   def encode_jit(self, input_values):
     e_semantic_input = self.audio_tokenizer._extract_semantic_features(input_values)
-    return self.audio_tokenizer.encoder_semantic(e_semantic_input.transpose(1, 2))
+    e_semantic = self.audio_tokenizer.encoder_semantic(e_semantic_input.transpose(1, 2))
+    e_acoustic = self.audio_tokenizer.acoustic_encoder(input_values)
+    embeddings = Tensor.cat(e_acoustic, e_semantic, dim=1)
+    return embeddings
 
   # todo jit, move back to audio_tokenizer?
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values, wav_len):
-    e_semantic = self.encode_jit(input_values=input_values)
-    e_semantic = e_semantic[:, :, :int(wav_len / self.audio_tokenizer.hop_length)]
-    input_values = input_values[:, :, :wav_len]
-    e_acoustic = self.audio_tokenizer.acoustic_encoder(input_values)
-    embeddings = Tensor.cat(e_acoustic, e_semantic, dim=1)
+    embeddings = self.encode_jit(input_values)
+    embeddings = embeddings[:, :, :int(wav_len / self.audio_tokenizer.hop_length)]
     embeddings = self.audio_tokenizer.fc(embeddings.transpose(1, 2)).transpose(1, 2)
     audio_codes = self.audio_tokenizer.quantizer.encode(embeddings)
     audio_codes = audio_codes.transpose(0, 1)
