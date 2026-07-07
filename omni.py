@@ -795,11 +795,13 @@ class omni:
       ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
       wav_len = len(ref_wav)
       ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
-      ref_audio_tokens = self.encode(Tensor([[ref_wav]]), wav_len=wav_len).squeeze(0)
+      ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
       return ref_audio_tokens.numpy()
 
+  # todo jit, move back to audio_tokenizer?
+  # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   @TinyJit
-  def encode_jit(self, input_values):
+  def encode(self, input_values):
     e_semantic_input = self.audio_tokenizer._extract_semantic_features(input_values)
     e_semantic = self.audio_tokenizer.encoder_semantic(e_semantic_input.transpose(1, 2))
     e_acoustic = self.audio_tokenizer.acoustic_encoder(input_values)
@@ -807,13 +809,6 @@ class omni:
     embeddings = self.audio_tokenizer.fc(embeddings.transpose(1, 2)).transpose(1, 2)
     audio_codes = self.audio_tokenizer.quantizer.encode(embeddings)
     return audio_codes.transpose(0, 1)
-
-
-  # todo jit, move back to audio_tokenizer?
-  # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
-  def encode(self, input_values, wav_len):
-    audio_codes = self.encode_jit(input_values)
-    return audio_codes[:, :, :int(wav_len / self.audio_tokenizer.hop_length)]
 
   def _decode_and_post_process(self, tokens):
       chunk_audios = [self.audio_tokenizer.decode(t.unsqueeze(0))[0] for t in tokens]
