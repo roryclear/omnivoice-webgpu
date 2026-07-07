@@ -806,15 +806,11 @@ class omni:
       style_tokens2 = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
       text_tokens2 = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
       target_audio_tokens2 = [AUDIO_MASK_ID for _ in range(num_target_tokens)]
-      ref_audio_tokens2 = ref_audio_tokens.tolist()
-      for i in range(len(ref_audio_tokens2)):
-        ref_audio_tokens2[i] = style_tokens2 + text_tokens2 + ref_audio_tokens2[i] + target_audio_tokens2
-
+      cond_input_ids = []
+      for i in range(ref_audio_tokens.shape[0]): cond_input_ids.append(style_tokens2 + text_tokens2 + ref_audio_tokens[i].tolist() + target_audio_tokens2)
       ref_audio_tokens = Tensor(ref_audio_tokens)
-      cond_input_ids = Tensor(ref_audio_tokens2)
-      cond_total_length = cond_input_ids.shape[1]
-      cond_audio_start_idx = cond_total_length - num_target_tokens
-      cond_audio_start_idx -= ref_audio_tokens.size(-1)
+      cond_total_length = len(cond_input_ids[0])
+      cond_audio_start_idx = cond_total_length - num_target_tokens - ref_audio_tokens.size(-1)
 
       cond_audio_mask = Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
       cond_audio_mask[0, cond_audio_start_idx:] = True
@@ -875,6 +871,7 @@ class omni:
 
   def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens):
       cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
+      cond_input_ids = Tensor(cond_input_ids)
       cond_input_ids = cond_input_ids.unsqueeze(0)
       c_len = cond_input_ids.size(2)
       batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
