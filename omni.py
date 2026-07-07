@@ -801,8 +801,10 @@ class omni:
   # todo jit, move back to audio_tokenizer?
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values, wav_len):
-    input_values = input_values[:, :, :wav_len]
     e_semantic_input = self.audio_tokenizer._extract_semantic_features(input_values)
+    e_semantic_input = e_semantic_input[:, :int(wav_len / self.audio_tokenizer.hop_length), :]
+    input_values = input_values[:, :, :wav_len]
+
     e_semantic = self.audio_tokenizer.encoder_semantic(e_semantic_input.transpose(1, 2))
     e_acoustic = self.audio_tokenizer.acoustic_encoder(input_values)
     embeddings = Tensor.cat(e_acoustic, e_semantic, dim=1)
@@ -970,7 +972,7 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   write_waveform("out2.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  
+  exit()
   NUM_STEPS = 32
   Tensor.manual_seed(42)
   audio = model.generate(
