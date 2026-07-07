@@ -803,14 +803,13 @@ class omni:
   def _prepare_inference_inputs(self, text, num_target_tokens, ref_text, ref_audio_tokens):  
       # todo add lang / instruct?
 
-      style_tokens2 = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
-      text_tokens2 = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
-      target_audio_tokens2 = [AUDIO_MASK_ID for _ in range(num_target_tokens)]
+      style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
+      text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
+      target_audio_tokens = [AUDIO_MASK_ID for _ in range(num_target_tokens)]
       cond_input_ids = []
-      for i in range(ref_audio_tokens.shape[0]): cond_input_ids.append(style_tokens2 + text_tokens2 + ref_audio_tokens[i].tolist() + target_audio_tokens2)
-      ref_audio_tokens = Tensor(ref_audio_tokens)
+      for i in range(ref_audio_tokens.shape[0]): cond_input_ids.append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
       cond_total_length = len(cond_input_ids[0])
-      cond_audio_start_idx = cond_total_length - num_target_tokens - ref_audio_tokens.size(-1)
+      cond_audio_start_idx = cond_total_length - num_target_tokens - len(ref_audio_tokens[0])
 
       cond_audio_mask = Tensor.zeros(1, cond_total_length, dtype=dtypes.bool)
       cond_audio_mask[0, cond_audio_start_idx:] = True
