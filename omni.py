@@ -798,10 +798,14 @@ class omni:
       ref_audio_tokens = self.encode(Tensor([[ref_wav]]), wav_len=wav_len).squeeze(0)
       return ref_audio_tokens.numpy()
 
+  @TinyJit
+  def encode_jit(self, input_values):
+    return self.audio_tokenizer._extract_semantic_features(input_values)
+
   # todo jit, move back to audio_tokenizer?
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values, wav_len):
-    e_semantic_input = self.audio_tokenizer._extract_semantic_features(input_values)
+    e_semantic_input = self.encode_jit(input_values=input_values)
     e_semantic_input = e_semantic_input[:, :int(wav_len / self.audio_tokenizer.hop_length), :]
     input_values = input_values[:, :, :wav_len]
 
@@ -960,7 +964,7 @@ if __name__ == "__main__":
   exp = pickle.load(open("short1.pkl", "rb"))
   write_waveform("out1.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
+  exit()
   Tensor.manual_seed(0)
   audio = model.generate(
       # todo, why is end bad??
