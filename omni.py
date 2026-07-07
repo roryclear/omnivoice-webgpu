@@ -701,7 +701,7 @@ class audio_tokenizer:
 
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   def encode(self, input_values):
-    e_semantic_input = self._extract_semantic_features(input_values).detach()
+    e_semantic_input = self._extract_semantic_features(input_values)
     e_semantic = self.encoder_semantic(e_semantic_input.transpose(1, 2))
     e_acoustic = self.acoustic_encoder(input_values)
     embeddings = Tensor.cat(e_acoustic, e_semantic, dim=1)
@@ -784,8 +784,7 @@ class omni:
       chunk_size = self.audio_tokenizer.hop_length
       clip_size = int(len(ref_wav) % chunk_size)
       ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
-      ref_wav_tensor = Tensor([ref_wav])
-      ref_audio_tokens = self.audio_tokenizer.encode(ref_wav_tensor.unsqueeze(0),).squeeze(0)
+      ref_audio_tokens = self.audio_tokenizer.encode(Tensor([[ref_wav]])).squeeze(0)
       return ref_audio_tokens
 
   def _decode_and_post_process(self, tokens):
