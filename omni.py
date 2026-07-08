@@ -870,7 +870,6 @@ class omni:
     batch_audio_mask[0][:c_len] = cond_audio_mask
     batch_audio_mask[1][:target_length] = cond_audio_mask[-target_length:]
 
-
     batch_attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
     for i in range(c_len): batch_attention_mask[0][0][i][:c_len] = [True] * c_len
     for i in range(target_length): batch_attention_mask[1][0][i][:target_length] = [True] * target_length
@@ -900,7 +899,7 @@ class omni:
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(NUM_STEPS):
       print("STEP",step,"of",NUM_STEPS)
-      pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=Tensor(batch_audio_mask)[:, :c_len_var], 
+      pred_tokens, scores = self(batch_input_ids=batch_input_ids[:, :, :c_len_var], batch_audio_mask=Tensor(batch_audio_mask)[:, :c_len_var], 
                           batch_attention_mask=Tensor(batch_attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=Tensor(layer_ids),
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
@@ -915,7 +914,6 @@ class omni:
       sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
       tokens[:, :target_length] = sample_tokens
-      batch_input_ids = batch_input_ids.clone()
       batch_input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
       batch_input_ids[1: 2, :, :target_length] = sample_tokens
       batch_input_ids.realize()
@@ -959,7 +957,7 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   write_waveform("out2.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  exit()
+  #exit()
   NUM_STEPS = 32
   Tensor.manual_seed(42)
   audio = model.generate(
