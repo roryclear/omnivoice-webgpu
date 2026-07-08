@@ -174,7 +174,7 @@ def interp_1d(x, xp, fp):
 
   return out
 
-def resample_numpy(data, orig_sr, target_sr):
+def resample(data, orig_sr, target_sr):
   # data is always multi-channel, shape (channels, samples)
   duration = len(data[0]) / orig_sr
 
@@ -187,8 +187,14 @@ def resample_numpy(data, orig_sr, target_sr):
 
 def load_audio(audio_path: str, sampling_rate: int):
   data, sr = load_waveform(audio_path)
-  data = [[sum(samples) / len(samples) for samples in zip(*data)]]
-  data = resample_numpy(data, sr, sampling_rate)
+  data = [sum(samples) / len(samples) for samples in zip(*data)]
+  data = resample([data], sr, sampling_rate)[0]
+
+  rms = math.sqrt(sum(x * x for x in data) / len(data))
+  if 0 < rms < 0.1:
+    scale = 0.1 / rms
+    data = [x * scale for x in data]
+
   return data
 
 _NONVERBAL_PATTERN = re.compile(
@@ -699,18 +705,6 @@ class audio_tokenizer:
     self.fc = nn.Linear(1024, 1024)
     self.fc2 = nn.Linear(1024, 256)
 
-  # todo jit
-  # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
-  def encode(self, input_values):
-    e_semantic_input = self._extract_semantic_features(input_values)
-    e_semantic = self.encoder_semantic(e_semantic_input.transpose(1, 2))
-    e_acoustic = self.acoustic_encoder(input_values)
-    embeddings = Tensor.cat(e_acoustic, e_semantic, dim=1)
-    embeddings = self.fc(embeddings.transpose(1, 2)).transpose(1, 2)
-    audio_codes = self.quantizer.encode(embeddings)
-    audio_codes = audio_codes.transpose(0, 1)
-    return audio_codes
-
   def _extract_semantic_features(self, input_values):
     input_values = input_values[:, 0, :]
     input_values = Tensor.pad(input_values, (160, 160))
@@ -782,16 +776,13 @@ class omni:
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
       ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
-      res.append(ret)
+      wv = self._decode_and_post_process_chunk(ret).numpy().tolist()
+      res.extend(wv)
 
-    return self._decode_and_post_process(res)    
+    return res
 
   def create_voice_clone_prompt(self, ref_audio):
-      ref_wav = load_audio(ref_audio, SAMPLING_RATE)[0]
-      ref_rms = math.sqrt(sum(x * x for x in ref_wav) / len(ref_wav))
-      if 0 < ref_rms < 0.1:
-        scale = 0.1 / ref_rms
-        ref_wav = [x * scale for x in ref_wav]
+      ref_wav = load_audio(ref_audio, SAMPLING_RATE)
 
       ref_duration = len(ref_wav) / SAMPLING_RATE
       if ref_duration > 20.0: # todo just limit it to 20s on front end?
@@ -805,13 +796,24 @@ class omni:
       chunk_size = self.audio_tokenizer.hop_length
       clip_size = int(len(ref_wav) % chunk_size)
       ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
-      ref_audio_tokens = self.audio_tokenizer.encode(Tensor([[ref_wav]])).squeeze(0)
+      wav_len = len(ref_wav)
+      ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
+      ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
       return ref_audio_tokens.numpy()
 
-  def _decode_and_post_process(self, tokens):
-      chunk_audios = [self.audio_tokenizer.decode(t.unsqueeze(0))[0] for t in tokens]
-      audio_waveform = Tensor.cat(*chunk_audios, dim=-1)
-      return audio_waveform.squeeze(0)
+  # todo jit, move back to audio_tokenizer?
+  # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
+  @TinyJit
+  def encode(self, input_values):
+    e_semantic_input = self.audio_tokenizer._extract_semantic_features(input_values)
+    e_semantic = self.audio_tokenizer.encoder_semantic(e_semantic_input.transpose(1, 2))
+    e_acoustic = self.audio_tokenizer.acoustic_encoder(input_values)
+    embeddings = Tensor.cat(e_acoustic, e_semantic, dim=1)
+    embeddings = self.audio_tokenizer.fc(embeddings.transpose(1, 2)).transpose(1, 2)
+    audio_codes = self.audio_tokenizer.quantizer.encode(embeddings)
+    return audio_codes.transpose(0, 1)
+
+  def _decode_and_post_process_chunk(self, tokens): return self.audio_tokenizer.decode(tokens.unsqueeze(0))[0, 0]
 
   def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
       ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
@@ -833,8 +835,6 @@ class omni:
 
       cond_audio_mask = [[False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)]
       return cond_input_ids, cond_audio_mask
-
-
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, tokens, layer_ids, c_len_var, t_len_var):
@@ -941,7 +941,7 @@ if __name__ == "__main__":
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
-  ).numpy()
+  )
   #pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
   write_waveform("out.wav", audio, SAMPLING_RATE)
@@ -952,7 +952,7 @@ if __name__ == "__main__":
       text="Testing testing one two three, this has different text for me to read, so I can test that the tiny jit is working, thank you for listening",
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
-  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("short1.pkl", "wb"))
   exp = pickle.load(open("short1.pkl", "rb"))
   write_waveform("out1.wav", audio, SAMPLING_RATE)
@@ -964,7 +964,7 @@ if __name__ == "__main__":
       text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
       ref_audio="voice3.wav",
       ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
-  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("short2.pkl", "wb"))
   exp = pickle.load(open("short2.pkl", "rb"))
   write_waveform("out2.wav", audio, SAMPLING_RATE)
@@ -973,10 +973,10 @@ if __name__ == "__main__":
   NUM_STEPS = 32
   Tensor.manual_seed(42)
   audio = model.generate(
-      text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
+      text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
       ref_audio="voice3.wav",
       ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
-  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("long.pkl", "wb"))
   #exp = pickle.load(open("long.pkl", "rb"))
   write_waveform("out_long.wav", audio, 24000)
