@@ -216,21 +216,21 @@ class Qwen3RMSNorm:
     return self.weight * hidden_states
   
 def repeat_kv(hidden_states, n_rep: int):
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
-    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+  batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+  hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+  return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
-    cos = cos.unsqueeze(unsqueeze_dim)
-    sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed, k_embed
+  cos = cos.unsqueeze(unsqueeze_dim)
+  sin = sin.unsqueeze(unsqueeze_dim)
+  q_embed = (q * cos) + (rotate_half(q) * sin)
+  k_embed = (k * cos) + (rotate_half(k) * sin)
+  return q_embed, k_embed
 
 def rotate_half(x):
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return Tensor.cat(-x2, x1, dim=-1)
+  x1 = x[..., : x.shape[-1] // 2]
+  x2 = x[..., x.shape[-1] // 2 :]
+  return Tensor.cat(-x2, x1, dim=-1)
 
 class Qwen3Attention:
   def __init__(self):
@@ -729,8 +729,7 @@ class audio_tokenizer:
       quantized_acoustic = self.fc2(quantized.transpose(1, 2)).transpose(1, 2)
       hidden_state = self.acoustic_decoder.conv1(quantized_acoustic)
 
-      for layer in self.acoustic_decoder.block:
-          hidden_state = layer(hidden_state)
+      for layer in self.acoustic_decoder.block: hidden_state = layer(hidden_state)
 
       hidden_state = self.acoustic_decoder.snake1(hidden_state)
       hidden_state = self.acoustic_decoder.conv2(hidden_state)
@@ -784,27 +783,17 @@ class omni:
 
     return res
 
-  def create_voice_clone_prompt(self, ref_audio):
-      ref_wav = load_audio(ref_audio, SAMPLING_RATE)
+  def create_voice_clone_prompt(self, ref_audio): # todo limit to 20s
+    ref_wav = load_audio(ref_audio, SAMPLING_RATE)
 
-      ref_duration = len(ref_wav) / SAMPLING_RATE
-      if ref_duration > 20.0: # todo just limit it to 20s on front end?
-          print(
-              "Reference audio is %.1fs long (>20s). This may cause slower "
-              "generation, higher memory usage, and degraded voice cloning "
-              "quality. We recommend trimming it to 3-10s.",
-              ref_duration,
-          )
+    chunk_size = self.audio_tokenizer.hop_length
+    clip_size = int(len(ref_wav) % chunk_size)
+    ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
+    wav_len = len(ref_wav)
+    ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
+    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
+    return ref_audio_tokens.numpy()
 
-      chunk_size = self.audio_tokenizer.hop_length
-      clip_size = int(len(ref_wav) % chunk_size)
-      ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
-      wav_len = len(ref_wav)
-      ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
-      ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
-      return ref_audio_tokens.numpy()
-
-  # todo jit, move back to audio_tokenizer?
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   @TinyJit
   def encode(self, input_values):
