@@ -855,29 +855,23 @@ class omni:
     style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
     text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
+    c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + len(target_audio_tokens)
+    cond_audio_start_idx = c_len - target_length - len(ref_audio_tokens[0])
+
     cond_input_ids = []
     for i in range(ref_audio_tokens.shape[0]): cond_input_ids.append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
-
-    cond_total_length = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + len(target_audio_tokens)
-    cond_audio_start_idx = cond_total_length - target_length - len(ref_audio_tokens[0])
-
-
     cond_input_ids = Tensor(cond_input_ids)
     cond_input_ids = cond_input_ids.unsqueeze(0)
-    c_len = cond_input_ids.size(2)
-    batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
-
-    # Cond (0 ~ B-1)
+    
+    batch_input_ids = [[[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)] for _ in range(2)]
+    batch_input_ids = Tensor(batch_input_ids)
     batch_input_ids[0, :, :c_len] = cond_input_ids[0]
+    batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
 
-
-    cond_audio_mask = ([False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx))
+    cond_audio_mask = ([False] * cond_audio_start_idx + [True] * (c_len - cond_audio_start_idx))
     batch_audio_mask = [[False for _ in range(MAX_LEN)] for _ in range(2)]
     batch_audio_mask[0][:c_len] = cond_audio_mask
     batch_audio_mask[1][:target_length] = cond_audio_mask[-target_length:]
-
-    # Uncond (B ~ 2B-1)
-    batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
 
 
     batch_attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
@@ -906,7 +900,7 @@ class omni:
 
     layer_ids = [[i] for i in range(NUM_AUDIO_CODEBOOK)]
 
-    
+
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(NUM_STEPS):
       print("STEP",step,"of",NUM_STEPS)
