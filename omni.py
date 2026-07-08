@@ -189,8 +189,8 @@ def load_audio(audio_path: str, sampling_rate: int):
   data, sr = load_waveform(audio_path)
   data = [sum(samples) / len(samples) for samples in zip(*data)]
   data = resample([data], sr, sampling_rate)[0]
-
   rms = math.sqrt(sum(x * x for x in data) / len(data))
+  print("rms =",rms)
   if 0 < rms < 0.1:
     scale = 0.1 / rms
     data = [x * scale for x in data]
@@ -926,6 +926,17 @@ if __name__ == "__main__":
   # todo, I think the voice files have to be longer than a chunk to work
   Tensor.manual_seed(0)
   audio = model.generate(
+      text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
+      ref_audio="voice4.wav",
+      ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
+  )
+  #pickle.dump(audio, open("short4.pkl", "wb"))
+  exp = pickle.load(open("short4.pkl", "rb"))
+  write_waveform("out4.wav", audio, SAMPLING_RATE)
+  np.testing.assert_allclose(exp, audio, rtol=1e-5)
+
+  Tensor.manual_seed(0)
+  audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
@@ -957,7 +968,7 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   write_waveform("out2.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  #exit()
+  exit()
   NUM_STEPS = 32
   Tensor.manual_seed(42)
   audio = model.generate(
