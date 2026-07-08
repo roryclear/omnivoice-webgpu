@@ -900,6 +900,7 @@ class omni:
           num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
           if num > MAX_LEN:
             print("sched too big:",num,"MAX_LEN =",MAX_LEN)
+            exit()
           sched.append(int(num))
           rem -= int(num)
       print("sched =",sched)
