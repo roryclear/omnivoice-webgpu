@@ -776,9 +776,10 @@ class omni:
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
       ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
-      res.append(ret)
+      wv = self._decode_and_post_process_chunk(ret).numpy().tolist()
+      res.extend(wv)
 
-    return self._decode_and_post_process(res)    
+    return res
 
   def create_voice_clone_prompt(self, ref_audio):
       ref_wav = load_audio(ref_audio, SAMPLING_RATE)
@@ -812,10 +813,7 @@ class omni:
     audio_codes = self.audio_tokenizer.quantizer.encode(embeddings)
     return audio_codes.transpose(0, 1)
 
-  def _decode_and_post_process(self, tokens):
-      chunk_audios = [self.audio_tokenizer.decode(t.unsqueeze(0))[0] for t in tokens]
-      audio_waveform = Tensor.cat(*chunk_audios, dim=-1)
-      return audio_waveform.squeeze(0)
+  def _decode_and_post_process_chunk(self, tokens): return self.audio_tokenizer.decode(tokens.unsqueeze(0))[0, 0]
 
   def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
       ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
@@ -943,7 +941,7 @@ if __name__ == "__main__":
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
       ref_audio="voice.wav",
       ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
-  ).numpy()
+  )
   #pickle.dump(audio, open("short.pkl", "wb"))
   exp = pickle.load(open("short.pkl", "rb"))
   write_waveform("out.wav", audio, SAMPLING_RATE)
@@ -954,7 +952,7 @@ if __name__ == "__main__":
       text="Testing testing one two three, this has different text for me to read, so I can test that the tiny jit is working, thank you for listening",
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
-  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("short1.pkl", "wb"))
   exp = pickle.load(open("short1.pkl", "rb"))
   write_waveform("out1.wav", audio, SAMPLING_RATE)
@@ -966,19 +964,19 @@ if __name__ == "__main__":
       text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
       ref_audio="voice3.wav",
       ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
-  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("short2.pkl", "wb"))
   exp = pickle.load(open("short2.pkl", "rb"))
   write_waveform("out2.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  exit()
+
   NUM_STEPS = 32
   Tensor.manual_seed(42)
   audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
       ref_audio="voice3.wav",
       ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
-  ).numpy() # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("long.pkl", "wb"))
   #exp = pickle.load(open("long.pkl", "rb"))
   write_waveform("out_long.wav", audio, 24000)
