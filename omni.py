@@ -755,8 +755,9 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  def generate(self, text, ref_text, ref_audio):
-    ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
+  def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None):
+    if ref_audio_tokens is None: ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
+    #pickle.dump((ref_text, ref_audio_tokens), open("voice4.pkl", "wb"))
     target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
 
     avg_tokens_per_char = target_length / len(text)
@@ -816,11 +817,11 @@ class omni:
     return audio_codes.transpose(0, 1)
 
   def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
-      ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
-      speed_factor = ref_weight / num_ref_audio_tokens
-      target_weight = sum(CHAR_WEIGHTS[ord(c)] for c in text)
-      estimated_duration = target_weight / speed_factor
-      return int(estimated_duration)
+    ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
+    speed_factor = ref_weight / num_ref_audio_tokens
+    target_weight = sum(CHAR_WEIGHTS[ord(c)] for c in text)
+    estimated_duration = target_weight / speed_factor
+    return int(estimated_duration)
 
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, tokens, layer_ids, c_len_var, t_len_var):
@@ -925,10 +926,13 @@ if __name__ == "__main__":
   model = omni()
   # todo, I think the voice files have to be longer than a chunk to work
   Tensor.manual_seed(0)
+  ref_text, ref_audio_tokens = pickle.load(open("voice4.pkl", "rb"))
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
       ref_audio="voice4.wav",
-      ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
+      ref_text=ref_text,
+      ref_audio_tokens=ref_audio_tokens
+
   )
   #pickle.dump(audio, open("short4.pkl", "wb"))
   exp = pickle.load(open("short4.pkl", "rb"))
