@@ -926,7 +926,7 @@ class omni:
       batch_input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
       batch_input_ids[1: 2, :, :target_length] = sample_tokens
       batch_input_ids.realize()
-      return tokens
+    return tokens
 
 import pickle
 
