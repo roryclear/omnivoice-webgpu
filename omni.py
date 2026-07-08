@@ -852,80 +852,80 @@ class omni:
     return pred_tokens, scores_out
 
   def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens):
-      style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
-      text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
-      target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
-      cond_input_ids = []
-      for i in range(ref_audio_tokens.shape[0]): cond_input_ids.append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
-      cond_total_length = len(cond_input_ids[0])
-      cond_audio_start_idx = cond_total_length - target_length - len(ref_audio_tokens[0])
+    style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
+    text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
+    target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
+    cond_input_ids = []
+    for i in range(ref_audio_tokens.shape[0]): cond_input_ids.append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
+    cond_total_length = len(cond_input_ids[0])
+    cond_audio_start_idx = cond_total_length - target_length - len(ref_audio_tokens[0])
 
-      cond_audio_mask = [[False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)]
+    cond_audio_mask = [[False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)]
 
-      cond_input_ids = Tensor(cond_input_ids)
-      cond_audio_mask = Tensor(cond_audio_mask)
-      cond_input_ids = cond_input_ids.unsqueeze(0)
-      c_len = cond_input_ids.size(2)
-      batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
-      batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
-      batch_attention_mask = Tensor.zeros((2, 1, MAX_LEN, MAX_LEN), dtype=dtypes.bool)
+    cond_input_ids = Tensor(cond_input_ids)
+    cond_audio_mask = Tensor(cond_audio_mask)
+    cond_input_ids = cond_input_ids.unsqueeze(0)
+    c_len = cond_input_ids.size(2)
+    batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
+    batch_audio_mask = Tensor.zeros((2, MAX_LEN), dtype=dtypes.bool)
+    batch_attention_mask = Tensor.zeros((2, 1, MAX_LEN, MAX_LEN), dtype=dtypes.bool)
 
-      # Cond (0 ~ B-1)
-      batch_input_ids[0, :, :c_len] = cond_input_ids[0]
-      batch_audio_mask[0, :c_len] = cond_audio_mask[0]
-      batch_attention_mask[0, :, :c_len, :c_len] = True
+    # Cond (0 ~ B-1)
+    batch_input_ids[0, :, :c_len] = cond_input_ids[0]
+    batch_audio_mask[0, :c_len] = cond_audio_mask[0]
+    batch_attention_mask[0, :, :c_len, :c_len] = True
 
-      # Uncond (B ~ 2B-1)
-      batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
-      batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
-      batch_attention_mask[1, :, :target_length, :target_length] = True
+    # Uncond (B ~ 2B-1)
+    batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
+    batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
+    batch_attention_mask[1, :, :target_length, :target_length] = True
 
-      pad_diag = Tensor.arange(target_length, c_len)
-      batch_attention_mask[1, :, pad_diag, pad_diag] = True
+    pad_diag = Tensor.arange(target_length, c_len)
+    batch_attention_mask[1, :, pad_diag, pad_diag] = True
 
-      tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
+    tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
 
-      timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
-      timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
+    timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
+    timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
 
-      total_mask = target_length * NUM_AUDIO_CODEBOOK
-      rem = total_mask
-      sched = []
-      for step in range(NUM_STEPS):
-          num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
-          if num > MAX_LEN:
-            print("sched too big:",num,"MAX_LEN =",MAX_LEN)
-            exit()
-          sched.append(int(num))
-          rem -= int(num)
-      print("sched =",sched)
-      layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).unsqueeze(-1)
-      
-      c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
-      t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
+    total_mask = target_length * NUM_AUDIO_CODEBOOK
+    rem = total_mask
+    sched = []
+    for step in range(NUM_STEPS):
+      num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
+      if num > MAX_LEN:
+        print("sched too big:",num,"MAX_LEN =",MAX_LEN)
+        exit()
+      sched.append(int(num))
+      rem -= int(num)
+    print("sched =",sched)
+    layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).unsqueeze(-1)
+    
+    c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
+    t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
 
-      for step in range(NUM_STEPS):
-        print("STEP",step,"of",NUM_STEPS)
-        print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
-        pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
-                            batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids.clone(),
-                            c_len_var=c_len_var, t_len_var=t_len_var)
+    for step in range(NUM_STEPS):
+      print("STEP",step,"of",NUM_STEPS)
+      print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
+      pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
+                          batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids.clone(),
+                          c_len_var=c_len_var, t_len_var=t_len_var)
 
-        pred_tokens = pred_tokens[:, :, :target_length]
-        scores = scores[:, :target_length]
+      pred_tokens = pred_tokens[:, :, :target_length]
+      scores = scores[:, :target_length]
 
-        sorted_idx = Tensor.argsort(scores.flatten(), descending=True)
-        topk_idx = sorted_idx[:sched[step]]
-        sample_tokens = tokens[:, :target_length]
-        sample_tokens = sample_tokens.flatten()
-        sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
-        sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
+      sorted_idx = Tensor.argsort(scores.flatten(), descending=True)
+      topk_idx = sorted_idx[:sched[step]]
+      sample_tokens = tokens[:, :target_length]
+      sample_tokens = sample_tokens.flatten()
+      sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
+      sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
-        tokens[:, :target_length] = sample_tokens
-        batch_input_ids = batch_input_ids.clone()
-        batch_input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
-        batch_input_ids[1: 2, :, :target_length] = sample_tokens
-        batch_input_ids.realize()
+      tokens[:, :target_length] = sample_tokens
+      batch_input_ids = batch_input_ids.clone()
+      batch_input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
+      batch_input_ids[1: 2, :, :target_length] = sample_tokens
+      batch_input_ids.realize()
       return tokens
 
 import pickle
