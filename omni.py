@@ -822,20 +822,6 @@ class omni:
       estimated_duration = target_weight / speed_factor
       return int(estimated_duration)
 
-  def _prepare_inference_inputs(self, text, num_target_tokens, ref_text, ref_audio_tokens):  
-      # todo add lang / instruct?
-
-      style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
-      text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
-      target_audio_tokens = [AUDIO_MASK_ID for _ in range(num_target_tokens)]
-      cond_input_ids = []
-      for i in range(ref_audio_tokens.shape[0]): cond_input_ids.append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
-      cond_total_length = len(cond_input_ids[0])
-      cond_audio_start_idx = cond_total_length - num_target_tokens - len(ref_audio_tokens[0])
-
-      cond_audio_mask = [[False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)]
-      return cond_input_ids, cond_audio_mask
-
   @TinyJit
   def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, tokens, layer_ids, c_len_var, t_len_var):
     pred_tokens = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
@@ -866,7 +852,16 @@ class omni:
     return pred_tokens, scores_out
 
   def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens):
-      cond_input_ids, cond_audio_mask = self._prepare_inference_inputs(text, target_length, ref_text, ref_audio_tokens)
+      style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
+      text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
+      target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
+      cond_input_ids = []
+      for i in range(ref_audio_tokens.shape[0]): cond_input_ids.append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
+      cond_total_length = len(cond_input_ids[0])
+      cond_audio_start_idx = cond_total_length - target_length - len(ref_audio_tokens[0])
+
+      cond_audio_mask = [[False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)]
+
       cond_input_ids = Tensor(cond_input_ids)
       cond_audio_mask = Tensor(cond_audio_mask)
       cond_input_ids = cond_input_ids.unsqueeze(0)
@@ -971,7 +966,7 @@ if __name__ == "__main__":
   exp = pickle.load(open("short2.pkl", "rb"))
   write_waveform("out2.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
+  exit()
   NUM_STEPS = 32
   Tensor.manual_seed(42)
   audio = model.generate(
