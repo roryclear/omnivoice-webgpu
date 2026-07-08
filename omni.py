@@ -898,9 +898,11 @@ class omni:
       sched = []
       for step in range(NUM_STEPS):
           num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
+          if num > MAX_LEN:
+            print("sched too big:",num,"MAX_LEN =",MAX_LEN)
           sched.append(int(num))
           rem -= int(num)
-
+      print("sched =",sched)
       layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).unsqueeze(-1)
       
       c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
