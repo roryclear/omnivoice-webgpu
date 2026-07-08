@@ -866,7 +866,6 @@ class omni:
     cond_input_ids = cond_input_ids.unsqueeze(0)
     c_len = cond_input_ids.size(2)
     batch_input_ids = Tensor.full((2, NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
-    batch_attention_mask = Tensor.zeros((2, 1, MAX_LEN, MAX_LEN), dtype=dtypes.bool)
 
     # Cond (0 ~ B-1)
     batch_input_ids[0, :, :c_len] = cond_input_ids[0]
@@ -877,17 +876,15 @@ class omni:
     batch_audio_mask[0][:c_len] = cond_audio_mask
     batch_audio_mask[1][:target_length] = cond_audio_mask[-target_length:]
 
-    batch_attention_mask[0, :, :c_len, :c_len] = True
-
     # Uncond (B ~ 2B-1)
     batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
 
-    batch_attention_mask[1, :, :target_length, :target_length] = True
 
-    pad_diag = Tensor.arange(target_length, c_len)
-    batch_attention_mask[1, :, pad_diag, pad_diag] = True
+    batch_attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
+    for i in range(c_len): batch_attention_mask[0][0][i][:c_len] = [True] * c_len
+    for i in range(target_length): batch_attention_mask[1][0][i][:target_length] = [True] * target_length
+    for i in range(target_length, c_len): batch_attention_mask[1][0][i][i] = True
 
-    tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
 
     timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
     timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -903,18 +900,18 @@ class omni:
       sched.append(int(num))
       rem -= int(num)
     print("sched =",sched)
-    layer_ids = Tensor.arange(NUM_AUDIO_CODEBOOK).unsqueeze(-1)
     
     c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
     t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
 
-    batch_audio_mask = Tensor(batch_audio_mask)
+    layer_ids = [[i] for i in range(NUM_AUDIO_CODEBOOK)]
 
+    
+    tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(NUM_STEPS):
       print("STEP",step,"of",NUM_STEPS)
-      print("rory here shapes =",batch_input_ids.shape, batch_audio_mask.shape, batch_attention_mask.shape)
-      pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=batch_audio_mask.clone()[:, :c_len_var], 
-                          batch_attention_mask=batch_attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids.clone(),
+      pred_tokens, scores = self(batch_input_ids=batch_input_ids.clone()[:, :, :c_len_var], batch_audio_mask=Tensor(batch_audio_mask)[:, :c_len_var], 
+                          batch_attention_mask=Tensor(batch_attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=Tensor(layer_ids),
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       pred_tokens = pred_tokens[:, :, :target_length]
