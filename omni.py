@@ -860,12 +860,10 @@ class omni:
 
     cond_input_ids = [[]]
     for i in range(ref_audio_tokens.shape[0]): cond_input_ids[0].append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
-    cond_input_ids = Tensor(cond_input_ids)
-    
-    batch_input_ids = [[[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)] for _ in range(2)]
-    batch_input_ids = Tensor(batch_input_ids)
-    batch_input_ids[0, :, :c_len] = cond_input_ids[0]
-    batch_input_ids[1, :, :target_length] = cond_input_ids[0][..., -target_length:]
+    batch_input_ids = [[[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)], [[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)]]
+
+    for i in range(NUM_AUDIO_CODEBOOK): batch_input_ids[0][i][:c_len] = cond_input_ids[0][i][:c_len]
+    for i in range(NUM_AUDIO_CODEBOOK): batch_input_ids[1][i][:target_length] = cond_input_ids[0][i][-target_length:]
 
     cond_audio_mask = ([False] * cond_audio_start_idx + [True] * (c_len - cond_audio_start_idx))
     batch_audio_mask = [[False for _ in range(MAX_LEN)] for _ in range(2)]
@@ -877,7 +875,6 @@ class omni:
     for i in range(c_len): batch_attention_mask[0][0][i][:c_len] = [True] * c_len
     for i in range(target_length): batch_attention_mask[1][0][i][:target_length] = [True] * target_length
     for i in range(target_length, c_len): batch_attention_mask[1][0][i][i] = True
-
 
     timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
     timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -899,7 +896,7 @@ class omni:
 
     layer_ids = [[i] for i in range(NUM_AUDIO_CODEBOOK)]
 
-
+    batch_input_ids = Tensor(batch_input_ids)
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(NUM_STEPS):
       print("STEP",step,"of",NUM_STEPS)
