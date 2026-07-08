@@ -776,8 +776,8 @@ class omni:
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
       ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
-      ret = ret[:, :target_length]
       wv = self._decode_and_post_process_chunk(ret).numpy().tolist()
+      wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
 
     return res
@@ -814,6 +814,8 @@ class omni:
     audio_codes = self.audio_tokenizer.quantizer.encode(embeddings)
     return audio_codes.transpose(0, 1)
 
+  # todo variable size?
+  @TinyJit
   def _decode_and_post_process_chunk(self, tokens): return self.audio_tokenizer.decode(tokens.unsqueeze(0))[0, 0]
 
   def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
@@ -935,7 +937,6 @@ import pickle
 
 if __name__ == "__main__":
   model = omni()
-  
   # todo, I think the voice files have to be longer than a chunk to work
   Tensor.manual_seed(0)
   audio = model.generate(
