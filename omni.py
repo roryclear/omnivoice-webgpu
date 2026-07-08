@@ -714,9 +714,10 @@ class audio_tokenizer:
     semantic_features = semantic_features[:, :: self.semantic_downsample_factor, :]
     return semantic_features
 
-  # todo jit
-  def decode(self, audio_codes,):
-      audio_codes = audio_codes.transpose(0, 1)
+  # todo variable size
+  @TinyJit
+  def decode(self, audio_codes):
+      audio_codes = audio_codes.unsqueeze(0).transpose(0, 1)
       quantized_out = 0.0
       for i, indices in enumerate(audio_codes):
         quantizer = self.quantizer.quantizers[i]
@@ -733,7 +734,7 @@ class audio_tokenizer:
 
       hidden_state = self.acoustic_decoder.snake1(hidden_state)
       hidden_state = self.acoustic_decoder.conv2(hidden_state)
-      return hidden_state
+      return hidden_state[0, 0, :]
 
 class omni:
   def __init__(self):
@@ -776,7 +777,7 @@ class omni:
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
       ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
-      wv = self._decode_and_post_process_chunk(ret).numpy().tolist()
+      wv = self.audio_tokenizer.decode(ret).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
 
@@ -813,10 +814,6 @@ class omni:
     embeddings = self.audio_tokenizer.fc(embeddings.transpose(1, 2)).transpose(1, 2)
     audio_codes = self.audio_tokenizer.quantizer.encode(embeddings)
     return audio_codes.transpose(0, 1)
-
-  # todo variable size?
-  @TinyJit
-  def _decode_and_post_process_chunk(self, tokens): return self.audio_tokenizer.decode(tokens.unsqueeze(0))[0, 0]
 
   def _estimate_target_tokens(self, text, ref_text, num_ref_audio_tokens):
       ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
