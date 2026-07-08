@@ -574,10 +574,10 @@ class ConvTranspose1d:
     self.output_padding = op
   
   def __call__(self, input):
-    batch_size, in_channels, in_width = input.shape
+    size, in_channels, in_width = input.shape
     _, _, kernel_size = self.weight.shape
 
-    upsampled = Tensor.zeros(batch_size, in_channels, in_width * self.stride - (self.stride - 1))
+    upsampled = Tensor.zeros(size, in_channels, in_width * self.stride - (self.stride - 1))
     upsampled[:, :, ::self.stride] = input
 
     pad = 1 * (kernel_size - 1) - self.padding
@@ -824,18 +824,18 @@ class omni:
     return int(estimated_duration)
 
   @TinyJit
-  def __call__(self, batch_input_ids, batch_audio_mask, batch_attention_mask, tokens, layer_ids, c_len_var, t_len_var):
+  def __call__(self, input_ids, audio_mask, attention_mask, tokens, layer_ids, c_len_var, t_len_var):
     pred_tokens = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
-    text_embeds = self.llm.embed_tokens(batch_input_ids[:, 0, :])
-    shifted_ids = batch_input_ids * batch_audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
+    text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
+    shifted_ids = input_ids * audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
     audio_embeds = self.audio_embeddings(shifted_ids).sum(axis=1)
-    inputs_embeds = Tensor.where(batch_audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
-    hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=batch_attention_mask)
+    inputs_embeds = Tensor.where(audio_mask.unsqueeze(-1), audio_embeds, text_embeds)
+    hidden_states = self.llm(inputs_embeds=inputs_embeds, attention_mask=attention_mask)
     logits_flat = self.audio_heads(hidden_states)
-    batch_logits = logits_flat.view(2, c_len_var, NUM_AUDIO_CODEBOOK, AUDIO_VOCAB_SIZE).permute(0, 2, 1, 3)
+    logits = logits_flat.view(2, c_len_var, NUM_AUDIO_CODEBOOK, AUDIO_VOCAB_SIZE).permute(0, 2, 1, 3)
     
-    u_logits = batch_logits[1, :, :t_len_var, :]
-    c_logits = batch_logits.flip(2)[0, :, :t_len_var, :].flip(1)
+    u_logits = logits[1, :, :t_len_var, :]
+    c_logits = logits.flip(2)[0, :, :t_len_var, :].flip(1)
     c_log_probs = Tensor.log_softmax(c_logits, axis=-1)
     u_log_probs = Tensor.log_softmax(u_logits, axis=-1)
     log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
@@ -861,20 +861,20 @@ class omni:
 
     cond_input_ids = [[]]
     for i in range(ref_audio_tokens.shape[0]): cond_input_ids[0].append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
-    batch_input_ids = [[[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)], [[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)]]
+    input_ids = [[[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)], [[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)]]
 
-    for i in range(NUM_AUDIO_CODEBOOK): batch_input_ids[0][i][:c_len] = cond_input_ids[0][i][:c_len]
-    for i in range(NUM_AUDIO_CODEBOOK): batch_input_ids[1][i][:target_length] = cond_input_ids[0][i][-target_length:]
+    for i in range(NUM_AUDIO_CODEBOOK): input_ids[0][i][:c_len] = cond_input_ids[0][i][:c_len]
+    for i in range(NUM_AUDIO_CODEBOOK): input_ids[1][i][:target_length] = cond_input_ids[0][i][-target_length:]
 
     cond_audio_mask = ([False] * cond_audio_start_idx + [True] * (c_len - cond_audio_start_idx))
-    batch_audio_mask = [[False for _ in range(MAX_LEN)] for _ in range(2)]
-    batch_audio_mask[0][:c_len] = cond_audio_mask
-    batch_audio_mask[1][:target_length] = cond_audio_mask[-target_length:]
+    audio_mask = [[False for _ in range(MAX_LEN)] for _ in range(2)]
+    audio_mask[0][:c_len] = cond_audio_mask
+    audio_mask[1][:target_length] = cond_audio_mask[-target_length:]
 
-    batch_attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
-    for i in range(c_len): batch_attention_mask[0][0][i][:c_len] = [True] * c_len
-    for i in range(target_length): batch_attention_mask[1][0][i][:target_length] = [True] * target_length
-    for i in range(target_length, c_len): batch_attention_mask[1][0][i][i] = True
+    attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
+    for i in range(c_len): attention_mask[0][0][i][:c_len] = [True] * c_len
+    for i in range(target_length): attention_mask[1][0][i][:target_length] = [True] * target_length
+    for i in range(target_length, c_len): attention_mask[1][0][i][i] = True
 
     timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
     timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
@@ -896,12 +896,12 @@ class omni:
 
     layer_ids = [[i] for i in range(NUM_AUDIO_CODEBOOK)]
 
-    batch_input_ids = Tensor(batch_input_ids)
+    input_ids = Tensor(input_ids)
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(NUM_STEPS):
       print("STEP",step,"of",NUM_STEPS)
-      pred_tokens, scores = self(batch_input_ids=batch_input_ids[:, :, :c_len_var], batch_audio_mask=Tensor(batch_audio_mask)[:, :c_len_var], 
-                          batch_attention_mask=Tensor(batch_attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=Tensor(layer_ids),
+      pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=Tensor(audio_mask)[:, :c_len_var], 
+                          attention_mask=Tensor(attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=Tensor(layer_ids),
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       pred_tokens = pred_tokens[:, :, :target_length]
@@ -915,9 +915,9 @@ class omni:
       sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
       tokens[:, :target_length] = sample_tokens
-      batch_input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
-      batch_input_ids[1: 2, :, :target_length] = sample_tokens
-      batch_input_ids.realize()
+      input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
+      input_ids[1: 2, :, :target_length] = sample_tokens
+      input_ids.realize()
     return tokens
 
 import pickle
@@ -932,13 +932,12 @@ if __name__ == "__main__":
       ref_audio="voice4.wav",
       ref_text=ref_text,
       ref_audio_tokens=ref_audio_tokens
-
   )
   #pickle.dump(audio, open("short4.pkl", "wb"))
   exp = pickle.load(open("short4.pkl", "rb"))
   write_waveform("out4.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
+  
   Tensor.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
