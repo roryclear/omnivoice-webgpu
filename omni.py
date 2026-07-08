@@ -776,6 +776,7 @@ class omni:
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
       ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
+      ret = ret[:, :target_length]
       wv = self._decode_and_post_process_chunk(ret).numpy().tolist()
       res.extend(wv)
 
@@ -928,7 +929,7 @@ class omni:
         batch_input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
         batch_input_ids[1: 2, :, :target_length] = sample_tokens
         batch_input_ids.realize()
-      return tokens[:, : target_length]
+      return tokens
 
 import pickle
 
