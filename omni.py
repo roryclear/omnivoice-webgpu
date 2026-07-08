@@ -860,7 +860,7 @@ class omni:
     cond_total_length = len(cond_input_ids[0])
     cond_audio_start_idx = cond_total_length - target_length - len(ref_audio_tokens[0])
 
-    cond_audio_mask = [[False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)]
+    cond_audio_mask = [False] * cond_audio_start_idx + [True] * (cond_total_length - cond_audio_start_idx)
 
     cond_input_ids = Tensor(cond_input_ids)
     cond_audio_mask = Tensor(cond_audio_mask)
@@ -872,12 +872,12 @@ class omni:
 
     # Cond (0 ~ B-1)
     batch_input_ids[0, :, :c_len] = cond_input_ids[0]
-    batch_audio_mask[0, :c_len] = cond_audio_mask[0]
+    batch_audio_mask[0, :c_len] = cond_audio_mask
     batch_attention_mask[0, :, :c_len, :c_len] = True
 
     # Uncond (B ~ 2B-1)
     batch_input_ids[1, :, :target_length] = cond_input_ids[..., -target_length:].squeeze(0)
-    batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:].squeeze(0)
+    batch_audio_mask[1, :target_length] = cond_audio_mask[..., -target_length:]
     batch_attention_mask[1, :, :target_length, :target_length] = True
 
     pad_diag = Tensor.arange(target_length, c_len)
