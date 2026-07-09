@@ -747,7 +747,6 @@ class omni:
 
     self.audio_tokenizer = audio_tokenizer()
     weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/audio_tokenizer/model.safetensors"))
-    for k in weights.keys(): print(k)
     weights["semantic_model.encoder.pos_conv_embed.conv.weight"] = weights["semantic_model.encoder.pos_conv_embed.conv.parametrizations.weight.original1"]
     for i in range(len(self.audio_tokenizer.quantizer.quantizers)):
       weights[f"quantizer.quantizers.{i}.codebook.embed.weight"] = weights[f"quantizer.quantizers.{i}.codebook.embed"]
