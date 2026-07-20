@@ -137,8 +137,11 @@ def write_waveform(path: str, audio, sample_rate: int):
     f.write(struct.pack('<I', data_size))
     f.write(struct.pack(f'<{len(audio_int16)}h', *audio_int16))
 
-def load_waveform(audio_path: str):
-  with open(audio_path, "rb") as f: data = f.read()
+def load_waveform(audio):
+  if type(audio) == str:
+    with open(audio, "rb") as f: data = f.read()
+  else:
+    data = audio
   sample_rate = struct.unpack_from('<I', data, 24)[0]
   channels = struct.unpack_from('<H', data, 22)[0]
   data_offset = data.find(b'data') + 8
@@ -184,8 +187,8 @@ def resample(data, orig_sr, target_sr):
   resampled_channels = [interp_1d(new_times, orig_times, channel) for channel in data]
   return resampled_channels
 
-def load_audio(audio_path: str, sampling_rate: int):
-  data, sr = load_waveform(audio_path)
+def load_audio(audio, sampling_rate: int):
+  data, sr = load_waveform(audio)
   data = [sum(samples) / len(samples) for samples in zip(*data)]
   data = resample([data], sr, sampling_rate)[0]
   rms = math.sqrt(sum(x * x for x in data) / len(data))
@@ -781,7 +784,7 @@ class omni:
 
     return res
 
-  def create_voice_clone_prompt(self, ref_audio): # todo limit to 20s
+  def create_voice_clone_prompt(self, ref_audio):
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
     chunk_size = self.audio_tokenizer.hop_length
     clip_size = int(len(ref_wav) % chunk_size)
@@ -927,7 +930,7 @@ class Handler(BaseHTTPRequestHandler):
     ref_audio = body.split(b'\r\n\r\n', 1)[1].rsplit(b'\r\n', 2)[0]
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
-        ref_audio="voice.wav",
+        ref_audio=ref_audio,
         ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
     )
     write_waveform("out420.wav", audio, SAMPLING_RATE)
