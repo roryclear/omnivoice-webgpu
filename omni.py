@@ -783,7 +783,6 @@ class omni:
 
   def create_voice_clone_prompt(self, ref_audio): # todo limit to 20s
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
-
     chunk_size = self.audio_tokenizer.hop_length
     clip_size = int(len(ref_wav) % chunk_size)
     ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
@@ -923,6 +922,9 @@ class Handler(BaseHTTPRequestHandler):
       self.end_headers()
   
   def do_POST(self):
+    length = int(self.headers['Content-Length'])
+    body = self.rfile.read(length)
+    ref_audio = body.split(b'\r\n\r\n', 1)[1].rsplit(b'\r\n', 2)[0]
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
         ref_audio="voice.wav",
