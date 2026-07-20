@@ -925,16 +925,22 @@ class Handler(BaseHTTPRequestHandler):
       self.end_headers()
   
   def do_POST(self):
-    length = int(self.headers['Content-Length'])
-    body = self.rfile.read(length)
-    ref_audio = body.split(b'\r\n\r\n', 1)[1].rsplit(b'\r\n', 2)[0]
-    audio = model.generate(
-        text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
-        ref_audio=ref_audio,
-        ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
-    )
-    write_waveform("out420.wav", audio, SAMPLING_RATE)
-    self.send_response(200)
+    try:
+      length = int(self.headers['Content-Length'])
+      body = self.rfile.read(length)
+      ref_audio = body.split(b'\r\n\r\n', 1)[1].rsplit(b'\r\n', 2)[0]
+      audio = model.generate(
+          text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
+          ref_audio=ref_audio,
+          ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
+      )
+      write_waveform("out420.wav", audio, SAMPLING_RATE)
+      self.send_response(200)
+      self.end_headers()
+    except Exception as e:
+      print(f"Error: {e}")
+      self.send_response(500)
+      self.end_headers()
 
 if __name__ == "__main__":
   model = omni()
