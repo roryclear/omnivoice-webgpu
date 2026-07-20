@@ -1,7 +1,31 @@
 <!DOCTYPE html>
-<form method="post" enctype="multipart/form-data">
+<form id="form" enctype="multipart/form-data">
   <input type="file" name="file"><br>
   <input type="text" name="ref_text" placeholder="Ref text"><br>
   <input type="text" name="target_text" placeholder="Target text"><br>
   <button type="submit">Submit</button>
 </form>
+
+<audio id="player" controls></audio>
+
+<script>
+const form = document.getElementById("form");
+const player = document.getElementById("player");
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const formData = new FormData(form);
+
+  const response = await fetch("/", {
+    method: "POST",
+    body: formData
+  });
+
+  const blob = await response.blob();
+
+  const url = URL.createObjectURL(blob);
+  player.src = url;
+  player.play();
+});
+</script>

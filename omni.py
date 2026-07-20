@@ -112,30 +112,37 @@ special_tokens = data["added_tokens"]
 special_tokens = {item['content']: item['id'] for item in special_tokens}
 tok = SimpleTokenizer(normal_tokens=data["model"]["vocab"], special_tokens=special_tokens)
 
-def write_waveform(path: str, audio, sample_rate: int):
-  channels = 1
-  audio_clipped = [max(-1.0, min(1.0, x)) for x in audio]
-  audio_int16 = [int(x * 32767.0) for x in audio_clipped]
-  byte_rate = sample_rate * channels * 2
-  block_align = channels * 2
-  data_size = len(audio_int16) * 2
-  chunk_size = 36 + data_size
+import io
+def waveform_to_wav_bytes(audio, sample_rate: int):
+    channels = 1
+    audio_clipped = [max(-1.0, min(1.0, x)) for x in audio]
+    audio_int16 = [int(x * 32767.0) for x in audio_clipped]
 
-  with open(path, "wb") as f:
-    f.write(b'RIFF')
-    f.write(struct.pack('<I', chunk_size))
-    f.write(b'WAVE')
-    f.write(b'fmt ')
-    f.write(struct.pack('<I', 16))            # PCM chunk size
-    f.write(struct.pack('<H', 1))             # PCM format
-    f.write(struct.pack('<H', channels))
-    f.write(struct.pack('<I', sample_rate))
-    f.write(struct.pack('<I', byte_rate))
-    f.write(struct.pack('<H', block_align))
-    f.write(struct.pack('<H', 16))            # bits per sample
-    f.write(b'data')
-    f.write(struct.pack('<I', data_size))
-    f.write(struct.pack(f'<{len(audio_int16)}h', *audio_int16))
+    byte_rate = sample_rate * channels * 2
+    block_align = channels * 2
+    data_size = len(audio_int16) * 2
+    chunk_size = 36 + data_size
+
+    buf = io.BytesIO()
+
+    buf.write(b'RIFF')
+    buf.write(struct.pack('<I', chunk_size))
+    buf.write(b'WAVE')
+
+    buf.write(b'fmt ')
+    buf.write(struct.pack('<I', 16))
+    buf.write(struct.pack('<H', 1))
+    buf.write(struct.pack('<H', channels))
+    buf.write(struct.pack('<I', sample_rate))
+    buf.write(struct.pack('<I', byte_rate))
+    buf.write(struct.pack('<H', block_align))
+    buf.write(struct.pack('<H', 16))
+
+    buf.write(b'data')
+    buf.write(struct.pack('<I', data_size))
+    buf.write(struct.pack(f'<{len(audio_int16)}h', *audio_int16))
+
+    return buf.getvalue()
 
 def load_waveform(audio):
   if type(audio) == str:
@@ -925,8 +932,7 @@ class Handler(BaseHTTPRequestHandler):
       self.end_headers()
   
   def do_POST(self):
-    if 1==1:
-    #try:
+    try:
       content_type = self.headers.get('Content-Type')
       boundary = content_type.split('boundary=')[1].encode().strip(b'"')
       body = self.rfile.read(int(self.headers['Content-Length']))
@@ -946,19 +952,26 @@ class Handler(BaseHTTPRequestHandler):
       print("RORY TEXT =",data['target_text'])
 
       audio = model.generate(
-          text=data['target_text'],
-          ref_audio=data['ref_audio'],
-          ref_text=data['ref_text'],
-          num_steps=16
+        text=data['target_text'],
+        ref_audio=data['ref_audio'],
+        ref_text=data['ref_text'],
+        num_steps=16
       )
-      write_waveform("out420.wav", audio, SAMPLING_RATE)
+      wav_bytes = waveform_to_wav_bytes(audio, SAMPLING_RATE)
+      with open("output420.wav", "wb") as f: f.write(wav_bytes)
       self.send_response(200)
+      self.send_header("Content-Type", "audio/wav")
+      self.send_header("Content-Length", str(len(wav_bytes)))
+      self.end_headers()
+      self.wfile.write(wav_bytes)
+
+    except Exception as e:
+      print(f"Error: {e}")
+      self.send_response(500)
       self.end_headers()
 
-    #except Exception as e:
-    #  print(f"Error: {e}")
-    #  self.send_response(500)
-    #  self.end_headers()
+def write_waveform(file_name, audio):
+  with open(file_name, "wb") as f: f.write(waveform_to_wav_bytes(audio, SAMPLING_RATE))
 
 if __name__ == "__main__":
   model = omni()
@@ -974,7 +987,7 @@ if __name__ == "__main__":
     )
     #pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
-    write_waveform("out4.wav", audio, SAMPLING_RATE)
+    write_waveform("out4.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
     
     Tensor.manual_seed(0)
@@ -985,7 +998,7 @@ if __name__ == "__main__":
     )
     #pickle.dump(audio, open("short.pkl", "wb"))
     exp = pickle.load(open("short.pkl", "rb"))
-    write_waveform("out.wav", audio, SAMPLING_RATE)
+    write_waveform("out.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
     
     Tensor.manual_seed(0)
@@ -996,7 +1009,7 @@ if __name__ == "__main__":
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
     pickle.dump(audio, open("short1.pkl", "wb"))
     exp = pickle.load(open("short1.pkl", "rb"))
-    write_waveform("out1.wav", audio, SAMPLING_RATE)
+    write_waveform("out1.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
     
     Tensor.manual_seed(4)
@@ -1009,7 +1022,7 @@ if __name__ == "__main__":
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
     #pickle.dump(audio, open("short2.pkl", "wb"))
     exp = pickle.load(open("short2.pkl", "rb"))
-    write_waveform("out2.wav", audio, SAMPLING_RATE)
+    write_waveform("out2.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
     exit()
     Tensor.manual_seed(42)
