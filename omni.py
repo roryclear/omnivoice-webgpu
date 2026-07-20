@@ -925,7 +925,8 @@ class Handler(BaseHTTPRequestHandler):
       self.end_headers()
   
   def do_POST(self):
-    try:
+    if 1==1:
+    #try:
       content_type = self.headers.get('Content-Type')
       boundary = content_type.split('boundary=')[1].encode().strip(b'"')
       body = self.rfile.read(int(self.headers['Content-Length']))
@@ -935,25 +936,29 @@ class Handler(BaseHTTPRequestHandler):
         content = part.split(b'\r\n\r\n', 1)[1]
         content = content.rsplit(b'\r\n', 1)[0]
         if b'name="file"' in part:
-            data['ref_audio'] = content
+          data['ref_audio'] = content
         elif b'name="ref_text"' in part:
-            data['ref_text'] = content.decode()
+          data['ref_text'] = content.decode()
         elif b'name="target_text"' in part:
-            data['target_text'] = content.decode()
+          data['target_text'] = content.decode()
       
+      print("RORY REF_TEXT =",data['ref_text'])
+      print("RORY TEXT =",data['target_text'])
+
       audio = model.generate(
           text=data['target_text'],
           ref_audio=data['ref_audio'],
           ref_text=data['ref_text'],
+          num_steps=16
       )
       write_waveform("out420.wav", audio, SAMPLING_RATE)
       self.send_response(200)
       self.end_headers()
 
-    except Exception as e:
-      print(f"Error: {e}")
-      self.send_response(500)
-      self.end_headers()
+    #except Exception as e:
+    #  print(f"Error: {e}")
+    #  self.send_response(500)
+    #  self.end_headers()
 
 if __name__ == "__main__":
   model = omni()
