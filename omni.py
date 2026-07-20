@@ -888,8 +888,8 @@ class omni:
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(NUM_STEPS):
       print("STEP",step,"of",NUM_STEPS)
-      pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=Tensor(audio_mask)[:, :c_len_var], 
-                          attention_mask=Tensor(attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=Tensor(layer_ids),
+      pred_tokens, scores = self(input_ids=input_ids.clone()[:, :, :c_len_var], audio_mask=Tensor(audio_mask)[:, :c_len_var], 
+                          attention_mask=Tensor(attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens.clone(), layer_ids=Tensor(layer_ids),
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       pred_tokens = pred_tokens[:, :, :target_length]
@@ -948,7 +948,8 @@ if __name__ == "__main__":
   write_waveform("out1.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
-  Tensor.manual_seed(0)
+  NUM_STEPS = 32
+  Tensor.manual_seed(4)
   audio = model.generate(
       # todo, why is end bad??
       text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
