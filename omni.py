@@ -921,6 +921,15 @@ class Handler(BaseHTTPRequestHandler):
     else:
       self.send_response(404)
       self.end_headers()
+  
+  def do_POST(self):
+    audio = model.generate(
+        text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
+        ref_audio="voice.wav",
+        ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
+    )
+    write_waveform("out420.wav", audio, SAMPLING_RATE)
+    self.send_response(404)
 
 if __name__ == "__main__":
   model = omni()
@@ -987,6 +996,6 @@ if __name__ == "__main__":
     #exit()
   else:
     server = HTTPServer(("0.0.0.0", 8080), Handler)
-
+    server.model = model
     print("Serving on http://localhost:8080")
     server.serve_forever()
