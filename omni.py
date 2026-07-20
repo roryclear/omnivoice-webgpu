@@ -926,17 +926,30 @@ class Handler(BaseHTTPRequestHandler):
   
   def do_POST(self):
     try:
-      length = int(self.headers['Content-Length'])
-      body = self.rfile.read(length)
-      ref_audio = body.split(b'\r\n\r\n', 1)[1].rsplit(b'\r\n', 2)[0]
+      content_type = self.headers.get('Content-Type')
+      boundary = content_type.split('boundary=')[1].encode().strip(b'"')
+      body = self.rfile.read(int(self.headers['Content-Length']))
+      parts = body.split(b'--' + boundary)[1:-1]
+      data = {}
+      for part in parts:
+        content = part.split(b'\r\n\r\n', 1)[1]
+        content = content.rsplit(b'\r\n', 1)[0]
+        if b'name="file"' in part:
+            data['ref_audio'] = content
+        elif b'name="ref_text"' in part:
+            data['ref_text'] = content.decode()
+        elif b'name="target_text"' in part:
+            data['target_text'] = content.decode()
+      
       audio = model.generate(
-          text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
-          ref_audio=ref_audio,
-          ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
+          text=data['target_text'],
+          ref_audio=data['ref_audio'],
+          ref_text=data['ref_text'],
       )
       write_waveform("out420.wav", audio, SAMPLING_RATE)
       self.send_response(200)
       self.end_headers()
+
     except Exception as e:
       print(f"Error: {e}")
       self.send_response(500)
