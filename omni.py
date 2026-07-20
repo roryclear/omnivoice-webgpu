@@ -92,7 +92,6 @@ class SimpleTokenizer:
 MAX_LEN = 2000
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
-NUM_STEPS = 16
 POSITION_TEMP = 5.0
 LAYER_PENTALTY_FACTOR = 5.0
 GUIDANCE_SCALE = 2.0
@@ -753,7 +752,7 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None):
+  def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16):
     if ref_audio_tokens is None: ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     #pickle.dump((ref_text, ref_audio_tokens), open("voice4.pkl", "wb"))
     target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
@@ -775,7 +774,7 @@ class omni:
     res = []
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
-      ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens)
+      ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps)
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
@@ -840,7 +839,7 @@ class omni:
     scores_out[:, :t_len_var] += Tensor.where(tokens[:, :t_len_var] == AUDIO_MASK_ID, scores[:, :t_len_var], -float("inf"))
     return pred_tokens, scores_out
 
-  def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens):
+  def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens, num_steps=16):
     style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
     text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
@@ -864,14 +863,14 @@ class omni:
     for i in range(target_length): attention_mask[1][0][i][:target_length] = [True] * target_length
     for i in range(target_length, c_len): attention_mask[1][0][i][i] = True
 
-    timesteps = [i / NUM_STEPS for i in range(NUM_STEPS + 1)]
+    timesteps = [i / num_steps for i in range(num_steps + 1)]
     timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
 
     total_mask = target_length * NUM_AUDIO_CODEBOOK
     rem = total_mask
     sched = []
-    for step in range(NUM_STEPS):
-      num = (rem if step == NUM_STEPS - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
+    for step in range(num_steps):
+      num = (rem if step == num_steps - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
       if num > MAX_LEN:
         print("sched too big:",num,"MAX_LEN =",MAX_LEN)
         exit()
@@ -886,8 +885,8 @@ class omni:
 
     input_ids = Tensor(input_ids)
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
-    for step in range(NUM_STEPS):
-      print("STEP",step,"of",NUM_STEPS)
+    for step in range(num_steps):
+      print("STEP",step,"of",num_steps)
       pred_tokens, scores = self(input_ids=input_ids.clone()[:, :, :c_len_var], audio_mask=Tensor(audio_mask)[:, :c_len_var], 
                           attention_mask=Tensor(attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens.clone(), layer_ids=Tensor(layer_ids),
                           c_len_var=c_len_var, t_len_var=t_len_var)
@@ -913,6 +912,7 @@ import pickle
 if __name__ == "__main__":
   model = omni()
   # todo, I think the voice files have to be longer than a chunk to work
+
   Tensor.manual_seed(0)
   ref_text, ref_audio_tokens = pickle.load(open("voice4.pkl", "rb"))
   audio = model.generate(
@@ -936,32 +936,31 @@ if __name__ == "__main__":
   exp = pickle.load(open("short.pkl", "rb"))
   write_waveform("out.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
+  
   Tensor.manual_seed(0)
   audio = model.generate(
       text="Testing testing one two three, this has different text for me to read, so I can test that the tiny jit is working, thank you for listening",
       ref_audio="voice2.wav",
       ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  #pickle.dump(audio, open("short1.pkl", "wb"))
+  pickle.dump(audio, open("short1.pkl", "wb"))
   exp = pickle.load(open("short1.pkl", "rb"))
   write_waveform("out1.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
-  NUM_STEPS = 32
+  
   Tensor.manual_seed(4)
   audio = model.generate(
       # todo, why is end bad??
       text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
       ref_audio="voice3.wav",
       ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
+      num_steps=32
   ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
   #pickle.dump(audio, open("short2.pkl", "wb"))
   exp = pickle.load(open("short2.pkl", "rb"))
   write_waveform("out2.wav", audio, SAMPLING_RATE)
   np.testing.assert_allclose(exp, audio, rtol=1e-5)
   exit()
-  NUM_STEPS = 32
   Tensor.manual_seed(42)
   audio = model.generate(
       text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
