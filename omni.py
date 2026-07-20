@@ -934,7 +934,7 @@ class Handler(BaseHTTPRequestHandler):
         ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
     )
     write_waveform("out420.wav", audio, SAMPLING_RATE)
-    self.send_response(404)
+    self.send_response(200)
 
 if __name__ == "__main__":
   model = omni()
