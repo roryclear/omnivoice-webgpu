@@ -762,7 +762,7 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16):
+  def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
     if ref_audio_tokens is None: ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     #pickle.dump((ref_text, ref_audio_tokens), open("voice4.pkl", "wb"))
     target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
@@ -784,7 +784,7 @@ class omni:
     res = []
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
-      ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps)
+      ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, language=language)
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
@@ -848,8 +848,8 @@ class omni:
     scores_out[:, :t_len_var] += Tensor.where(tokens[:, :t_len_var] == AUDIO_MASK_ID, scores[:, :t_len_var], -float("inf"))
     return pred_tokens, scores_out
 
-  def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens, num_steps=16):
-    style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
+  def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens, num_steps=16, language="None"):
+    style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
     text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
     c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + len(target_audio_tokens)
@@ -927,6 +927,16 @@ class Handler(BaseHTTPRequestHandler):
       self.send_header("Content-Length", str(len(content)))
       self.end_headers()
       self.wfile.write(content)
+
+    elif self.path == "/languages.json":
+      with open("languages.json", "rb") as f:
+          content = f.read()
+      self.send_response(200)
+      self.send_header("Content-Type", "application/json")
+      self.send_header("Content-Length", str(len(content)))
+      self.end_headers()
+      self.wfile.write(content)
+
     else:
       self.send_response(404)
       self.end_headers()
@@ -947,15 +957,19 @@ class Handler(BaseHTTPRequestHandler):
           data['ref_text'] = content.decode()
         elif b'name="target_text"' in part:
           data['target_text'] = content.decode()
+        elif b'name="language"' in part:
+          data['language'] = content.decode()
       
       print("RORY REF_TEXT =",data['ref_text'])
       print("RORY TEXT =",data['target_text'])
+      print("RORY LANG =",data.get('language'))
 
       audio = model.generate(
         text=data['target_text'],
         ref_audio=data['ref_audio'],
         ref_text=data['ref_text'],
-        num_steps=16
+        num_steps=16,
+        language=data["language"]
       )
       wav_bytes = waveform_to_wav_bytes(audio, SAMPLING_RATE)
       with open("output420.wav", "wb") as f: f.write(wav_bytes)
