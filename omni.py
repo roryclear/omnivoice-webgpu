@@ -896,8 +896,8 @@ class omni:
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(num_steps):
       print("STEP",step,"of",num_steps)
-      pred_tokens, scores = self(input_ids=input_ids.clone()[:, :, :c_len_var], audio_mask=Tensor(audio_mask)[:, :c_len_var], 
-                          attention_mask=Tensor(attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens.clone(), layer_ids=Tensor(layer_ids),
+      pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=Tensor(audio_mask)[:, :c_len_var], 
+                          attention_mask=Tensor(attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=Tensor(layer_ids),
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       pred_tokens = pred_tokens[:, :, :target_length]
@@ -1021,7 +1021,7 @@ if __name__ == "__main__":
         ref_audio="voice2.wav",
         ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    pickle.dump(audio, open("short1.pkl", "wb"))
+    #pickle.dump(audio, open("short1.pkl", "wb"))
     exp = pickle.load(open("short1.pkl", "rb"))
     write_waveform("out1.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
