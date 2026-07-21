@@ -910,10 +910,17 @@ class omni:
       sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
       sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
+      tokens = tokens.numpy()
+      input_ids = input_ids.numpy()
+      sample_tokens = sample_tokens.numpy()
+
       tokens[:, :target_length] = sample_tokens
       input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
       input_ids[1: 2, :, :target_length] = sample_tokens
-      input_ids.realize()
+
+      tokens = Tensor(tokens)
+      input_ids = Tensor(input_ids)
+
     return tokens
 
 import pickle
