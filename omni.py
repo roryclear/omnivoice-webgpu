@@ -901,7 +901,7 @@ class omni:
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       scores = scores.numpy()
-
+      pred_tokens = pred_tokens.numpy()
       pred_tokens = pred_tokens[:, :, :target_length]
       scores = scores[:, :target_length]
 
@@ -910,9 +910,9 @@ class omni:
       tokens = tokens.numpy()
       sample_tokens = tokens[:, :target_length]
       sample_tokens = sample_tokens.flatten()
-      topk_idx = Tensor(topk_idx)
+      sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx]
       sample_tokens = Tensor(sample_tokens)
-      sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
+      sample_tokens = sample_tokens.cast(dtypes.int)
       sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
       input_ids = input_ids.numpy()
