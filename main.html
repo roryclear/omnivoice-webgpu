@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<form id="form" enctype="multipart/form-data">
+  <input type="file" name="file"><br>
+
+  <input type="text" name="ref_text" placeholder="Ref text"><br>
+  <input type="text" name="target_text" placeholder="Target text"><br>
+  <select name="language" id="language">
+    <option value="None">Auto Language</option>
+  </select>
+  <button type="submit">Submit</button>
+</form>
+
+<audio id="player" controls></audio>
+
+<script>
+const form = document.getElementById("form");
+const player = document.getElementById("player");
+const select = document.getElementById("language");
+
+// Load languages dynamically
+async function loadLanguages() {
+  try {
+    const res = await fetch("/languages.json"); // make sure path is correct
+    const languages = await res.json();
+    select.innerHTML = '<option value="None">Auto Language</option>';
+
+    languages.forEach(lang => {
+      const option = document.createElement("option");
+      option.value = lang.id;
+      option.textContent = lang.name;
+      select.appendChild(option);
+    });
+  } catch (err) {
+    select.innerHTML = '<option value="">Failed to load languages</option>';
+    console.error(err);
+  }
+}
+
+loadLanguages();
+
+// Form submit (unchanged)
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const formData = new FormData(form);
+
+  const response = await fetch("/", {
+    method: "POST",
+    body: formData
+  });
+
+  const blob = await response.blob();
+
+  const url = URL.createObjectURL(blob);
+  player.src = url;
+  player.play();
+});
+</script>

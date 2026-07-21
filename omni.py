@@ -112,33 +112,43 @@ special_tokens = data["added_tokens"]
 special_tokens = {item['content']: item['id'] for item in special_tokens}
 tok = SimpleTokenizer(normal_tokens=data["model"]["vocab"], special_tokens=special_tokens)
 
-def write_waveform(path: str, audio, sample_rate: int):
-  channels = 1
-  audio_clipped = [max(-1.0, min(1.0, x)) for x in audio]
-  audio_int16 = [int(x * 32767.0) for x in audio_clipped]
-  byte_rate = sample_rate * channels * 2
-  block_align = channels * 2
-  data_size = len(audio_int16) * 2
-  chunk_size = 36 + data_size
+import io
+def waveform_to_wav_bytes(audio, sample_rate: int):
+    channels = 1
+    audio_clipped = [max(-1.0, min(1.0, x)) for x in audio]
+    audio_int16 = [int(x * 32767.0) for x in audio_clipped]
 
-  with open(path, "wb") as f:
-    f.write(b'RIFF')
-    f.write(struct.pack('<I', chunk_size))
-    f.write(b'WAVE')
-    f.write(b'fmt ')
-    f.write(struct.pack('<I', 16))            # PCM chunk size
-    f.write(struct.pack('<H', 1))             # PCM format
-    f.write(struct.pack('<H', channels))
-    f.write(struct.pack('<I', sample_rate))
-    f.write(struct.pack('<I', byte_rate))
-    f.write(struct.pack('<H', block_align))
-    f.write(struct.pack('<H', 16))            # bits per sample
-    f.write(b'data')
-    f.write(struct.pack('<I', data_size))
-    f.write(struct.pack(f'<{len(audio_int16)}h', *audio_int16))
+    byte_rate = sample_rate * channels * 2
+    block_align = channels * 2
+    data_size = len(audio_int16) * 2
+    chunk_size = 36 + data_size
 
-def load_waveform(audio_path: str):
-  with open(audio_path, "rb") as f: data = f.read()
+    buf = io.BytesIO()
+
+    buf.write(b'RIFF')
+    buf.write(struct.pack('<I', chunk_size))
+    buf.write(b'WAVE')
+
+    buf.write(b'fmt ')
+    buf.write(struct.pack('<I', 16))
+    buf.write(struct.pack('<H', 1))
+    buf.write(struct.pack('<H', channels))
+    buf.write(struct.pack('<I', sample_rate))
+    buf.write(struct.pack('<I', byte_rate))
+    buf.write(struct.pack('<H', block_align))
+    buf.write(struct.pack('<H', 16))
+
+    buf.write(b'data')
+    buf.write(struct.pack('<I', data_size))
+    buf.write(struct.pack(f'<{len(audio_int16)}h', *audio_int16))
+
+    return buf.getvalue()
+
+def load_waveform(audio):
+  if type(audio) == str:
+    with open(audio, "rb") as f: data = f.read()
+  else:
+    data = audio
   sample_rate = struct.unpack_from('<I', data, 24)[0]
   channels = struct.unpack_from('<H', data, 22)[0]
   data_offset = data.find(b'data') + 8
@@ -184,8 +194,8 @@ def resample(data, orig_sr, target_sr):
   resampled_channels = [interp_1d(new_times, orig_times, channel) for channel in data]
   return resampled_channels
 
-def load_audio(audio_path: str, sampling_rate: int):
-  data, sr = load_waveform(audio_path)
+def load_audio(audio, sampling_rate: int):
+  data, sr = load_waveform(audio)
   data = [sum(samples) / len(samples) for samples in zip(*data)]
   data = resample([data], sr, sampling_rate)[0]
   rms = math.sqrt(sum(x * x for x in data) / len(data))
@@ -752,7 +762,7 @@ class omni:
     load_state_dict(self.audio_tokenizer, weights)
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
-  def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16):
+  def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
     if ref_audio_tokens is None: ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     #pickle.dump((ref_text, ref_audio_tokens), open("voice4.pkl", "wb"))
     target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
@@ -774,16 +784,15 @@ class omni:
     res = []
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
-      ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps)
+      ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, language=language)
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
 
     return res
 
-  def create_voice_clone_prompt(self, ref_audio): # todo limit to 20s
+  def create_voice_clone_prompt(self, ref_audio):
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
-
     chunk_size = self.audio_tokenizer.hop_length
     clip_size = int(len(ref_wav) % chunk_size)
     ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
@@ -839,8 +848,8 @@ class omni:
     scores_out[:, :t_len_var] += Tensor.where(tokens[:, :t_len_var] == AUDIO_MASK_ID, scores[:, :t_len_var], -float("inf"))
     return pred_tokens, scores_out
 
-  def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens, num_steps=16):
-    style_tokens = tok.encode("<|denoise|><|lang_start|>None<|lang_end|><|instruct_start|>None<|instruct_end|>")
+  def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens, num_steps=16, language="None"):
+    style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
     text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
     c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + len(target_audio_tokens)
@@ -908,67 +917,141 @@ class omni:
     return tokens
 
 import pickle
+from http.server import HTTPServer, BaseHTTPRequestHandler
+class Handler(BaseHTTPRequestHandler):
+  def do_GET(self):
+    if self.path == "/":
+      with open("main.html", "rb") as f: content = f.read()
+      self.send_response(200)
+      self.send_header("Content-Type", "text/html")
+      self.send_header("Content-Length", str(len(content)))
+      self.end_headers()
+      self.wfile.write(content)
+
+    elif self.path == "/languages.json":
+      with open("languages.json", "rb") as f:
+          content = f.read()
+      self.send_response(200)
+      self.send_header("Content-Type", "application/json")
+      self.send_header("Content-Length", str(len(content)))
+      self.end_headers()
+      self.wfile.write(content)
+
+    else:
+      self.send_response(404)
+      self.end_headers()
+  
+  def do_POST(self):
+    try:
+      content_type = self.headers.get('Content-Type')
+      boundary = content_type.split('boundary=')[1].encode().strip(b'"')
+      body = self.rfile.read(int(self.headers['Content-Length']))
+      parts = body.split(b'--' + boundary)[1:-1]
+      data = {}
+      for part in parts:
+        content = part.split(b'\r\n\r\n', 1)[1]
+        content = content.rsplit(b'\r\n', 1)[0]
+        if b'name="file"' in part:
+          data['ref_audio'] = content
+        elif b'name="ref_text"' in part:
+          data['ref_text'] = content.decode()
+        elif b'name="target_text"' in part:
+          data['target_text'] = content.decode()
+        elif b'name="language"' in part:
+          data['language'] = content.decode()
+      
+      print("RORY REF_TEXT =",data['ref_text'])
+      print("RORY TEXT =",data['target_text'])
+      print("RORY LANG =",data.get('language'))
+
+      audio = model.generate(
+        text=data['target_text'],
+        ref_audio=data['ref_audio'],
+        ref_text=data['ref_text'],
+        num_steps=16,
+        language=data["language"]
+      )
+      wav_bytes = waveform_to_wav_bytes(audio, SAMPLING_RATE)
+      with open("output420.wav", "wb") as f: f.write(wav_bytes)
+      self.send_response(200)
+      self.send_header("Content-Type", "audio/wav")
+      self.send_header("Content-Length", str(len(wav_bytes)))
+      self.end_headers()
+      self.wfile.write(wav_bytes)
+
+    except Exception as e:
+      print(f"Error: {e}")
+      self.send_response(500)
+      self.end_headers()
+
+def write_waveform(file_name, audio):
+  with open(file_name, "wb") as f: f.write(waveform_to_wav_bytes(audio, SAMPLING_RATE))
 
 if __name__ == "__main__":
   model = omni()
-  # todo, I think the voice files have to be longer than a chunk to work
 
-  Tensor.manual_seed(0)
-  ref_text, ref_audio_tokens = pickle.load(open("voice4.pkl", "rb"))
-  audio = model.generate(
-      text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
-      ref_audio="voice4.wav",
-      ref_text=ref_text,
-      ref_audio_tokens=ref_audio_tokens
-  )
-  #pickle.dump(audio, open("short4.pkl", "wb"))
-  exp = pickle.load(open("short4.pkl", "rb"))
-  write_waveform("out4.wav", audio, SAMPLING_RATE)
-  np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  
-  Tensor.manual_seed(0)
-  audio = model.generate(
-      text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
-      ref_audio="voice.wav",
-      ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
-  )
-  #pickle.dump(audio, open("short.pkl", "wb"))
-  exp = pickle.load(open("short.pkl", "rb"))
-  write_waveform("out.wav", audio, SAMPLING_RATE)
-  np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  
-  Tensor.manual_seed(0)
-  audio = model.generate(
-      text="Testing testing one two three, this has different text for me to read, so I can test that the tiny jit is working, thank you for listening",
-      ref_audio="voice2.wav",
-      ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
-  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  pickle.dump(audio, open("short1.pkl", "wb"))
-  exp = pickle.load(open("short1.pkl", "rb"))
-  write_waveform("out1.wav", audio, SAMPLING_RATE)
-  np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  
-  Tensor.manual_seed(4)
-  audio = model.generate(
-      # todo, why is end bad??
-      text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
-      ref_audio="voice3.wav",
-      ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
-      num_steps=32
-  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  #pickle.dump(audio, open("short2.pkl", "wb"))
-  exp = pickle.load(open("short2.pkl", "rb"))
-  write_waveform("out2.wav", audio, SAMPLING_RATE)
-  np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  exit()
-  Tensor.manual_seed(42)
-  audio = model.generate(
-      text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
-      ref_audio="voice3.wav",
-      ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
-  ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-  #pickle.dump(audio, open("long.pkl", "wb"))
-  #exp = pickle.load(open("long.pkl", "rb"))
-  write_waveform("out_long.wav", audio, 24000)
-  #np.testing.assert_allclose(exp, audio, rtol=1e-5)
-  #exit()
+  if "--test" in sys.argv:
+    Tensor.manual_seed(0)
+    ref_text, ref_audio_tokens = pickle.load(open("voice4.pkl", "rb"))
+    audio = model.generate(
+        text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
+        ref_audio="voice4.wav",
+        ref_text=ref_text,
+        ref_audio_tokens=ref_audio_tokens
+    )
+    #pickle.dump(audio, open("short4.pkl", "wb"))
+    exp = pickle.load(open("short4.pkl", "rb"))
+    write_waveform("out4.wav", audio)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    
+    Tensor.manual_seed(0)
+    audio = model.generate(
+        text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
+        ref_audio="voice.wav",
+        ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
+    )
+    #pickle.dump(audio, open("short.pkl", "wb"))
+    exp = pickle.load(open("short.pkl", "rb"))
+    write_waveform("out.wav", audio)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    
+    Tensor.manual_seed(0)
+    audio = model.generate(
+        text="Testing testing one two three, this has different text for me to read, so I can test that the tiny jit is working, thank you for listening",
+        ref_audio="voice2.wav",
+        ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
+    ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+    pickle.dump(audio, open("short1.pkl", "wb"))
+    exp = pickle.load(open("short1.pkl", "rb"))
+    write_waveform("out1.wav", audio)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    
+    Tensor.manual_seed(4)
+    audio = model.generate(
+        # todo, why is end bad??
+        text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
+        ref_audio="voice3.wav",
+        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
+        num_steps=32
+    ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+    #pickle.dump(audio, open("short2.pkl", "wb"))
+    exp = pickle.load(open("short2.pkl", "rb"))
+    write_waveform("out2.wav", audio)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    exit()
+    Tensor.manual_seed(42)
+    audio = model.generate(
+        text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",# That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation Roman But I don't know 'em or care when I'm spitting So return to your sitting position and listen, it's fitting That I'm miles ahead and they chase me Show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black",
+        ref_audio="voice3.wav",
+        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
+    ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+    #pickle.dump(audio, open("long.pkl", "wb"))
+    #exp = pickle.load(open("long.pkl", "rb"))
+    write_waveform("out_long.wav", audio, 24000)
+    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    #exit()
+  else:
+    server = HTTPServer(("0.0.0.0", 8080), Handler)
+    server.model = model
+    print("Serving on http://localhost:8080")
+    server.serve_forever()
