@@ -909,9 +909,9 @@ class omni:
       topk_idx = sorted_idx[:sched[step]]
       tokens = tokens.numpy()
       sample_tokens = tokens[:, :target_length]
-      sample_tokens = Tensor(sample_tokens)
       sample_tokens = sample_tokens.flatten()
       topk_idx = Tensor(topk_idx)
+      sample_tokens = Tensor(sample_tokens)
       sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
       sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
