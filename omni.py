@@ -890,18 +890,21 @@ class omni:
     c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
     t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
 
-    layer_ids = [[i] for i in range(NUM_AUDIO_CODEBOOK)]
+    layer_ids = Tensor([[i] for i in range(NUM_AUDIO_CODEBOOK)])
+    audio_mask = Tensor(audio_mask)
+    attention_mask = Tensor(attention_mask)
 
     input_ids = Tensor(input_ids)
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(num_steps):
       print("STEP",step,"of",num_steps)
-      pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=Tensor(audio_mask)[:, :c_len_var], 
-                          attention_mask=Tensor(attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=Tensor(layer_ids),
+      pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=audio_mask[:, :c_len_var], 
+                          attention_mask=attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids,
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       scores = scores.numpy()
       pred_tokens = pred_tokens.numpy()
+      input_ids = input_ids.numpy()
       pred_tokens = pred_tokens[:, :, :target_length]
       scores = scores[:, :target_length]
 
@@ -911,12 +914,8 @@ class omni:
       sample_tokens = tokens[:, :target_length]
       sample_tokens = sample_tokens.flatten()
       sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx]
-      sample_tokens = Tensor(sample_tokens)
-      sample_tokens = sample_tokens.cast(dtypes.int)
+      sample_tokens = sample_tokens.astype(int)
       sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
-
-      input_ids = input_ids.numpy()
-      sample_tokens = sample_tokens.numpy()
 
       tokens[:, :target_length] = sample_tokens
       input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
