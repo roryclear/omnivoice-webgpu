@@ -45,34 +45,116 @@ func generate(
 ) {
     print("generate func")
     print("audio bytes:", refAudio)
-    let (data, sr) = loadWaveform(refAudio)
-    print("sample rate:", sr)
+    let data = load_audio(refAudio, samplingRate: 24000)
     
-    // checking
-    let flatAudio = data.flatMap { $0 }
-
     print("first 1000 values:")
-    print(Array(flatAudio.prefix(1000)))
+    print(Array(data.prefix(1000)))
 
-    let sum = flatAudio.reduce(0.0) { $0 + Double($1) }
+    let sum = data.reduce(0.0) { $0 + Double($1) }
     print("sum:", sum)
 }
 
-func loadAudio(_ audio: Data, samplingRate: Int) -> ([[Float]], Int) {
-    return loadWaveform(audio)
+func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
+    let (data, sr) = load_waveform(audio)
+
+    // Convert multi-channel to mono
+    let sampleCount = data[0].count
+    var mono = [Float]()
+    mono.reserveCapacity(sampleCount)
+
+    for i in 0..<sampleCount {
+        var sum: Float = 0
+        for channel in data {
+            sum += channel[i]
+        }
+        mono.append(sum / Float(data.count))
+    }
+
+    // Resample
+    let resampled = resample([mono], origSR: sr, targetSR: samplingRate)[0]
+
+    // RMS
+    let rms = sqrt(
+        resampled.reduce(0.0) { $0 + Double($1 * $1) } /
+        Double(resampled.count)
+    )
+
+    print("rms =", rms)
+
+    var output = resampled
+
+    if rms > 0 && rms < 0.1 {
+        let scale = Float(0.1 / rms)
+        output = output.map { $0 * scale }
+    }
+
+    return output
 }
 
-func loadWaveform(_ data: Data) -> ([[Float]], Int) {
+func resample(
+    _ data: [[Float]],
+    origSR: Int,
+    targetSR: Int
+) -> [[Float]] {
+    let sampleCount = data[0].count
+
+    let duration = Double(sampleCount) / Double(origSR)
+
+    let origTimes = (0..<sampleCount).map {
+        Double($0) * duration / Double(sampleCount)
+    }
+
+    let newLength = Int(duration * Double(targetSR))
+
+    let newTimes = (0..<newLength).map {
+        Double($0) * duration / Double(newLength)
+    }
+
+    return data.map { channel in
+        interp1D(
+            newTimes: newTimes,
+            origTimes: origTimes,
+            values: channel
+        )
+    }
+}
+
+func interp1D(
+    newTimes: [Double],
+    origTimes: [Double],
+    values: [Float]
+) -> [Float] {
+    var result = [Float]()
+    result.reserveCapacity(newTimes.count)
+
+    var index = 0
+
+    for t in newTimes {
+        while index < origTimes.count - 2 &&
+              origTimes[index + 1] < t {
+            index += 1
+        }
+
+        let t0 = origTimes[index]
+        let t1 = origTimes[index + 1]
+
+        let y0 = Double(values[index])
+        let y1 = Double(values[index + 1])
+
+        let ratio = (t - t0) / (t1 - t0)
+
+        result.append(
+            Float(y0 + ratio * (y1 - y0))
+        )
+    }
+
+    return result
+}
+
+func load_waveform(_ data: Data) -> ([[Float]], Int) {
     let bytes = [UInt8](data)
-
-    // WAV header:
-    // sample rate at byte offset 24 (UInt32 little endian)
     let sampleRate = Int(readUInt32LE(bytes, offset: 24))
-
-    // channels at byte offset 22 (UInt16 little endian)
     let channels = Int(readUInt16LE(bytes, offset: 22))
-
-    // Find "data" chunk
     let dataMarker = [UInt8]([100, 97, 116, 97]) // "data"
     var dataOffset = 0
 
