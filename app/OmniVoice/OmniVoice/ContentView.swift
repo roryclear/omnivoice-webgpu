@@ -9,6 +9,7 @@ import SwiftUI
 import Foundation
 
 var buffers: [String: MTLBuffer] = [:]
+var programs: [String: MTLLibrary] = [:]
 
 class GraphRunner {
     let filename: String
@@ -30,10 +31,10 @@ class GraphRunner {
 
             let items = json as! [Any]
 
-            print("Items:", items.count)
+            //print("Items:", items.count)
 
             for (_, item) in items.enumerated() {
-            print(item)
+            //print(item)
                 let dict = item as! [String: Any]
                 let key = dict.keys.first!
 
@@ -52,10 +53,23 @@ class GraphRunner {
                         let ptr = buffer.contents()
                         data.copyBytes(to: ptr.assumingMemoryBound(to: UInt8.self), count: data.count)
                     }
+                } else if key == "program" {
+                    if let info = dict["program"] as? [String: Any],
+                       let name = info["name"] as? String,
+                       let libString = info["lib"] as? String,
+                       let libData = Data(base64Encoded: libString),
+                       let device = MTLCreateSystemDefaultDevice() {
+                        let dispatchData = libData.withUnsafeBytes { ptr in
+                            DispatchData(bytes: ptr)
+                        }
+                        if let library = try? device.makeLibrary(data: dispatchData as! dispatch_data_t) {
+                            programs[name] = library
+                            print(name, library, "\n\n")
+                        }
+                    }
                 }
                 
             }
-            
 
         } catch {
             print("Failed reading JSON:", error)
