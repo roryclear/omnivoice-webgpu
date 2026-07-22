@@ -763,7 +763,15 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
-    ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
+    ref_wav = load_audio(ref_audio, SAMPLING_RATE)
+    chunk_size = self.audio_tokenizer.hop_length
+    clip_size = int(len(ref_wav) % chunk_size)
+    ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
+    wav_len = len(ref_wav)
+    ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
+    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
+    ref_audio_tokens = ref_audio_tokens.numpy()
+
     target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
 
     avg_tokens_per_char = target_length / len(text)
@@ -790,15 +798,6 @@ class omni:
 
     return res
 
-  def create_voice_clone_prompt(self, ref_audio):
-    ref_wav = load_audio(ref_audio, SAMPLING_RATE)
-    chunk_size = self.audio_tokenizer.hop_length
-    clip_size = int(len(ref_wav) % chunk_size)
-    ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
-    wav_len = len(ref_wav)
-    ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
-    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
-    return ref_audio_tokens.numpy()
 
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   @TinyJit
