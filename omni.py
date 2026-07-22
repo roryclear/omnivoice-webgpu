@@ -763,8 +763,15 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
-    if ref_audio_tokens is None: ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
-    #pickle.dump((ref_text, ref_audio_tokens), open("voice4.pkl", "wb"))
+    ref_wav = load_audio(ref_audio, SAMPLING_RATE)
+    chunk_size = self.audio_tokenizer.hop_length
+    clip_size = int(len(ref_wav) % chunk_size)
+    ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
+    wav_len = len(ref_wav)
+    ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
+    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
+    ref_audio_tokens = ref_audio_tokens.numpy()
+
     target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
 
     avg_tokens_per_char = target_length / len(text)
@@ -791,15 +798,6 @@ class omni:
 
     return res
 
-  def create_voice_clone_prompt(self, ref_audio):
-    ref_wav = load_audio(ref_audio, SAMPLING_RATE)
-    chunk_size = self.audio_tokenizer.hop_length
-    clip_size = int(len(ref_wav) % chunk_size)
-    ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
-    wav_len = len(ref_wav)
-    ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
-    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
-    return ref_audio_tokens.numpy()
 
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   @TinyJit
@@ -890,30 +888,40 @@ class omni:
     c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
     t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
 
-    layer_ids = [[i] for i in range(NUM_AUDIO_CODEBOOK)]
+    layer_ids = Tensor([[i] for i in range(NUM_AUDIO_CODEBOOK)])
+    audio_mask = Tensor(audio_mask)
+    attention_mask = Tensor(attention_mask)
 
     input_ids = Tensor(input_ids)
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(num_steps):
       print("STEP",step,"of",num_steps)
-      pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=Tensor(audio_mask)[:, :c_len_var], 
-                          attention_mask=Tensor(attention_mask)[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=Tensor(layer_ids),
+      pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=audio_mask[:, :c_len_var], 
+                          attention_mask=attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids,
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
+      scores = scores.numpy()
+      pred_tokens = pred_tokens.numpy()
+      input_ids = input_ids.numpy()
       pred_tokens = pred_tokens[:, :, :target_length]
       scores = scores[:, :target_length]
 
-      sorted_idx = Tensor.argsort(scores.flatten(), descending=True)
+      sorted_idx = np.argsort(scores.flatten())[::-1]
       topk_idx = sorted_idx[:sched[step]]
+      tokens = tokens.numpy()
       sample_tokens = tokens[:, :target_length]
       sample_tokens = sample_tokens.flatten()
-      sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx].cast(dtypes.int)
+      sample_tokens[topk_idx] = pred_tokens.flatten()[topk_idx]
+      sample_tokens = sample_tokens.astype(int)
       sample_tokens = sample_tokens.reshape(NUM_AUDIO_CODEBOOK, target_length)
 
       tokens[:, :target_length] = sample_tokens
       input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
       input_ids[1: 2, :, :target_length] = sample_tokens
-      input_ids.realize()
+
+      tokens = Tensor(tokens)
+      input_ids = Tensor(input_ids)
+
     return tokens
 
 import pickle
@@ -992,12 +1000,10 @@ if __name__ == "__main__":
 
   if "--test" in sys.argv:
     Tensor.manual_seed(0)
-    ref_text, ref_audio_tokens = pickle.load(open("voice4.pkl", "rb"))
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
         ref_audio="voice4.wav",
-        ref_text=ref_text,
-        ref_audio_tokens=ref_audio_tokens
+        ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you"
     )
     #pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
