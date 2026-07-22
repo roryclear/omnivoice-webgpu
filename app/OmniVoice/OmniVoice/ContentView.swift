@@ -13,6 +13,8 @@ var programs: [String: MTLLibrary] = [:]
 
 class GraphRunner {
     let filename: String
+    var calls: [Any] = []
+    var copyouts: [Any] = []
 
     init(filename: String) {
         self.filename = filename
@@ -67,10 +69,12 @@ class GraphRunner {
                             print(name, library, "\n\n")
                         }
                     }
+                } else if key == "call" {
+                    calls.append(dict["call"]!)
+                } else if key == "copyout" {
+                    copyouts.append(dict["copyout"]!)
                 }
-                
             }
-
         } catch {
             print("Failed reading JSON:", error)
         }
