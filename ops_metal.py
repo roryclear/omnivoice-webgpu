@@ -5,6 +5,7 @@ from tinygrad.device import Compiled, Compiler, CompileError, LRUAllocator, Prof
 from tinygrad.renderer.cstyle import MetalRenderer
 from tinygrad.runtime.autogen import metal
 from tinygrad.runtime.support.c import DLL
+import json, base64
 
 # 13 is requestType that metal uses to compile source code into MTLB, there aren't any docs or symbols.
 REQUEST_TYPE_COMPILE = 13
@@ -115,6 +116,7 @@ class MetalCompiler(Compiler):
 class MetalProgram:
   def __init__(self, dev:MetalDevice, name:str, lib:bytes, **kwargs):
     self.dev, self.name, self.lib = dev, name, lib
+    self.dev.q.append({"program":{"name": name, "lib":base64.b64encode(bytes(lib)).decode("ascii")}})
     data = objc.dispatch_data_create(lib, len(lib), None, None)
     self.library = self.dev.sysdevice.newLibraryWithData_error(data, ctypes.byref(error_lib:=metal.NSError().retained())).retained()
     error_check(error_lib)
@@ -129,7 +131,6 @@ class MetalProgram:
     self.max_total_threads: int = self.pipeline_state.maxTotalThreadsPerThreadgroup()
 
   def __call__(self, *bufs, global_size:tuple[int,int,int]=(1,1,1), local_size:tuple[int,int,int]=(1,1,1), vals:tuple[int, ...]=(), wait=False, **kw):
-    print("rory call",self.name, local_size, global_size, bufs, [b.num for b in bufs], vals)
     self.dev.q.append({"call":{"name":self.name, "buffers":[b.num for b in bufs], "buffer_offsets":[b.offset for b in bufs]},
                        "vals":vals, "local_size":local_size, "global_size":global_size})
     if prod(local_size) > self.max_total_threads:
@@ -177,6 +178,8 @@ class MetalAllocator(LRUAllocator[MetalDevice]):
   def _free(self, opaque:MetalBuffer, options):
     if not options.external_ptr: opaque.buf.release()
   def _transfer(self, dest:MetalBuffer, src:MetalBuffer, sz:int, src_dev:MetalDevice, dest_dev:MetalDevice):
+    print("RORY TRANSFER")
+    exit()
     dest_dev.synchronize()
     src_command_buffer = src_dev.mtl_queue.commandBuffer().retained()
     encoder = src_command_buffer.blitCommandEncoder().retained()
@@ -201,14 +204,18 @@ class MetalAllocator(LRUAllocator[MetalDevice]):
     self.dev.synchronize()
     return to_mv(src.buf.contents(), src.size + src.offset)[src.offset:]
   def _copyin(self, dest:MetalBuffer, src:memoryview):
-    self.dev.q.append({"copyin":{"dest":dest.num, "data": bytes(src)}})
+    self.dev.q.append({"copyin":{"dest":dest.num, "data": base64.b64encode(bytes(src)).decode("ascii")}})
     self._cp_mv(self._as_buffer(dest), src, "TINY -> METAL")
   def _copyout(self, dest:memoryview, src:MetalBuffer):
     self.dev.q.append({"copyout":src.num})
     print(self.dev.q)
+    json.dump(self.dev.q, open("encode.rc", "w"))
+    self.dev.q = []
     exit()
     self._cp_mv(dest, self._as_buffer(src), "METAL -> TINY")
   def _offset(self, buf:MetalBuffer, size:int, offset:int):
     #self.num_bufs += 1
     return MetalBuffer(buf.buf, size, offset, num=buf.num)
+
+
 
