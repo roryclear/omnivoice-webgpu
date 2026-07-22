@@ -144,11 +144,7 @@ def waveform_to_wav_bytes(audio, sample_rate: int):
 
     return buf.getvalue()
 
-def load_waveform(audio):
-  if type(audio) == str:
-    with open(audio, "rb") as f: data = f.read()
-  else:
-    data = audio
+def load_waveform(data):
   sample_rate = struct.unpack_from('<I', data, 24)[0]
   channels = struct.unpack_from('<H', data, 22)[0]
   data_offset = data.find(b'data') + 8
@@ -1003,7 +999,7 @@ if __name__ == "__main__":
     Tensor.manual_seed(0)
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
-        ref_audio="voice4.wav",
+        ref_audio=open("voice4.wav", "rb").read(),
         ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you"
     )
     #pickle.dump(audio, open("short4.pkl", "wb"))
@@ -1014,7 +1010,7 @@ if __name__ == "__main__":
     Tensor.manual_seed(0)
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
-        ref_audio="voice.wav",
+        ref_audio=open("voice.wav", "rb").read(),
         ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking, as is likely clear, I am referring to the Iran deal",
     )
     #pickle.dump(audio, open("short.pkl", "wb"))
@@ -1025,7 +1021,7 @@ if __name__ == "__main__":
     Tensor.manual_seed(0)
     audio = model.generate(
         text="Testing testing one two three, this has different text for me to read, so I can test that the tiny jit is working, thank you for listening",
-        ref_audio="voice2.wav",
+        ref_audio=open("voice2.wav", "rb").read(),
         ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
     #pickle.dump(audio, open("short1.pkl", "wb"))
@@ -1037,7 +1033,7 @@ if __name__ == "__main__":
     audio = model.generate(
         # todo, why is end bad??
         text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
-        ref_audio="voice3.wav",
+        ref_audio=open("voice3.wav", "rb").read(),
         ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
