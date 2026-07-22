@@ -8,7 +8,7 @@
 import SwiftUI
 import Foundation
 
-var buffers: [String: MTLBuffer] = [:]
+var buffers: [Int: MTLBuffer] = [:]
 var programs: [String: MTLLibrary] = [:]
 
 class GraphRunner {
@@ -37,19 +37,18 @@ class GraphRunner {
             //print("Items:", items.count)
 
             for (_, item) in items.enumerated() {
-            //print(item)
                 let dict = item as! [String: Any]
                 let key = dict.keys.first!
 
                 if key == "buff_alloc" {
                     if let info = dict["buff_alloc"] as? [String: Any],
-                       let name = info["name"] as? String,
+                       let num = info["num"] as? Int,
                        let size = info["size"] as? Int {
-                        buffers[name] = MTLCreateSystemDefaultDevice()?.makeBuffer(length: size, options: .storageModeShared)
+                        buffers[num] = MTLCreateSystemDefaultDevice()?.makeBuffer(length: size, options: .storageModeShared)
                     }
                 } else if key == "copyin" {
                     if let info = dict["copyin"] as? [String: Any],
-                       let dest = info["dest"] as? String,
+                       let dest = info["dest"] as? Int,
                        let dataString = info["data"] as? String,
                        let data = Data(base64Encoded: dataString),
                        let buffer = buffers[dest] {
@@ -67,7 +66,6 @@ class GraphRunner {
                         }
                         if let library = try? device.makeLibrary(data: dispatchData as! dispatch_data_t) {
                             programs[name] = library
-                            print(name, library, "\n\n")
                         }
                     }
                 } else if key == "call" {
@@ -82,8 +80,52 @@ class GraphRunner {
     }
     
     func run() {
+        let device = MTLCreateSystemDefaultDevice()!
+        let queue = device.makeCommandQueue()!
+
         for item in self.calls {
-            print(item["name"]!)
+            let name = item["name"] as! String
+            let library = programs[name]!
+            let function = library.makeFunction(name: name)!
+            
+            let pipeline = try! device.makeComputePipelineState(function: function)
+
+            let commandBuffer = queue.makeCommandBuffer()!
+            let encoder = commandBuffer.makeComputeCommandEncoder()!
+
+            encoder.setComputePipelineState(pipeline)
+
+            let bufferIDs = item["buffers"] as! [Int]
+            let offsets = item["buffer_offsets"] as! [Int]
+
+            for i in 0..<bufferIDs.count {
+                let buffer = buffers[bufferIDs[i]]!
+                encoder.setBuffer(buffer, offset: offsets[i], index: i)
+            }
+            
+            let global = item["global_size"] as! [Int]
+            let local = item["local_size"] as! [Int]
+
+            let threadsPerGrid = MTLSize(
+                width: global[0],
+                height: global[1],
+                depth: global[2]
+            )
+
+            let threadsPerThreadgroup = MTLSize(
+                width: local[0],
+                height: local[1],
+                depth: local[2]
+            )
+
+            encoder.dispatchThreads(
+                threadsPerGrid,
+                threadsPerThreadgroup: threadsPerThreadgroup
+            )
+
+            encoder.endEncoding()
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
         }
     }
     
