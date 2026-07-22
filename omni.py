@@ -999,6 +999,7 @@ if __name__ == "__main__":
   model = omni()
 
   if "--test" in sys.argv:
+    # tinygrad cbfcf36e4 with metalgraph turned off, my macbook air m3
     Tensor.manual_seed(0)
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
@@ -1014,7 +1015,7 @@ if __name__ == "__main__":
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
         ref_audio="voice.wav",
-        ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking",
+        ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking, as is likely clear, I am referring to the Iran deal",
     )
     #pickle.dump(audio, open("short.pkl", "wb"))
     exp = pickle.load(open("short.pkl", "rb"))
