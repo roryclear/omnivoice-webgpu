@@ -763,8 +763,7 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
-    if ref_audio_tokens is None: ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
-    #pickle.dump((ref_text, ref_audio_tokens), open("voice4.pkl", "wb"))
+    ref_audio_tokens = self.create_voice_clone_prompt(ref_audio=ref_audio)
     target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
 
     avg_tokens_per_char = target_length / len(text)
@@ -1002,12 +1001,10 @@ if __name__ == "__main__":
 
   if "--test" in sys.argv:
     Tensor.manual_seed(0)
-    ref_text, ref_audio_tokens = pickle.load(open("voice4.pkl", "rb"))
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
         ref_audio="voice4.wav",
-        ref_text=ref_text,
-        ref_audio_tokens=ref_audio_tokens
+        ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you"
     )
     #pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
