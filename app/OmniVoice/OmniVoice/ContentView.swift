@@ -45,13 +45,23 @@ func generate(
 ) {
     print("generate func")
     print("audio bytes:", refAudio)
-    let data = load_audio(refAudio, samplingRate: 24000)
+    let sampling_rate = 24000
+    let chunk_size = 960
+    var ref_wav = load_audio(refAudio, samplingRate: sampling_rate)
+    let clipSize = ref_wav.count % chunk_size
+    if clipSize > 0 { ref_wav.removeLast(clipSize) }
+    let wavLen = ref_wav.count
+    let targetLength = sampling_rate * 20
+    if wavLen < targetLength { ref_wav.append(contentsOf: Array(repeating: 0.0, count: targetLength - wavLen)) }
     
-    print("first 1000 values:")
-    print(Array(data.prefix(1000)))
+    print("length:", ref_wav.count)
 
-    let sum = data.reduce(0.0) { $0 + Double($1) }
+    print("first 1000 values:")
+    print(Array(ref_wav.prefix(1000)))
+
+    let sum = ref_wav.reduce(0.0) { $0 + Double($1) }
     print("sum:", sum)
+    
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
