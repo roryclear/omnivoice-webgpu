@@ -13,13 +13,14 @@ var programs: [String: MTLLibrary] = [:]
 
 class GraphRunner {
     let filename: String
-    var calls: [Any] = []
-    var copyouts: [Any] = []
+    var calls: [[String: Any]] = []
+    var copyouts: [Int] = []
 
     init(filename: String) {
         self.filename = filename
         print("GraphRunner initialized with:", filename)
         loadFile()
+        run()
     }
 
     private func loadFile() {
@@ -70,15 +71,22 @@ class GraphRunner {
                         }
                     }
                 } else if key == "call" {
-                    calls.append(dict["call"]!)
+                    calls.append(dict["call"] as! [String: Any])
                 } else if key == "copyout" {
-                    copyouts.append(dict["copyout"]!)
+                    copyouts.append(dict["copyout"] as! Int)
                 }
             }
         } catch {
             print("Failed reading JSON:", error)
         }
     }
+    
+    func run() {
+        for item in self.calls {
+            print(item["name"]!)
+        }
+    }
+    
 }
 
 struct ContentView: View {
@@ -116,8 +124,8 @@ func generate(
     numSteps: Int = 16,
     language: String = "None"
 ) {
-    print("generate func")
-    print("audio bytes:", refAudio)
+    //print("generate func")
+    //print("audio bytes:", refAudio)
     let sampling_rate = 24000
     let chunk_size = 960
     var ref_wav = load_audio(refAudio, samplingRate: sampling_rate)
@@ -127,13 +135,13 @@ func generate(
     let targetLength = sampling_rate * 20
     if wavLen < targetLength { ref_wav.append(contentsOf: Array(repeating: 0.0, count: targetLength - wavLen)) }
     
-    print("length:", ref_wav.count)
+    //print("length:", ref_wav.count)
 
-    print("first 1000 values:")
-    print(Array(ref_wav.prefix(1000)))
+    //print("first 1000 values:")
+    //print(Array(ref_wav.prefix(1000)))
 
-    let sum = ref_wav.reduce(0.0) { $0 + Double($1) }
-    print("sum:", sum)
+    //let sum = ref_wav.reduce(0.0) { $0 + Double($1) }
+    //print("sum:", sum)
     
 }
 
