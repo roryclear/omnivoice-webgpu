@@ -8,6 +8,8 @@
 import SwiftUI
 import Foundation
 
+var buffers: [String: MTLBuffer] = [:]
+
 class GraphRunner {
     let filename: String
 
@@ -26,7 +28,34 @@ class GraphRunner {
             let data = try Data(contentsOf: url)
             let json = try JSONSerialization.jsonObject(with: data, options: [])
 
-            print(json)
+            let items = json as! [Any]
+
+            print("Items:", items.count)
+
+            for (_, item) in items.enumerated() {
+            print(item)
+                let dict = item as! [String: Any]
+                let key = dict.keys.first!
+
+                if key == "buff_alloc" {
+                    if let info = dict["buff_alloc"] as? [String: Any],
+                       let name = info["name"] as? String,
+                       let size = info["size"] as? Int {
+                        buffers[name] = MTLCreateSystemDefaultDevice()?.makeBuffer(length: size, options: .storageModeShared)
+                    }
+                } else if key == "copyin" {
+                    if let info = dict["copyin"] as? [String: Any],
+                       let dest = info["dest"] as? String,
+                       let dataString = info["data"] as? String,
+                       let data = Data(base64Encoded: dataString),
+                       let buffer = buffers[dest] {
+                        let ptr = buffer.contents()
+                        data.copyBytes(to: ptr.assumingMemoryBound(to: UInt8.self), count: data.count)
+                    }
+                }
+                
+            }
+            
 
         } catch {
             print("Failed reading JSON:", error)
