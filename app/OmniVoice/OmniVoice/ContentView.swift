@@ -9,6 +9,7 @@ import SwiftUI
 import Foundation
 
 var buffers: [Int: MTLBuffer] = [:]
+var buffer_sz: [Int: Int] = [:] // todo
 var programs: [String: MTLLibrary] = [:]
 
 class GraphRunner {
@@ -20,7 +21,6 @@ class GraphRunner {
         self.filename = filename
         print("GraphRunner initialized with:", filename)
         loadFile()
-        run()
     }
 
     private func loadFile() {
@@ -45,6 +45,7 @@ class GraphRunner {
                        let num = info["num"] as? Int,
                        let size = info["size"] as? Int {
                         buffers[num] = MTLCreateSystemDefaultDevice()?.makeBuffer(length: size, options: .storageModeShared)
+                        buffer_sz[num] = size
                     }
                 } else if key == "copyin" {
                     if let info = dict["copyin"] as? [String: Any],
@@ -143,6 +144,11 @@ struct ContentView: View {
         .onAppear {
             let encode_graph = GraphRunner(filename: "encode.rc")
             runGenerate()
+            encode_graph.run()
+            print(encode_graph.copyouts)
+            let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
+            print(data)
+            print(Array(data))
         }
     }
 
