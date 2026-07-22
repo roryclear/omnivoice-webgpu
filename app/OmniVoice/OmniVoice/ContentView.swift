@@ -8,6 +8,31 @@
 import SwiftUI
 import Foundation
 
+class GraphRunner {
+    let filename: String
+
+    init(filename: String) {
+        self.filename = filename
+        print("GraphRunner initialized with:", filename)
+        loadFile()
+    }
+
+    private func loadFile() {
+        guard let url = Bundle.main.url(forResource: filename, withExtension: nil) else {
+            print("File not found:", filename)
+            return
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            let json = try JSONSerialization.jsonObject(with: data, options: [])
+
+            print(json)
+
+        } catch {
+            print("Failed reading JSON:", error)
+        }
+    }
+}
 
 struct ContentView: View {
     var body: some View {
@@ -19,6 +44,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
+            let encode_graph = GraphRunner(filename: "encode.rc")
             runGenerate()
         }
     }
