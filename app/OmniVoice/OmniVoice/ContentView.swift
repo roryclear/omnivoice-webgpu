@@ -193,7 +193,7 @@ func generate(
     
     let numRefAudioTokens = wavLen / chunk_size
 
-    let targetLength = estimateTargetTokens(text, refText, numRefAudioTokens)
+    var targetLength = estimateTargetTokens(text, refText, numRefAudioTokens)
 
     print("target_length =", targetLength)
     
@@ -234,7 +234,6 @@ func generate(
     let elapsed = start.duration(to: .now)
     print("Execution time: \(elapsed)")
     
-    
     let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
     let first1000Bytes = data.prefix(1000)
 
@@ -246,6 +245,9 @@ func generate(
     }
 
     print(intArray)
+    for chunk in chunks {
+        targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
+    }
     
 }
 
