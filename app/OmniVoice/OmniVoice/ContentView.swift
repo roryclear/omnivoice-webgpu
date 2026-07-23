@@ -149,7 +149,7 @@ struct ContentView: View {
             encode_graph = GraphRunner(filename: "encode.rc")
             runGenerate()
             let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
-            let first1000Bytes = data.prefix(4)
+            let first1000Bytes = data.prefix(1000)
 
             let intCount = first1000Bytes.count / MemoryLayout<Int32>.size
 
@@ -183,20 +183,29 @@ func generate(
     numSteps: Int = 16,
     language: String = "None"
 ) {
-    //print("generate func")
-    //print("audio bytes:", refAudio)
     let sampling_rate = 24000
     let chunk_size = 960
     var ref_wav = load_audio(refAudio, samplingRate: sampling_rate)
+    
+    print("ref_wav length:", ref_wav.count)
+    var sum = ref_wav.reduce(0.0) { $0 + Double($1) }
+    print("ref_wav sum:", sum)
+    
     let clipSize = ref_wav.count % chunk_size
     if clipSize > 0 { ref_wav.removeLast(clipSize) }
     let wavLen = ref_wav.count
     let targetLength = sampling_rate * 20
     if wavLen < targetLength { ref_wav.append(contentsOf: Array(repeating: 0.0, count: targetLength - wavLen)) }
     
-    print(encode_graph.copyins)
+    print("\nref_wav length:", ref_wav.count)
+    sum = ref_wav.reduce(0.0) { $0 + Double($1) }
+    print("ref_wav sum:", sum)
+        
+    ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
+    
+    //print(encode_graph.copyins)
     encode_graph.run()
-    print(encode_graph.copyouts)
+    //print(encode_graph.copyouts)
     
     //print("length:", ref_wav.count)
 
