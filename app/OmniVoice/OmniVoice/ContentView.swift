@@ -98,6 +98,7 @@ class GraphRunner {
 
             let bufferIDs = item["buffers"] as! [Int]
             let offsets = item["buffer_offsets"] as! [Int]
+            print("offsets =",offsets)
 
             for i in 0..<bufferIDs.count {
                 let buffer = buffers[bufferIDs[i]]!
@@ -119,7 +120,7 @@ class GraphRunner {
                 depth: local[2]
             )
 
-            encoder.dispatchThreads(
+            encoder.dispatchThreadgroups(
                 threadsPerGrid,
                 threadsPerThreadgroup: threadsPerThreadgroup
             )
@@ -147,8 +148,17 @@ struct ContentView: View {
             encode_graph.run()
             print(encode_graph.copyouts)
             let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
-            print(data)
-            print(Array(data))
+            let first1000Bytes = data.prefix(4)
+
+            let intCount = first1000Bytes.count / MemoryLayout<Int32>.size
+
+            let intArray: [Int32] = first1000Bytes.withUnsafeBytes { ptr in
+                let buffer = ptr.bindMemory(to: Int32.self)
+                return Array(buffer.prefix(intCount))
+            }
+
+            print(intArray)
+            
         }
     }
 
