@@ -16,6 +16,7 @@ class GraphRunner {
     let filename: String
     var calls: [[String: Any]] = []
     var copyouts: [Int] = []
+    var copyins: [Int] = []
 
     init(filename: String) {
         self.filename = filename
@@ -53,6 +54,7 @@ class GraphRunner {
                        let dataString = info["data"] as? String,
                        let data = Data(base64Encoded: dataString),
                        let buffer = buffers[dest] {
+                        self.copyins.append(dest)
                         let ptr = buffer.contents()
                         data.copyBytes(to: ptr.assumingMemoryBound(to: UInt8.self), count: data.count)
                     }
@@ -98,7 +100,7 @@ class GraphRunner {
 
             let bufferIDs = item["buffers"] as! [Int]
             let offsets = item["buffer_offsets"] as! [Int]
-            print("offsets =",offsets)
+
 
             for i in 0..<bufferIDs.count {
                 let buffer = buffers[bufferIDs[i]]!
@@ -145,6 +147,7 @@ struct ContentView: View {
         .onAppear {
             let encode_graph = GraphRunner(filename: "encode.rc")
             runGenerate()
+            print(encode_graph.copyins)
             encode_graph.run()
             print(encode_graph.copyouts)
             let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
