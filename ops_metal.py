@@ -208,14 +208,11 @@ class MetalAllocator(LRUAllocator[MetalDevice]):
     self._cp_mv(self._as_buffer(dest), src, "TINY -> METAL")
   def _copyout(self, dest:memoryview, src:MetalBuffer):
     self.dev.q.append({"copyout":src.num})
-    print(self.dev.q)
+    #print(self.dev.q)
     json.dump(self.dev.q, open("encode.rc", "w"))
     self.dev.q = []
-    exit()
+    #exit()
     self._cp_mv(dest, self._as_buffer(src), "METAL -> TINY")
-  def _offset(self, buf:MetalBuffer, size:int, offset:int):
+  #def _offset(self, buf:MetalBuffer, size:int, offset:int):
     #self.num_bufs += 1
-    return MetalBuffer(buf.buf, size, offset, num=buf.num)
-
-
-
+  #  return MetalBuffer(buf.buf, size, offset, num=buf.num)
