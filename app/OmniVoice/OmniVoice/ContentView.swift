@@ -12,8 +12,7 @@ let device = MTLCreateSystemDefaultDevice()!
 let queue = device.makeCommandQueue()!
 var buffers: [Int: MTLBuffer] = [:]
 var buffer_sz: [Int: Int] = [:] // todo
-var programs: [String: MTLLibrary] = [:]
-var pipelines: [String: MTLComputePipelineState] = [:]
+var programs: [String: MTLComputePipelineState] = [:]
 let commandBuffer = queue.makeCommandBuffer()!
 var encode_graph: GraphRunner!
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
@@ -76,10 +75,9 @@ class GraphRunner {
                             DispatchData(bytes: ptr)
                         }
                         if let library = try? device.makeLibrary(data: dispatchData as! dispatch_data_t) {
-                            programs[name] = library
                             if let function = library.makeFunction(name: name) {
                                 if let pipeline = try? device.makeComputePipelineState(function: function) {
-                                    pipelines[name] = pipeline
+                                    programs[name] = pipeline
                                 }
                             }
                         }
@@ -98,7 +96,7 @@ class GraphRunner {
     func run() {
         for item in self.calls {
             let name = item["name"] as! String
-            let pipeline = pipelines[name]!
+            let pipeline = programs[name]!
 
             let encoder = commandBuffer.makeComputeCommandEncoder()!
 
