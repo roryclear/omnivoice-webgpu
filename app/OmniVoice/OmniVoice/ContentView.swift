@@ -179,6 +179,14 @@ struct ContentView: View {
     }
 }
 
+func estimateTargetTokens(_ text: String, _ refText: String, _ numRefAudioTokens: Int) -> Int {
+    let refWeight = refText.unicodeScalars.reduce(Float(0)) { $0 + CHAR_WEIGHTS[Int($1.value)] }
+    let speedFactor = refWeight / Float(numRefAudioTokens)
+    let targetWeight = text.unicodeScalars.reduce(Float(0)) { $0 + CHAR_WEIGHTS[Int($1.value)] }
+    let estimatedDuration = targetWeight / speedFactor
+    return Int(estimatedDuration)
+}
+
 func generate(
     text: String,
     refText: String,
@@ -198,10 +206,7 @@ func generate(
     
     let numRefAudioTokens = wavLen / chunk_size
 
-    let targetLength = Int(
-        text.unicodeScalars.reduce(0) { $0 + CHAR_WEIGHTS[Int($1.value)] } /
-        (refText.unicodeScalars.reduce(0) { $0 + CHAR_WEIGHTS[Int($1.value)] } / Float(numRefAudioTokens))
-    )
+    let targetLength = estimateTargetTokens(text, refText, numRefAudioTokens)
 
     print("target_length =", targetLength)
     
