@@ -12,6 +12,9 @@ var buffers: [Int: MTLBuffer] = [:]
 var buffer_sz: [Int: Int] = [:] // todo
 var programs: [String: MTLLibrary] = [:]
 var encode_graph: GraphRunner!
+let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
+let AUDIO_CHUNK_DURATION = 15.0
+let FRAME_RATE = 25
 
 class GraphRunner {
     let filename: String
@@ -167,8 +170,8 @@ struct ContentView: View {
         let url = Bundle.main.url(forResource: "voice4", withExtension: "wav")!
         let audioData = try! Data(contentsOf: url)
         generate(
-            text: "Random text",
-            refText: "Reference text",
+            text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
+            refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
             refAudio: audioData,
             numSteps: 16,
             language: "en"
@@ -187,33 +190,54 @@ func generate(
     let chunk_size = 960
     var ref_wav = load_audio(refAudio, samplingRate: sampling_rate)
     
-    print("ref_wav length:", ref_wav.count)
-    var sum = ref_wav.reduce(0.0) { $0 + Double($1) }
-    print("ref_wav sum:", sum)
     
     let clipSize = ref_wav.count % chunk_size
     if clipSize > 0 { ref_wav.removeLast(clipSize) }
     let wavLen = ref_wav.count
-    let targetLength = sampling_rate * 20
-    if wavLen < targetLength { ref_wav.append(contentsOf: Array(repeating: 0.0, count: targetLength - wavLen)) }
+    if wavLen < (sampling_rate * 20) { ref_wav.append(contentsOf: Array(repeating: 0.0, count: (sampling_rate * 20) - wavLen)) }
     
-    print("\nref_wav length:", ref_wav.count)
-    sum = ref_wav.reduce(0.0) { $0 + Double($1) }
-    print("ref_wav sum:", sum)
-        
+    let numRefAudioTokens = wavLen / chunk_size
+
+    let targetLength = Int(
+        text.unicodeScalars.reduce(0) { $0 + CHAR_WEIGHTS[Int($1.value)] } /
+        (refText.unicodeScalars.reduce(0) { $0 + CHAR_WEIGHTS[Int($1.value)] } / Float(numRefAudioTokens))
+    )
+
+    print("target_length =", targetLength)
+    
     ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
     
-    //print(encode_graph.copyins)
-    encode_graph.run()
-    //print(encode_graph.copyouts)
+    let avgTokensPerChar = Float(targetLength) / Float(text.count)
+    let textChunkLen = Int(Float(AUDIO_CHUNK_DURATION) * Float(FRAME_RATE) / avgTokensPerChar)
+
+    let pattern = #"[^。，！？；：、.,?]+[。，！？；：、.,?]?"#
+    let regex = try! NSRegularExpression(pattern: pattern)
+    let range = NSRange(text.startIndex..., in: text)
+
+    let chunksSmall = regex.matches(in: text, range: range).compactMap {
+        Range($0.range, in: text).map { String(text[$0]) }
+    }
+
+    var chunks = [""]
+    var j = 0
+
+    for var chunk in chunksSmall {
+        if chunk.first == " " {
+            chunk.removeFirst()
+        }
+
+        if chunks[j].count < textChunkLen + chunk.count {
+            chunks[j] += chunk
+        } else {
+            chunks.append(chunk)
+            j += 1
+        }
+    }
     
-    //print("length:", ref_wav.count)
-
-    //print("first 1000 values:")
-    //print(Array(ref_wav.prefix(1000)))
-
-    //let sum = ref_wav.reduce(0.0) { $0 + Double($1) }
-    //print("sum:", sum)
+    print("CHUNKS", chunks.count)
+    print(chunks)
+    
+    encode_graph.run()
     
 }
 
