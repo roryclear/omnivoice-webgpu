@@ -11,6 +11,7 @@ import Foundation
 var buffers: [Int: MTLBuffer] = [:]
 var buffer_sz: [Int: Int] = [:] // todo
 var programs: [String: MTLLibrary] = [:]
+var encode_graph: GraphRunner!
 
 class GraphRunner {
     let filename: String
@@ -145,11 +146,8 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            let encode_graph = GraphRunner(filename: "encode.rc")
+            encode_graph = GraphRunner(filename: "encode.rc")
             runGenerate()
-            print(encode_graph.copyins)
-            encode_graph.run()
-            print(encode_graph.copyouts)
             let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
             let first1000Bytes = data.prefix(4)
 
@@ -195,6 +193,10 @@ func generate(
     let wavLen = ref_wav.count
     let targetLength = sampling_rate * 20
     if wavLen < targetLength { ref_wav.append(contentsOf: Array(repeating: 0.0, count: targetLength - wavLen)) }
+    
+    print(encode_graph.copyins)
+    encode_graph.run()
+    print(encode_graph.copyouts)
     
     //print("length:", ref_wav.count)
 
