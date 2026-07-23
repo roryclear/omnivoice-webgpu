@@ -8,9 +8,13 @@
 import SwiftUI
 import Foundation
 
+let device = MTLCreateSystemDefaultDevice()!
+let queue = device.makeCommandQueue()!
 var buffers: [Int: MTLBuffer] = [:]
 var buffer_sz: [Int: Int] = [:] // todo
 var programs: [String: MTLLibrary] = [:]
+var pipelines: [String: MTLComputePipelineState] = [:]
+let commandBuffer = queue.makeCommandBuffer()!
 var encode_graph: GraphRunner!
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
@@ -73,6 +77,11 @@ class GraphRunner {
                         }
                         if let library = try? device.makeLibrary(data: dispatchData as! dispatch_data_t) {
                             programs[name] = library
+                            if let function = library.makeFunction(name: name) {
+                                if let pipeline = try? device.makeComputePipelineState(function: function) {
+                                    pipelines[name] = pipeline
+                                }
+                            }
                         }
                     }
                 } else if key == "call" {
@@ -87,17 +96,10 @@ class GraphRunner {
     }
     
     func run() {
-        let device = MTLCreateSystemDefaultDevice()!
-        let queue = device.makeCommandQueue()!
-
         for item in self.calls {
             let name = item["name"] as! String
-            let library = programs[name]!
-            let function = library.makeFunction(name: name)!
-            
-            let pipeline = try! device.makeComputePipelineState(function: function)
+            let pipeline = pipelines[name]!
 
-            let commandBuffer = queue.makeCommandBuffer()!
             let encoder = commandBuffer.makeComputeCommandEncoder()!
 
             encoder.setComputePipelineState(pipeline)
@@ -130,11 +132,10 @@ class GraphRunner {
                 threadsPerGrid,
                 threadsPerThreadgroup: threadsPerThreadgroup
             )
-
             encoder.endEncoding()
-            commandBuffer.commit()
-            commandBuffer.waitUntilCompleted()
         }
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
     }
     
 }
@@ -242,7 +243,10 @@ func generate(
     print("CHUNKS", chunks.count)
     print(chunks)
     
+    let start = ContinuousClock.now
     encode_graph.run()
+    let elapsed = start.duration(to: .now)
+    print("Execution time: \(elapsed)")
     
 }
 
@@ -407,4 +411,5 @@ func readUInt32LE(_ bytes: [UInt8], offset: Int) -> UInt32 {
 #Preview {
     ContentView()
 }
+
 
