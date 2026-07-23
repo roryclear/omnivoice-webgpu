@@ -106,6 +106,7 @@ AUDIO_MASK_ID = 1024
 SAMPLING_RATE = 24000
 # saved from getting all chars with https://github.com/k2-fsa/OmniVoice/blob/9948396864cb713b0c2f92495cf4449bd8717127/omnivoice/utils/duration.py#L204
 CHAR_WEIGHTS = pickle.load(open('char_weights.pkl', 'rb'))
+with open("char_weights.json", "w") as f: json.dump(CHAR_WEIGHTS, f)
 
 data = json.load(urllib.request.urlopen("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/tokenizer.json"))
 special_tokens = data["added_tokens"]
@@ -768,8 +769,12 @@ class omni:
 
     ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
     ref_audio_tokens = ref_audio_tokens.numpy()
+    #print(np.array(ref_audio_tokens).flatten()[:250])
+    #exit()
 
     target_length = self._estimate_target_tokens(text, ref_text, int(wav_len / self.audio_tokenizer.hop_length),)
+    print("target_length =",target_length)
+    exit()
 
     avg_tokens_per_char = target_length / len(text)
     text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
@@ -994,7 +999,7 @@ def write_waveform(file_name, audio):
 
 if __name__ == "__main__":
   model = omni()
-
+  
   if "--test" in sys.argv:
     # tinygrad cbfcf36e4 with metalgraph turned off, my macbook air m3
     Tensor.manual_seed(0)
