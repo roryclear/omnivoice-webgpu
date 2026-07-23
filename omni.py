@@ -773,8 +773,6 @@ class omni:
     #exit()
 
     target_length = self._estimate_target_tokens(text, ref_text, int(wav_len / self.audio_tokenizer.hop_length),)
-    print("target_length =",target_length)
-    exit()
 
     avg_tokens_per_char = target_length / len(text)
     text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
@@ -792,7 +790,7 @@ class omni:
     print("CHUNKS", len(chunks))
     res = []
     for i in range(len(chunks)):
-      target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
+      target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
       ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, language=language)
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
