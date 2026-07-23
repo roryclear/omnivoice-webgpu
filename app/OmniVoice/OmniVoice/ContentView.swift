@@ -148,20 +148,8 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            encode_graph = GraphRunner(filename: "encode.rc")
+            encode_graph = GraphRunner(filename: "0.rc")
             runGenerate()
-            let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
-            let first1000Bytes = data.prefix(1000)
-
-            let intCount = first1000Bytes.count / MemoryLayout<Int32>.size
-
-            let intArray: [Int32] = first1000Bytes.withUnsafeBytes { ptr in
-                let buffer = ptr.bindMemory(to: Int32.self)
-                return Array(buffer.prefix(intCount))
-            }
-
-            print(intArray)
-            
         }
     }
 
@@ -245,6 +233,19 @@ func generate(
     encode_graph.run()
     let elapsed = start.duration(to: .now)
     print("Execution time: \(elapsed)")
+    
+    
+    let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
+    let first1000Bytes = data.prefix(1000)
+
+    let intCount = first1000Bytes.count / MemoryLayout<Int32>.size
+
+    let intArray: [Int32] = first1000Bytes.withUnsafeBytes { ptr in
+        let buffer = ptr.bindMemory(to: Int32.self)
+        return Array(buffer.prefix(intCount))
+    }
+
+    print(intArray)
     
 }
 
