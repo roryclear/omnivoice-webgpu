@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BEFC87FB301183F9008C5493 /* encode.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEFC87FA301183F9008C5493 /* encode.rc */; };
+		BEBF1EE73012D1B200320C21 /* 0.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEBF1EE63012D1B200320C21 /* 0.rc */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		BE6ED7D43010E89400847188 /* OmniVoice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OmniVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		BEFC87FA301183F9008C5493 /* encode.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = encode.rc; sourceTree = "<group>"; };
+		BEBF1EE63012D1B200320C21 /* 0.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 0.rc; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -37,7 +37,7 @@
 		BE6ED7CB3010E89400847188 = {
 			isa = PBXGroup;
 			children = (
-				BEFC87FA301183F9008C5493 /* encode.rc */,
+				BEBF1EE63012D1B200320C21 /* 0.rc */,
 				BE6ED7D63010E89400847188 /* OmniVoice */,
 				BE6ED7D53010E89400847188 /* Products */,
 			);
@@ -115,7 +115,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BEFC87FB301183F9008C5493 /* encode.rc in Resources */,
+				BEBF1EE73012D1B200320C21 /* 0.rc in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

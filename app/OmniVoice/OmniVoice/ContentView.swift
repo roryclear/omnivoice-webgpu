@@ -18,6 +18,148 @@ var encode_graph: GraphRunner!
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
+let tokeninizer = Tokenizer()
+
+class Tokenizer {
+    let specialTokens: [String: Int]
+    let normalTokensBytes: [[UInt8]: Int]
+
+    private let byteDecoder: [Character: UInt8]
+
+    init() {
+        let url = Bundle.main.url(forResource: "tokenizer", withExtension: "json")!
+        let data = try! Data(contentsOf: url)
+        let json = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        // Build locally first
+        var decoder: [Character: UInt8] = [:]
+
+        var bs = Array(33...126)
+        bs += Array(161...172)
+        bs += Array(174...255)
+
+        var cs = bs
+        var n = 0
+
+        for b in 0..<256 {
+            if !bs.contains(b) {
+                bs.append(b)
+                cs.append(256 + n)
+                n += 1
+            }
+        }
+
+        for (b, c) in zip(bs, cs) {
+            decoder[Character(UnicodeScalar(c)!)] = UInt8(b)
+        }
+
+        // Special tokens
+        let addedTokens = json["added_tokens"] as! [[String: Any]]
+
+        let specials = Dictionary(
+            uniqueKeysWithValues: addedTokens.map {
+                (
+                    $0["content"] as! String,
+                    $0["id"] as! Int
+                )
+            }
+        )
+
+        // Normal vocab
+        let model = json["model"] as! [String: Any]
+        let vocab = model["vocab"] as! [String: Int]
+
+        let normal = Dictionary(
+            uniqueKeysWithValues: vocab.map { token, id in
+                (
+                    token.map { decoder[$0]! },
+                    id
+                )
+            }
+        )
+
+        // Assign all properties last
+        self.byteDecoder = decoder
+        self.specialTokens = specials
+        self.normalTokensBytes = normal
+    }
+
+
+    func encode(_ text: String) -> [Int] {
+        var result: [Int] = []
+
+        var remaining = text
+
+        let specials = specialTokens.keys.sorted {
+            $0.count > $1.count
+        }
+
+        while !remaining.isEmpty {
+
+            if let special = specials.first(where: {
+                remaining.hasPrefix($0)
+            }) {
+                result.append(specialTokens[special]!)
+                remaining.removeFirst(special.count)
+                continue
+            }
+
+            // encode until next possible special token
+            var chunk = remaining
+
+            if let next = specials.compactMap({
+                remaining.range(of: $0)?.lowerBound
+            }).min() {
+                chunk = String(remaining[..<next])
+                remaining = String(remaining[next...])
+            } else {
+                remaining = ""
+            }
+
+            result += encodeWord(chunk)
+        }
+
+        return result
+    }
+
+
+    private func encodeWord(_ word: String) -> [Int] {
+        let bytes = Array(word.utf8)
+
+        if let id = normalTokensBytes[bytes] {
+            return [id]
+        }
+
+        var parts = bytes.map {
+            [$0]
+        }
+
+        while true {
+            var bestID = Int.max
+            var bestIndex = -1
+
+            for i in 0..<(parts.count - 1) {
+                let merged = parts[i] + parts[i + 1]
+
+                if let id = normalTokensBytes[merged], id < bestID {
+                    bestID = id
+                    bestIndex = i
+                }
+            }
+
+            if bestIndex == -1 {
+                break
+            }
+
+            parts[bestIndex] += parts[bestIndex + 1]
+            parts.remove(at: bestIndex + 1)
+        }
+
+        return parts.map {
+            normalTokensBytes[$0]!
+        }
+    }
+}
 
 class GraphRunner {
     let filename: String
@@ -247,6 +389,8 @@ func generate(
     print(intArray)
     for chunk in chunks {
         targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
+        let tokens = tokeninizer.encode(chunk)
+        print(tokens)
     }
     
 }
