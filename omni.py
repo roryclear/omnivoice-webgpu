@@ -765,10 +765,11 @@ class omni:
     ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
     wav_len = len(ref_wav)
     ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
+
     ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
     ref_audio_tokens = ref_audio_tokens.numpy()
 
-    target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
+    target_length = self._estimate_target_tokens(text, ref_text, int(wav_len / self.audio_tokenizer.hop_length),)
 
     avg_tokens_per_char = target_length / len(text)
     text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
