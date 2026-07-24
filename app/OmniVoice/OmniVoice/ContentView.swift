@@ -431,6 +431,13 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     var audio_mask = (0..<2).map { _ in Array(repeating: false, count: MAX_LEN)}
     audio_mask[0].replaceSubrange(0..<c_len, with: cond_audio_mask)
     audio_mask[1].replaceSubrange(0..<targetLength, with: cond_audio_mask.suffix(targetLength))
+    
+    print(audio_mask)
+    
+    var attentionMask = (0..<2).map { _ in (0..<1).map { _ in (0..<MAX_LEN).map { _ in Array(repeating: false, count: MAX_LEN) }}}
+    for i in 0..<c_len { attentionMask[0][0][i].replaceSubrange(0..<c_len, with: Array(repeating: true, count: c_len))}
+    for i in 0..<targetLength { attentionMask[1][0][i].replaceSubrange(0..<targetLength, with: Array(repeating: true, count: targetLength))}
+    if c_len > targetLength { for i in targetLength..<c_len { attentionMask[1][0][i][i] = true }}
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
