@@ -427,7 +427,10 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
         input_ids[1][i].replaceSubrange(0..<targetLength, with: src.suffix(targetLength))
     }
     
-    print("input_ids",input_ids)
+    let cond_audio_mask = Array(repeating: false, count: cond_audio_start_idx) + Array(repeating: true, count: c_len - cond_audio_start_idx)
+    var audio_mask = (0..<2).map { _ in Array(repeating: false, count: MAX_LEN)}
+    audio_mask[0].replaceSubrange(0..<c_len, with: cond_audio_mask)
+    audio_mask[1].replaceSubrange(0..<targetLength, with: cond_audio_mask.suffix(targetLength))
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
