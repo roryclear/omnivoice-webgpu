@@ -21,6 +21,7 @@ let FRAME_RATE = 25
 let AUDIO_MASK_ID = 1024
 let MAX_LEN = 2000
 let NUM_AUDIO_CODEBOOK = 8
+let T_SHIFT = 0.1
 let tokenizer = Tokenizer()
 
 class Tokenizer {
@@ -438,6 +439,31 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     for i in 0..<c_len { attentionMask[0][0][i].replaceSubrange(0..<c_len, with: Array(repeating: true, count: c_len))}
     for i in 0..<targetLength { attentionMask[1][0][i].replaceSubrange(0..<targetLength, with: Array(repeating: true, count: targetLength))}
     if c_len > targetLength { for i in targetLength..<c_len { attentionMask[1][0][i][i] = true }}
+    
+    let totalMask = targetLength * NUM_AUDIO_CODEBOOK
+    var rem = totalMask
+    var sched: [Int] = []
+
+    var timesteps: [Double] = (0...numSteps).map { i in Double(i) / Double(numSteps)}
+
+    timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
+
+    for step in 0..<numSteps {
+        let num: Int
+        if step == numSteps - 1 {
+            num = rem
+        } else {
+            let value = Int(ceil(Double(totalMask) * (timesteps[step + 1] - timesteps[step])))
+            num = min(value, rem)
+        }
+        if num > MAX_LEN {
+            print("sched too big:", num, "MAX_LEN =", MAX_LEN)
+            return
+        }
+        sched.append(num)
+        rem -= num
+    }
+    print("sched =", sched)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
