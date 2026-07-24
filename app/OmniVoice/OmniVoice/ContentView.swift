@@ -19,6 +19,8 @@ let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
 let AUDIO_MASK_ID = 1024
+let MAX_LEN = 2000
+let NUM_AUDIO_CODEBOOK = 8
 let tokenizer = Tokenizer()
 
 class Tokenizer {
@@ -379,7 +381,6 @@ func generate(
     
     let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
 
-
     //todo, if this doesn't change fix
     print("size =",buffer_sz[encode_graph.copyouts[0]]!)
     
@@ -405,12 +406,28 @@ func generate(
 }
 
 func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [[Int32]], numSteps: Int = 16, language: String = "None") {
-    let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
-    let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>")
-    let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength)
+    let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>").map { Int32($0) }
+    let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>").map { Int32($0) }
+    let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength).map { Int32($0) }
     let c_len = style_tokens.count + text_tokens.count + refAudioTokens[0].count + target_audio_tokens.count
     let cond_audio_start_idx = c_len - targetLength - refAudioTokens[0].count
     print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx)
+    
+    let base = style_tokens + text_tokens
+
+    let cond_input_ids = [(0..<NUM_AUDIO_CODEBOOK).map {
+        base + refAudioTokens[$0] + target_audio_tokens
+    }]
+
+    var input_ids = (0..<2).map { _ in (0..<NUM_AUDIO_CODEBOOK).map { _ in Array(repeating: Int32(AUDIO_MASK_ID), count: MAX_LEN) }}
+
+    for i in 0..<NUM_AUDIO_CODEBOOK {
+        let src = cond_input_ids[0][i]
+        input_ids[0][i].replaceSubrange(0..<c_len, with: src.prefix(c_len))
+        input_ids[1][i].replaceSubrange(0..<targetLength, with: src.suffix(targetLength))
+    }
+    
+    print("input_ids",input_ids)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
