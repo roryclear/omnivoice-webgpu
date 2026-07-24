@@ -297,7 +297,7 @@ struct ContentView: View {
     }
 
     func runGenerate() {
-        let url = Bundle.main.url(forResource: "voice4", withExtension: "wav")!
+        let url = Bundle.main.url(forResource: "voice3", withExtension: "wav")!
         let audioData = try! Data(contentsOf: url)
         generate(
             text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
@@ -386,16 +386,24 @@ func generate(
         let buffer = ptr.bindMemory(to: Int32.self)
         return Array(buffer.prefix(intCount))
     }
+    //todo, if this doesn't change fix
+    print("size =",buffer_sz[encode_graph.copyouts[0]]!)
+    
+    let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
+    let cols = ints.count / 8
+    let refAudioTokens = stride(from: 0, to: ints.count, by: cols).map {
+        Array(ints[$0..<$0 + cols])
+    }
 
     print(intArray)
     for chunk in chunks {
         targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
-        generateIterative(chunk, targetLength: targetLength, refText: refText)
+        generateIterative(chunk, targetLength: targetLength, refText: refText, refAudioTokens: refAudioTokens)
     }
     
 }
 
-func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [Int] = [1], numSteps: Int = 16, language: String = "None") {
+func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [[Int32]], numSteps: Int = 16, language: String = "None") {
     let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>")
     let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength)
