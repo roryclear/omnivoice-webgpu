@@ -378,23 +378,20 @@ func generate(
     print("Execution time: \(elapsed)")
     
     let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
-    let first1000Bytes = data.prefix(1000)
 
-    let intCount = first1000Bytes.count / MemoryLayout<Int32>.size
 
-    let intArray: [Int32] = first1000Bytes.withUnsafeBytes { ptr in
-        let buffer = ptr.bindMemory(to: Int32.self)
-        return Array(buffer.prefix(intCount))
-    }
     //todo, if this doesn't change fix
     print("size =",buffer_sz[encode_graph.copyouts[0]]!)
     
     let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
-
-    let channelLength = numRefAudioTokens
+    
+    let T_full = ints.count / 8
+    let T_actual = numRefAudioTokens
 
     let refAudioTokens = (0..<8).map { channel in
-        Array(ints[channel * channelLength ..< (channel + 1) * channelLength])
+        let start = channel * T_full
+        let end = start + T_actual
+        return Array(ints[start..<end])
     }
 
     print(refAudioTokens)
