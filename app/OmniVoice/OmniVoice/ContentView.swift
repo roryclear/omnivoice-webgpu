@@ -391,9 +391,7 @@ func generate(
     
     let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
     let cols = ints.count / 8
-    let refAudioTokens = stride(from: 0, to: ints.count, by: cols).map {
-        Array(ints[$0..<$0 + cols])
-    }
+    let refAudioTokens = stride(from: 0, to: numRefAudioTokens * 8, by: 8).map { Array(ints[$0..<$0 + 8]) }
 
     print("refAudioTokens:",refAudioTokens)
     for chunk in chunks {
