@@ -306,7 +306,7 @@ struct ContentView: View {
             text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
             refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
             refAudio: audioData,
-            numSteps: 16,
+            num_steps: 16,
             language: "en"
         )
     }
@@ -324,7 +324,7 @@ func generate(
     text: String,
     refText: String,
     refAudio: Data,
-    numSteps: Int = 16,
+    num_steps: Int = 16,
     language: String = "None"
 ) {
     let sampling_rate = 24000
@@ -406,7 +406,7 @@ func generate(
     
 }
 
-func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [[Int32]], numSteps: Int = 16, language: String = "None") {
+func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [[Int32]], num_steps: Int = 16, language: String = "None") {
     let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>").map { Int32($0) }
     let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>").map { Int32($0) }
     let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength).map { Int32($0) }
@@ -444,13 +444,13 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     var rem = totalMask
     var sched: [Int] = []
 
-    var timesteps: [Double] = (0...numSteps).map { i in Double(i) / Double(numSteps)}
+    var timesteps: [Double] = (0...num_steps).map { i in Double(i) / Double(num_steps)}
 
     timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
 
-    for step in 0..<numSteps {
+    for step in 0..<num_steps {
         let num: Int
-        if step == numSteps - 1 {
+        if step == num_steps - 1 {
             num = rem
         } else {
             let value = Int(ceil(Double(totalMask) * (timesteps[step + 1] - timesteps[step])))
