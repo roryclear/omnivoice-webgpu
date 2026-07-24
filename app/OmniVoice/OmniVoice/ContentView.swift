@@ -18,7 +18,7 @@ var encode_graph: GraphRunner!
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
-let tokeninizer = Tokenizer()
+let tokenizer = Tokenizer()
 
 class Tokenizer {
     let specialTokens: [String: Int]
@@ -389,10 +389,16 @@ func generate(
     print(intArray)
     for chunk in chunks {
         targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
-        let tokens = tokeninizer.encode(chunk)
-        print(tokens)
+        generateIterative(chunk, targetLength: targetLength, refText: refText)
     }
     
+}
+
+func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [Int] = [1], numSteps: Int = 16, language: String = "None") {
+    let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
+    let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>")
+    print(style_tokens)
+    print(text_tokens)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
