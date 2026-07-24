@@ -405,8 +405,9 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>")
     let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength)
-    print(style_tokens)
-    print(text_tokens)
+    let c_len = style_tokens.count + text_tokens.count + refAudioTokens.count + target_audio_tokens.count
+    let cond_audio_start_idx = c_len - targetLength - refAudioTokens.count
+    print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
