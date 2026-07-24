@@ -32,6 +32,7 @@ def error_check(error: metal.NSError, error_constructor: type[Exception] = Runti
 class MetalDevice(Compiled):
   def __init__(self, device:str):
     self.q = []
+    self.q_num = 0
     self.sysdevice = metal.MTLCreateSystemDefaultDevice()
     self.mtl_queue = self.sysdevice.newCommandQueueWithMaxCommandBufferCount(1024)
     if self.mtl_queue is None: raise RuntimeError("Cannot allocate a new command queue")
@@ -209,8 +210,9 @@ class MetalAllocator(LRUAllocator[MetalDevice]):
   def _copyout(self, dest:memoryview, src:MetalBuffer):
     self.dev.q.append({"copyout":src.num})
     #print(self.dev.q)
-    json.dump(self.dev.q, open("encode.rc", "w"))
+    json.dump(self.dev.q, open(f"{self.dev.q_num}.rc", "w"))
     self.dev.q = []
+    self.dev.q_num += 1
     #exit()
     self._cp_mv(dest, self._as_buffer(src), "METAL -> TINY")
   #def _offset(self, buf:MetalBuffer, size:int, offset:int):
