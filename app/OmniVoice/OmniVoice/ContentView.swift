@@ -13,8 +13,8 @@ let queue = device.makeCommandQueue()!
 var buffers: [Int: MTLBuffer] = [:]
 var buffer_sz: [Int: Int] = [:] // todo
 var programs: [String: MTLComputePipelineState] = [:]
-let commandBuffer = queue.makeCommandBuffer()!
 var encode_graph: GraphRunner!
+var model_graph: GraphRunner!
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
@@ -240,10 +240,10 @@ class GraphRunner {
     }
     
     func run() {
+        let commandBuffer = queue.makeCommandBuffer()!
         for item in self.calls {
             let name = item["name"] as! String
             let pipeline = programs[name]!
-
             let encoder = commandBuffer.makeComputeCommandEncoder()!
 
             encoder.setComputePipelineState(pipeline)
@@ -295,6 +295,7 @@ struct ContentView: View {
         .padding()
         .onAppear {
             encode_graph = GraphRunner(filename: "0.rc")
+            model_graph = GraphRunner(filename: "1.rc")
             runGenerate()
         }
     }
@@ -464,6 +465,13 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
         rem -= num
     }
     print("sched =", sched)
+    
+    print("model copyins")
+    for buf in model_graph.copyins {
+        print(buf, "size", buffer_sz[buf]!)
+    }
+    print(model_graph.copyins)
+    print(model_graph.copyouts)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
