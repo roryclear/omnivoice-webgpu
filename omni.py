@@ -854,7 +854,7 @@ class omni:
     cond_audio_start_idx = c_len - target_length - len(ref_audio_tokens[0])
 
     cond_input_ids = [[]]
-    for i in range(ref_audio_tokens.shape[0]): cond_input_ids[0].append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
+    for i in range(NUM_AUDIO_CODEBOOK): cond_input_ids[0].append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
     input_ids = [[[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)], [[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)]]
 
     for i in range(NUM_AUDIO_CODEBOOK): input_ids[0][i][:c_len] = cond_input_ids[0][i][:c_len]
