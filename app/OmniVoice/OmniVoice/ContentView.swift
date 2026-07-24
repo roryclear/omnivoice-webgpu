@@ -390,10 +390,16 @@ func generate(
     print("size =",buffer_sz[encode_graph.copyouts[0]]!)
     
     let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
-    let cols = ints.count / 8
-    let refAudioTokens = stride(from: 0, to: numRefAudioTokens * 8, by: 8).map { Array(ints[$0..<$0 + 8]) }
 
-    print("refAudioTokens:",refAudioTokens)
+    let channelLength = numRefAudioTokens
+
+    let refAudioTokens = (0..<8).map { channel in
+        Array(ints[channel * channelLength ..< (channel + 1) * channelLength])
+    }
+
+    print(refAudioTokens)
+    
+    
     for chunk in chunks {
         targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
         generateIterative(chunk, targetLength: targetLength, refText: refText, refAudioTokens: refAudioTokens)
@@ -405,8 +411,8 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>")
     let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength)
-    let c_len = style_tokens.count + text_tokens.count + refAudioTokens.count + target_audio_tokens.count
-    let cond_audio_start_idx = c_len - targetLength - refAudioTokens.count
+    let c_len = style_tokens.count + text_tokens.count + refAudioTokens[0].count + target_audio_tokens.count
+    let cond_audio_start_idx = c_len - targetLength - refAudioTokens[0].count
     print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx)
 }
 
@@ -571,5 +577,6 @@ func readUInt32LE(_ bytes: [UInt8], offset: Int) -> UInt32 {
 #Preview {
     ContentView()
 }
+
 
 
