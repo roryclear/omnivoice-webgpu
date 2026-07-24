@@ -106,6 +106,7 @@ AUDIO_MASK_ID = 1024
 SAMPLING_RATE = 24000
 # saved from getting all chars with https://github.com/k2-fsa/OmniVoice/blob/9948396864cb713b0c2f92495cf4449bd8717127/omnivoice/utils/duration.py#L204
 CHAR_WEIGHTS = pickle.load(open('char_weights.pkl', 'rb'))
+with open("char_weights.json", "w") as f: json.dump(CHAR_WEIGHTS, f)
 
 data = json.load(urllib.request.urlopen("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/tokenizer.json"))
 special_tokens = data["added_tokens"]
@@ -765,10 +766,12 @@ class omni:
     ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
     wav_len = len(ref_wav)
     ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
-    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
-    ref_audio_tokens = ref_audio_tokens.numpy()
 
-    target_length = self._estimate_target_tokens(text, ref_text, len(ref_audio_tokens[0]),)
+    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))
+    # [:, 8, :] (NUM_AUDIO_CODEBOOK)
+    ref_audio_tokens = ref_audio_tokens.numpy()[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
+
+    target_length = self._estimate_target_tokens(text, ref_text, int(wav_len / self.audio_tokenizer.hop_length),)
 
     avg_tokens_per_char = target_length / len(text)
     text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
@@ -786,7 +789,7 @@ class omni:
     print("CHUNKS", len(chunks))
     res = []
     for i in range(len(chunks)):
-      target_length = self._estimate_target_tokens(chunks[i], ref_text, len(ref_audio_tokens[0]))
+      target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
       ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, language=language)
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
@@ -850,7 +853,7 @@ class omni:
     cond_audio_start_idx = c_len - target_length - len(ref_audio_tokens[0])
 
     cond_input_ids = [[]]
-    for i in range(ref_audio_tokens.shape[0]): cond_input_ids[0].append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
+    for i in range(NUM_AUDIO_CODEBOOK): cond_input_ids[0].append(style_tokens + text_tokens + ref_audio_tokens[i].tolist() + target_audio_tokens)
     input_ids = [[[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)], [[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)]]
 
     for i in range(NUM_AUDIO_CODEBOOK): input_ids[0][i][:c_len] = cond_input_ids[0][i][:c_len]
@@ -993,7 +996,7 @@ def write_waveform(file_name, audio):
 
 if __name__ == "__main__":
   model = omni()
-
+  
   if "--test" in sys.argv:
     # tinygrad cbfcf36e4 with metalgraph turned off, my macbook air m3
     Tensor.manual_seed(0)
