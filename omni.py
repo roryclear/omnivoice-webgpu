@@ -767,10 +767,9 @@ class omni:
     wav_len = len(ref_wav)
     ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
 
-    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
-    ref_audio_tokens = ref_audio_tokens.numpy()
-    #print(np.array(ref_audio_tokens).flatten()[:250])
-    #exit()
+    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))
+    # [:, 8, :] (NUM_AUDIO_CODEBOOK)
+    ref_audio_tokens = ref_audio_tokens.numpy()[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
 
     target_length = self._estimate_target_tokens(text, ref_text, int(wav_len / self.audio_tokenizer.hop_length),)
 
