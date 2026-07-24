@@ -297,7 +297,7 @@ struct ContentView: View {
     }
 
     func runGenerate() {
-        let url = Bundle.main.url(forResource: "voice3", withExtension: "wav")!
+        let url = Bundle.main.url(forResource: "voice4", withExtension: "wav")!
         let audioData = try! Data(contentsOf: url)
         generate(
             text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
@@ -395,7 +395,7 @@ func generate(
         Array(ints[$0..<$0 + cols])
     }
 
-    print(intArray)
+    print("refAudioTokens:",refAudioTokens)
     for chunk in chunks {
         targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
         generateIterative(chunk, targetLength: targetLength, refText: refText, refAudioTokens: refAudioTokens)
