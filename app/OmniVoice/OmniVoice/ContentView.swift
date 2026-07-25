@@ -478,16 +478,28 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     
     // copy in data
     // attention_mask - DONE
-    // input_ids -
+    // input_ids - DONE
+    // lyaer_ids - DONE
     // audio_mask
+    // Vals
     // tokens
     attentionMask.withUnsafeBytes { buffers[1134]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
-    layer_ids.withUnsafeBytes { buffers[1136]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count)}
+    layer_ids.withUnsafeBytes { buffers[1136]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+    input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { buffers[1079]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     // todo wrong
     //input_ids.withUnsafeBytes { buffers[1079]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+
     //audio_mask.withUnsafeBytes { buffers[1135]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     //let layer_ids: [[Int32]] = (0..<NUM_AUDIO_CODEBOOK).map { [Int32($0)] }
     //layer_ids.withUnsafeBytes { buffers[1136]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+    
+    let buffer = buffers[1079]!
+    let byteCount = buffer_sz[1079]!   // full buffer size in bytes
+    print(byteCount)
+
+    let ptr = buffer.contents()
+    
+    print(input_ids)
     
     model_graph.run()
     
