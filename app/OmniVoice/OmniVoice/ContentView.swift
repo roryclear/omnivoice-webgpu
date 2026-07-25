@@ -471,6 +471,8 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
         sched.append(num)
         rem -= num
     }
+    let layer_ids: [[Int32]] = (0..<NUM_AUDIO_CODEBOOK).map { [Int32($0)] }
+    //let layer_ids: [Int32] = Array(repeating: Int32(2), count: 8)
     print("sched =", sched)
     // todo, here for now till the copyins are done
     model_graph = GraphRunner(filename: "1.rc")
@@ -484,6 +486,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     // todo wrong
     //input_ids.withUnsafeBytes { buffers[1079]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     //audio_mask.withUnsafeBytes { buffers[1135]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+    //layer_ids.withUnsafeBytes { buffers[1136]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     
     model_graph.run()
     
