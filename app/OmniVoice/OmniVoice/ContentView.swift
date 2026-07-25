@@ -238,11 +238,11 @@ class GraphRunner {
         }
     }
     
-    func run() {
-        let commandBuffer = queue.makeCommandBuffer()!
-        for item in self.calls {
+    func run() { // todo, running together for speed, this is better for debugging for now, xcode high RAM use is fake
+        for (idx, item) in self.calls.enumerated() {
             let name = item["name"] as! String
             let pipeline = programs[name]!
+            let commandBuffer = queue.makeCommandBuffer()!
             let encoder = commandBuffer.makeComputeCommandEncoder()!
 
             encoder.setComputePipelineState(pipeline)
@@ -250,8 +250,10 @@ class GraphRunner {
             let bufferIDs = item["buffers"] as! [Int]
             let offsets = item["buffer_offsets"] as! [Int]
             let vals = item["vals"] as! [Int]
+            print("bufferIDs =", bufferIDs)
             print("name =", name)
             print("vals =",vals)
+            print("index",idx,"of",self.calls.count)
 
             for i in 0..<bufferIDs.count {
                 let buffer = buffers[bufferIDs[i]]!
@@ -283,9 +285,9 @@ class GraphRunner {
                 threadsPerThreadgroup: threadsPerThreadgroup
             )
             encoder.endEncoding()
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
         }
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
     }
     
 }
@@ -478,20 +480,8 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     }
     print(model_graph.copyins)
     print(model_graph.copyouts)
-    
-    //model_graph.run()
-    /*
-    for i in 1...10 {
-        let start = CFAbsoluteTimeGetCurrent()
-        
-        model_graph.run()
-        
-        let end = CFAbsoluteTimeGetCurrent()
-        let elapsed = end - start
-        
-        print("Run \(i): \(elapsed) seconds")
-    }
-     */
+
+    model_graph.run()
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
