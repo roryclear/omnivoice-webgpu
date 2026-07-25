@@ -303,7 +303,6 @@ struct ContentView: View {
         .padding()
         .onAppear {
             encode_graph = GraphRunner(filename: "0.rc")
-            model_graph = GraphRunner(filename: "1.rc")
             runGenerate()
         }
     }
@@ -473,15 +472,23 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
         rem -= num
     }
     print("sched =", sched)
+    // todo, here for now till the copyins are done
+    model_graph = GraphRunner(filename: "1.rc")
+    model_graph.run()
     
-    print("model copyins")
-    for buf in model_graph.copyins {
-        print(buf, "size", buffer_sz[buf]!)
-    }
     print(model_graph.copyins)
     print(model_graph.copyouts)
 
-    model_graph.run()
+    
+    let data = Data(bytes: buffers[model_graph.copyouts[0]]!.contents(), count: buffer_sz[model_graph.copyouts[0]]!)
+    
+    let floatArray = data.withUnsafeBytes { rawBufferPointer -> [Float32] in
+        let floatBuffer = rawBufferPointer.bindMemory(to: Float32.self)
+        return Array(floatBuffer)
+    }
+
+    // Print the array
+    print("scores? =",floatArray)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
