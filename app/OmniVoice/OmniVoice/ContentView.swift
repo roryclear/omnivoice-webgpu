@@ -474,6 +474,14 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     print("sched =", sched)
     // todo, here for now till the copyins are done
     model_graph = GraphRunner(filename: "1.rc")
+    
+    // copy in data
+    // attention_mask
+    // input_ids
+    // audio_mask
+    // tokens
+    attentionMask.withUnsafeBytes { buffers[1134]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+    
     model_graph.run()
     
     print(model_graph.copyins)
