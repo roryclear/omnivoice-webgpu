@@ -455,7 +455,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     var timesteps: [Double] = (0...num_steps).map { i in Double(i) / Double(num_steps)}
 
     timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
-
+        
     for step in 0..<num_steps {
         let num: Int
         if step == num_steps - 1 {
@@ -477,12 +477,13 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     
     // copy in data
     // attention_mask - DONE
-    // input_ids - 
+    // input_ids -
     // audio_mask
     // tokens
     attentionMask.withUnsafeBytes { buffers[1134]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     // todo wrong
     //input_ids.withUnsafeBytes { buffers[1079]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+    //audio_mask.withUnsafeBytes { buffers[1135]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     
     model_graph.run()
     
