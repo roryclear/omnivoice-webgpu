@@ -238,7 +238,7 @@ class GraphRunner {
         }
     }
     
-    func run() { // todo, running together for speed, this is better for debugging for now, xcode high RAM use is fake
+    func run(vals_dict: [Int: Int]? = nil) { // todo, running together for speed, this is better for debugging for now, xcode high RAM use is fake
         for (idx, item) in self.calls.enumerated() {
             let name = item["name"] as! String
             let pipeline = programs[name]!
@@ -261,7 +261,7 @@ class GraphRunner {
             }
             
             for i in 0..<vals.count{
-                var value = Int32(vals[i])
+                var value = Int32(vals_dict![vals[i]]!)
                 encoder.setBytes(&value, length: 4, index: i+bufferIDs.count)
             }
             
@@ -420,7 +420,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength).map { Int32($0) }
     let c_len = style_tokens.count + text_tokens.count + refAudioTokens[0].count + target_audio_tokens.count
     let cond_audio_start_idx = c_len - targetLength - refAudioTokens[0].count
-    print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx)
+    print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx, "target_len", targetLength)
     
     let base = style_tokens + text_tokens
 
@@ -482,7 +482,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     // lyaer_ids - DONE
     // audio_mask - DONE
     // Vals
-    // tokens
+    // tokens - don't need
     attentionMask.withUnsafeBytes { buffers[1134]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     layer_ids.withUnsafeBytes { buffers[1136]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { buffers[1079]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
@@ -502,7 +502,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     
     print(input_ids)
     
-    model_graph.run()
+    model_graph.run(vals_dict: [623: c_len, 198: targetLength])
     
     print(model_graph.copyins)
     print(model_graph.copyouts)
