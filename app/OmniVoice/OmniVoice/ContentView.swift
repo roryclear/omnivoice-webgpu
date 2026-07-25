@@ -215,12 +215,11 @@ class GraphRunner {
                     if let info = dict["program"] as? [String: Any],
                        let name = info["name"] as? String,
                        let libString = info["lib"] as? String,
-                       let libData = Data(base64Encoded: libString),
-                       let device = MTLCreateSystemDefaultDevice() {
+                       let libData = Data(base64Encoded: libString) {
                         let dispatchData = libData.withUnsafeBytes { ptr in
                             DispatchData(bytes: ptr)
                         }
-                        if let library = try? device.makeLibrary(data: dispatchData as! dispatch_data_t) {
+                        if let library = try? device.makeLibrary(data: dispatchData) {
                             if let function = library.makeFunction(name: name) {
                                 if let pipeline = try? device.makeComputePipelineState(function: function) {
                                     programs[name] = pipeline
@@ -250,11 +249,18 @@ class GraphRunner {
 
             let bufferIDs = item["buffers"] as! [Int]
             let offsets = item["buffer_offsets"] as! [Int]
-
+            let vals = item["vals"] as! [Int]
+            print("name =", name)
+            print("vals =",vals)
 
             for i in 0..<bufferIDs.count {
                 let buffer = buffers[bufferIDs[i]]!
                 encoder.setBuffer(buffer, offset: offsets[i], index: i)
+            }
+            
+            for i in 0..<vals.count{
+                var value = Int32(vals[i])
+                encoder.setBytes(&value, length: 4, index: i+bufferIDs.count)
             }
             
             let global = item["global_size"] as! [Int]
@@ -472,6 +478,20 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     }
     print(model_graph.copyins)
     print(model_graph.copyouts)
+    
+    //model_graph.run()
+    /*
+    for i in 1...10 {
+        let start = CFAbsoluteTimeGetCurrent()
+        
+        model_graph.run()
+        
+        let end = CFAbsoluteTimeGetCurrent()
+        let elapsed = end - start
+        
+        print("Run \(i): \(elapsed) seconds")
+    }
+     */
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
@@ -635,6 +655,7 @@ func readUInt32LE(_ bytes: [UInt8], offset: Int) -> UInt32 {
 #Preview {
     ContentView()
 }
+
 
 
 
