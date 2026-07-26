@@ -509,37 +509,41 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     
     //print(input_ids)
     
-    model_graph.run(vals_dict: [623: c_len, 198: targetLength])
-    //model_graph.run(vals_dict: [600: c_len, 198: targetLength])
-    
-    print(model_graph.copyins)
-    print(model_graph.copyouts)
-
-    
-    let data = Data(bytes: buffers[model_graph.copyouts[0]]!.contents(), count: buffer_sz[model_graph.copyouts[0]]!)
-    
-    let scores = data.withUnsafeBytes { rawBufferPointer -> [Float32] in
-        let floatBuffer = rawBufferPointer.bindMemory(to: Float32.self)
-        return Array(floatBuffer)
+    //for i in 0..<num_steps {
+    for i in 0..<1 {
+        model_graph.run(vals_dict: [623: c_len, 198: targetLength])
+        //model_graph.run(vals_dict: [600: c_len, 198: targetLength])
+        
+        print(model_graph.copyins)
+        print(model_graph.copyouts)
+        
+        
+        let data = Data(bytes: buffers[model_graph.copyouts[0]]!.contents(), count: buffer_sz[model_graph.copyouts[0]]!)
+        
+        let scores = data.withUnsafeBytes { rawBufferPointer -> [Float32] in
+            let floatBuffer = rawBufferPointer.bindMemory(to: Float32.self)
+            return Array(floatBuffer)
+        }
+        
+        // Print the array
+        print("scores? =",scores)
+        
+        var sliced: [Float32] = []
+        sliced.reserveCapacity(NUM_AUDIO_CODEBOOK * targetLength)
+        
+        for r in 0..<NUM_AUDIO_CODEBOOK {
+            let rowStart = r * MAX_LEN
+            let rowSlice = scores[rowStart..<(rowStart + targetLength)]
+            sliced.append(contentsOf: rowSlice)
+        }
+        
+        let sortedIdx = sliced.enumerated()
+            .sorted { $0.element > $1.element }
+            .map { $0.offset }
+        
+        let topk_idx = Array(sortedIdx.prefix(sched[i]))
+        print("topk_idx =",topk_idx)
     }
-
-    // Print the array
-    print("scores? =",scores)
-    
-    var sliced: [Float32] = []
-    sliced.reserveCapacity(NUM_AUDIO_CODEBOOK * targetLength)
-
-    for r in 0..<NUM_AUDIO_CODEBOOK {
-        let rowStart = r * MAX_LEN
-        let rowSlice = scores[rowStart..<(rowStart + targetLength)]
-        sliced.append(contentsOf: rowSlice)
-    }
-
-    let sortedIdx = sliced.enumerated()
-        .sorted { $0.element > $1.element }
-        .map { $0.offset }
-    
-    print("sorted_idx =",sortedIdx)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
