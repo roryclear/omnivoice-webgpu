@@ -6,7 +6,7 @@ import pickle
 import numpy as np
 
 from tinygrad.helpers import fetch, partition
-from tinygrad.nn.state import safe_load, load_state_dict
+from tinygrad.nn.state import safe_load, load_state_dict, get_state_dict
 from tinygrad import Tensor, dtypes, nn, TinyJit, Variable
 import json, urllib.request, typing, unicodedata, sys
 
@@ -583,7 +583,7 @@ class ConvTranspose1d:
     size, in_channels, in_width = input.shape
     _, _, kernel_size = self.weight.shape
 
-    upsampled = Tensor.zeros(size, in_channels, in_width * self.stride - (self.stride - 1))
+    upsampled = Tensor.zeros(size, in_channels, in_width * self.stride - (self.stride - 1), dtype=dtypes.float)
     upsampled[:, :, ::self.stride] = input
 
     pad = 1 * (kernel_size - 1) - self.padding
@@ -748,6 +748,10 @@ class omni:
     self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
     weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
     load_state_dict(self, weights)
+    for k,v in get_state_dict(self).items():
+      if v.dtype == dtypes.float32: v.replace(v.cast(dtypes.float16))
+    
+
     #https://github.com/huggingface/transformers/blob/f73cc1b1fe0477053638fc929546bac8b3697007/src/transformers/models/qwen3/modeling_qwen3.py#L130-L132
     self.llm.rotary_emb.inv_freq = 1.0 / (1000000 ** (Tensor.arange(0, 128, 2).cast(dtypes.float) / 128))
 
@@ -757,6 +761,8 @@ class omni:
     for i in range(len(self.audio_tokenizer.quantizer.quantizers)):
       weights[f"quantizer.quantizers.{i}.codebook.embed.weight"] = weights[f"quantizer.quantizers.{i}.codebook.embed"]
     load_state_dict(self.audio_tokenizer, weights)
+    #for k,v in get_state_dict(self.audio_tokenizer).items():
+    #  if v.dtype == dtypes.float32: v.replace(v.cast(dtypes.float16))
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
@@ -791,7 +797,10 @@ class omni:
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
       ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, language=language)
+      print("ret=",ret.numpy())
+      print(ret.dtype)
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
+      print("wv=",wv)
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
 
@@ -1005,7 +1014,7 @@ if __name__ == "__main__":
         ref_audio=open("voice4.wav", "rb").read(),
         ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you"
     )
-    #pickle.dump(audio, open("short4.pkl", "wb"))
+    pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
     write_waveform("out4.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1016,7 +1025,7 @@ if __name__ == "__main__":
         ref_audio=open("voice.wav", "rb").read(),
         ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking, as is likely clear, I am referring to the Iran deal",
     )
-    #pickle.dump(audio, open("short.pkl", "wb"))
+    pickle.dump(audio, open("short.pkl", "wb"))
     exp = pickle.load(open("short.pkl", "rb"))
     write_waveform("out.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1027,7 +1036,7 @@ if __name__ == "__main__":
         ref_audio=open("voice2.wav", "rb").read(),
         ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    #pickle.dump(audio, open("short1.pkl", "wb"))
+    pickle.dump(audio, open("short1.pkl", "wb"))
     exp = pickle.load(open("short1.pkl", "rb"))
     write_waveform("out1.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1040,7 +1049,7 @@ if __name__ == "__main__":
         ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    #pickle.dump(audio, open("short2.pkl", "wb"))
+    pickle.dump(audio, open("short2.pkl", "wb"))
     exp = pickle.load(open("short2.pkl", "rb"))
     write_waveform("out2.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
