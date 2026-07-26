@@ -207,6 +207,7 @@ class GraphRunner {
                        let dataString = info["data"] as? String,
                        let data = Data(base64Encoded: dataString),
                        let buffer = buffers[dest] {
+                        print("copyin", dest)
                         self.copyins.append(dest)
                         let ptr = buffer.contents()
                         data.copyBytes(to: ptr.assumingMemoryBound(to: UInt8.self), count: data.count)
@@ -289,7 +290,6 @@ class GraphRunner {
             commandBuffer.waitUntilCompleted()
         }
     }
-    
 }
 
 struct ContentView: View {
@@ -484,9 +484,9 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     // Vals
     // tokens - don't need
     attentionMask.withUnsafeBytes { buffers[1134]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
+    audio_mask.flatMap { $0 }.withUnsafeBytes { buffers[1135]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     layer_ids.withUnsafeBytes { buffers[1136]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { buffers[1079]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
-    audio_mask.flatMap { $0 }.withUnsafeBytes { buffers[1135]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     // todo wrong
     //input_ids.withUnsafeBytes { buffers[1079]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
 
@@ -494,13 +494,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     //let layer_ids: [[Int32]] = (0..<NUM_AUDIO_CODEBOOK).map { [Int32($0)] }
     //layer_ids.withUnsafeBytes { buffers[1136]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     
-    let buffer = buffers[1079]!
-    let byteCount = buffer_sz[1079]!   // full buffer size in bytes
-    print(byteCount)
-
-    let ptr = buffer.contents()
-    
-    print(input_ids)
+    //print(input_ids)
     
     model_graph.run(vals_dict: [623: c_len, 198: targetLength])
     
