@@ -317,6 +317,17 @@ struct ContentView: View {
             num_steps: 16,
             language: "en"
         )
+        /*
+        let url = Bundle.main.url(forResource: "voice4", withExtension: "wav")!
+        let audioData = try! Data(contentsOf: url)
+        generate(
+            text: "Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
+            refText: "it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
+            refAudio: audioData,
+            num_steps: 16,
+            language: "en"
+        )
+         */
     }
 }
 
