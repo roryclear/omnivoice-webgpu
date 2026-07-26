@@ -572,8 +572,8 @@ class DacEncoder:
 
 class ConvTranspose1d:
   def __init__(self, in_ch, n, s, p, op):
-    self.weight = Tensor.zeros([in_ch*2, in_ch, n], dtype=dtypes.float32)
-    self.bias = Tensor.zeros([in_ch], dtype=dtypes.float32)
+    self.weight = Tensor.zeros([in_ch*2, in_ch, n], dtype=dtypes.float16)
+    self.bias = Tensor.zeros([in_ch], dtype=dtypes.float16)
     self.stride = s
     self.padding = p
     self.kernel_size = self.padding*2
