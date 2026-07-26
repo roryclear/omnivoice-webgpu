@@ -317,17 +317,19 @@ struct ContentView: View {
             num_steps: 16,
             language: "en"
         )
+        
         /*
-        let url = Bundle.main.url(forResource: "voice4", withExtension: "wav")!
+        let url = Bundle.main.url(forResource: "voice3", withExtension: "wav")!
         let audioData = try! Data(contentsOf: url)
         generate(
-            text: "Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
+            text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
             refText: "it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
             refAudio: audioData,
             num_steps: 16,
             language: "en"
         )
-         */
+        */
+        
     }
 }
 
@@ -492,7 +494,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     // input_ids - DONE
     // lyaer_ids - DONE
     // audio_mask - DONE
-    // Vals
+    // Vals = DONE
     // tokens - don't need
     attentionMask.withUnsafeBytes { buffers[1134]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
     audio_mask.flatMap { $0 }.withUnsafeBytes { buffers[1135]!.contents().copyMemory(from: $0.baseAddress!, byteCount: $0.count) }
@@ -508,6 +510,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     //print(input_ids)
     
     model_graph.run(vals_dict: [623: c_len, 198: targetLength])
+    //model_graph.run(vals_dict: [600: c_len, 198: targetLength])
     
     print(model_graph.copyins)
     print(model_graph.copyouts)
@@ -515,13 +518,28 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     
     let data = Data(bytes: buffers[model_graph.copyouts[0]]!.contents(), count: buffer_sz[model_graph.copyouts[0]]!)
     
-    let floatArray = data.withUnsafeBytes { rawBufferPointer -> [Float32] in
+    let scores = data.withUnsafeBytes { rawBufferPointer -> [Float32] in
         let floatBuffer = rawBufferPointer.bindMemory(to: Float32.self)
         return Array(floatBuffer)
     }
 
     // Print the array
-    print("scores? =",floatArray)
+    print("scores? =",scores)
+    
+    var sliced: [Float32] = []
+    sliced.reserveCapacity(NUM_AUDIO_CODEBOOK * targetLength)
+
+    for r in 0..<NUM_AUDIO_CODEBOOK {
+        let rowStart = r * MAX_LEN
+        let rowSlice = scores[rowStart..<(rowStart + targetLength)]
+        sliced.append(contentsOf: rowSlice)
+    }
+
+    let sortedIdx = sliced.enumerated()
+        .sorted { $0.element > $1.element }
+        .map { $0.offset }
+    
+    print("sorted_idx =",sortedIdx)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
