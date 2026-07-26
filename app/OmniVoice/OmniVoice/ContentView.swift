@@ -545,14 +545,20 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
         
         //todo unhardcode addr?
         data = Data(bytes: buffers[1137]!.contents(), count: buffer_sz[1137]!)
-        var tokens = data.withUnsafeBytes { rawBufferPointer -> [Int32] in
-            let floatBuffer = rawBufferPointer.bindMemory(to: Int32.self)
+        let tokens = data.withUnsafeBytes { rawBufferPointer -> [Int32] in
+            let buffer = rawBufferPointer.bindMemory(to: Int32.self)
+            return Array(buffer)
+        }
+        
+        let sample_tokens = Array(tokens.prefix(targetLength))
+        
+        data = Data(bytes: buffers[1704]!.contents(), count: buffer_sz[1704]!)
+        let pred_tokens = data.withUnsafeBytes { rawBufferPointer -> [Float32] in
+            let floatBuffer = rawBufferPointer.bindMemory(to: Float32.self)
             return Array(floatBuffer)
         }
         
-        var sample_tokens = Array(tokens.prefix(targetLength))
-        
-        print("tokens =", sample_tokens)
+        print("pred_tokens =",pred_tokens)
         
     }
 }
