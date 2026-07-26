@@ -215,10 +215,9 @@ class Qwen3RMSNorm:
     self.weight = Tensor.empty(sz)
   
   def __call__(self, hidden_states):
-    input_dtype = hidden_states.dtype
     hidden_states = hidden_states.cast(dtypes.float32)
     variance = hidden_states.pow(2).mean(-1, keepdim=True)
-    hidden_states = (hidden_states * Tensor.rsqrt(variance + self.variance_epsilon)).cast(input_dtype)
+    hidden_states = (hidden_states * Tensor.rsqrt(variance + self.variance_epsilon))
     return self.weight * hidden_states
   
 def repeat_kv(hidden_states, n_rep: int):
