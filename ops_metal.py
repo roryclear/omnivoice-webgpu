@@ -205,9 +205,12 @@ class MetalAllocator(LRUAllocator[MetalDevice]):
     self.dev.synchronize()
     return to_mv(src.buf.contents(), src.size + src.offset)[src.offset:]
   def _copyin(self, dest:MetalBuffer, src:memoryview):
+    print("copyin", dest.num, dest.size, dest.offset)
+    if dest.num in [1142, 1143]: print(bytes(src))
     self.dev.q.append({"copyin":{"dest":dest.num, "data": base64.b64encode(bytes(src)).decode("ascii")}})
     self._cp_mv(self._as_buffer(dest), src, "TINY -> METAL")
   def _copyout(self, dest:memoryview, src:MetalBuffer):
+    print("copyout", src.num)
     self.dev.q.append({"copyout":src.num})
     #print(self.dev.q)
     json.dump(self.dev.q, open(f"{self.dev.q_num}.rc", "w"))
