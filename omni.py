@@ -89,7 +89,7 @@ class SimpleTokenizer:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
   
-MAX_LEN = 1000
+MAX_LEN = 750
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 POSITION_TEMP = 5.0
@@ -783,7 +783,6 @@ class omni:
 
     # so c_len doesn't exceed MAX_LEN
     text_chunk_len = int(MAX_LEN - (len(style_tokens) + len(ref_audio_tokens[0]))) / (max(CHAR_WEIGHTS)*2) # todo, can this be larger?
-    print("rory text_chunk_len =", text_chunk_len)
 
     chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
     chunks = [""]
@@ -858,6 +857,10 @@ class omni:
   def _generate_iterative(self, text_tokens, target_length, ref_audio_tokens, num_steps=16, style_tokens=None):
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
     c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + target_length
+    if c_len > MAX_LEN:
+      print("reference audio too long! use a shorter file for better results")
+      target_length -= (c_len - MAX_LEN)
+      c_len = MAX_LEN
     cond_audio_start_idx = c_len - target_length - len(ref_audio_tokens[0])
 
     cond_input_ids = [[]]
@@ -1054,7 +1057,7 @@ if __name__ == "__main__":
     #pickle.dump(audio, open("short2.pkl", "wb"))
     exp = pickle.load(open("short2.pkl", "rb"))
     write_waveform("out2.wav", audio)
-    exit()
+    # exit()
     #np.testing.assert_allclose(exp, audio, rtol=1e-5)
     Tensor.manual_seed(1)
     audio = model.generate(
@@ -1065,7 +1068,7 @@ if __name__ == "__main__":
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
     #pickle.dump(audio, open("short2.pkl", "wb"))
-    #exp = pickle.load(open("short2.pkl", "rb"))
+    exp = pickle.load(open("short2.pkl", "rb"))
     write_waveform("out3.wav", audio)
 
     exit()
