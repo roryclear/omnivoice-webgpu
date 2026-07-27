@@ -766,6 +766,7 @@ class omni:
     #  if v.dtype == dtypes.float32: v.replace(v.cast(dtypes.float16))
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
 
+  # todo change back to 16
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
     chunk_size = self.audio_tokenizer.hop_length
@@ -872,25 +873,15 @@ class omni:
     audio_mask[1][:target_length] = cond_audio_mask[-target_length:]
 
     attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
+
     for i in range(c_len): attention_mask[0][0][i][:c_len] = [True] * c_len
     for i in range(target_length): attention_mask[1][0][i][:target_length] = [True] * target_length
     for i in range(target_length, c_len): attention_mask[1][0][i][i] = True
 
-    timesteps = [i / num_steps for i in range(num_steps + 1)]
-    timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
+    sched, num_steps = get_sched(num_steps=num_steps, target_length=target_length)
 
-    total_mask = target_length * NUM_AUDIO_CODEBOOK
-    rem = total_mask
-    sched = []
-    for step in range(num_steps):
-      num = (rem if step == num_steps - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
-      if num > MAX_LEN:
-        print("sched too big:",num,"MAX_LEN =",MAX_LEN)
-        exit()
-      sched.append(int(num))
-      rem -= int(num)
-    print("sched =",sched)
-    
+    print("sched, num_steps =",sched, num_steps)
+
     c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
     t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
 
@@ -929,6 +920,19 @@ class omni:
       input_ids = Tensor(input_ids)
 
     return tokens
+
+def get_sched(num_steps, target_length):
+  timesteps = [i / num_steps for i in range(num_steps + 1)]
+  timesteps = [(T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) for t in timesteps]
+  total_mask = target_length * NUM_AUDIO_CODEBOOK
+  rem = total_mask
+  sched = []
+  for step in range(num_steps):
+    num = (rem if step == num_steps - 1 else min(math.ceil(total_mask * (timesteps[step + 1] - timesteps[step])), rem,))
+    sched.append(int(num))
+    if num >= MAX_LEN: return get_sched(num_steps=num_steps*2, target_length=target_length)
+    rem -= int(num)
+  return sched, num_steps
 
 import pickle
 from http.server import HTTPServer, BaseHTTPRequestHandler
