@@ -441,7 +441,6 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     if c_len > targetLength { for i in targetLength..<c_len { attentionMask[1][0][i][i] = true }}
     
     let totalMask = targetLength * NUM_AUDIO_CODEBOOK
-    var rem = totalMask
 
     var timesteps: [Double] = (0...num_steps).map { i in Double(i) / Double(num_steps)}
 
