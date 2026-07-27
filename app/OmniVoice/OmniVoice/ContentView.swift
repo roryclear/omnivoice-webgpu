@@ -442,28 +442,36 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     
     let totalMask = targetLength * NUM_AUDIO_CODEBOOK
     var rem = totalMask
-    var sched: [Int] = []
 
     var timesteps: [Double] = (0...num_steps).map { i in Double(i) / Double(num_steps)}
 
     timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
+    let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
+    print("sched =", sched)
+}
 
-    for step in 0..<num_steps {
+func getSched(numSteps: Int, targetLength: Int) -> ([Int], Int) {
+    let totalMask = targetLength * NUM_AUDIO_CODEBOOK
+    var rem = totalMask
+    var sched: [Int] = []
+
+    var timesteps: [Double] = (0...numSteps).map { Double($0) / Double(numSteps) }
+    timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
+
+    for step in 0..<numSteps {
         let num: Int
-        if step == num_steps - 1 {
+        if step == numSteps - 1 {
             num = rem
         } else {
             let value = Int(ceil(Double(totalMask) * (timesteps[step + 1] - timesteps[step])))
             num = min(value, rem)
         }
-        if num > MAX_LEN {
-            print("sched too big:", num, "MAX_LEN =", MAX_LEN)
-            return
-        }
+        if num >= MAX_LEN { return getSched(numSteps: numSteps * 2, targetLength: targetLength) }
         sched.append(num)
         rem -= num
     }
-    print("sched =", sched)
+
+    return (sched, numSteps)
 }
 
 func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
