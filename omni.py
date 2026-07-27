@@ -798,7 +798,9 @@ class omni:
     res = []
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
-      ret = self._generate_iterative(text=chunks[i], target_length=target_length, ref_text=ref_text, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, language=language)
+      style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
+      text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, chunks[i]) if x.strip())}<|text_end|>")
+      ret = self._generate_iterative(text_tokens=text_tokens, target_length=target_length, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, style_tokens=style_tokens)
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
@@ -853,11 +855,9 @@ class omni:
     scores_out[:, :t_len_var] += Tensor.where(tokens[:, :t_len_var] == AUDIO_MASK_ID, scores[:, :t_len_var], -float("inf"))
     return pred_tokens, scores_out
 
-  def _generate_iterative(self, text, target_length, ref_text, ref_audio_tokens, num_steps=16, language="None"):
-    style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
-    text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, text) if x.strip())}<|text_end|>")
+  def _generate_iterative(self, text_tokens, target_length, ref_audio_tokens, num_steps=16, style_tokens=None):
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
-    c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + len(target_audio_tokens)
+    c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + target_length
     cond_audio_start_idx = c_len - target_length - len(ref_audio_tokens[0])
 
     cond_input_ids = [[]]
@@ -1014,7 +1014,7 @@ if __name__ == "__main__":
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
         ref_audio=open("voice4.wav", "rb").read(),
-        ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you"
+        ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
     )
     #pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
@@ -1042,8 +1042,8 @@ if __name__ == "__main__":
     exp = pickle.load(open("short1.pkl", "rb"))
     write_waveform("out1.wav", audio)
     #np.testing.assert_allclose(exp, audio, rtol=1e-5)
-    
-    Tensor.manual_seed(4)
+
+    Tensor.manual_seed(1)
     audio = model.generate(
         # todo, why is end bad??
         text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
