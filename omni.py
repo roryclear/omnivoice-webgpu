@@ -745,12 +745,10 @@ class omni:
     self.llm = llm()
     self.audio_embeddings = nn.Embedding(NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, HIDDEN_SIZE)
     self.audio_heads = nn.Linear(HIDDEN_SIZE, NUM_AUDIO_CODEBOOK * AUDIO_VOCAB_SIZE, bias=False)
-    #weights = safe_load(fetch("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/model.safetensors"))
-    weights = safe_load("model_f16.safetensors")
+    weights = safe_load(fetch("https://huggingface.co/roryclear/OmniVoice-F16/resolve/main/model_f16.safetensors"))
     load_state_dict(self, weights)
-    for k,v in get_state_dict(self).items():
-      if v.dtype == dtypes.float32: v.replace(v.cast(dtypes.float16))
-    #safe_save(get_state_dict(self), "model_f16.safetensors")
+    #for k,v in get_state_dict(self).items():
+    #  if v.dtype == dtypes.float32: v.replace(v.cast(dtypes.float16))
     
 
     #https://github.com/huggingface/transformers/blob/f73cc1b1fe0477053638fc929546bac8b3697007/src/transformers/models/qwen3/modeling_qwen3.py#L130-L132
@@ -779,7 +777,7 @@ class omni:
 
     ref_audio_tokens = self.encode(Tensor([[ref_wav]]))
     # [:, 8, :] (NUM_AUDIO_CODEBOOK)
-    ref_audio_tokens = ref_audio_tokens.numpy()[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
+    ref_audio_tokens = ref_audio_tokens[0, :, :int(wav_len / self.audio_tokenizer.hop_length)].numpy()
   
     # so c_len doesn't exceed MAX_LEN
     text_chunk_len = int(MAX_LEN - (len(style_tokens) + len(ref_audio_tokens[0]))) / (max(CHAR_WEIGHTS)*2) # todo, can this be larger?
