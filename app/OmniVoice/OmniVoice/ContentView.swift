@@ -182,60 +182,91 @@ class GraphRunner {
             print("File not found:", filename)
             return
         }
-        do {
-            let data = try Data(contentsOf: url)
-            let json = try JSONSerialization.jsonObject(with: data, options: [])
 
-            let items = json as! [Any]
+        autoreleasepool {
+            do {
+                var fileData: Data? = try Data(contentsOf: url)
+                guard let data = fileData else { return }
+                let json = try JSONSerialization.jsonObject(with: data, options: [])
+                fileData = nil
 
-            //print("Items:", items.count)
+                guard let items = json as? [Any] else {
+                    print("Invalid JSON format")
+                    return
+                }
 
-            for (_, item) in items.enumerated() {
-                let dict = item as! [String: Any]
-                let key = dict.keys.first!
-
-                if key == "buff_alloc" {
-                    if let info = dict["buff_alloc"] as? [String: Any],
-                       let num = info["num"] as? Int,
-                       let size = info["size"] as? Int {
-                        buffers[num] = device.makeBuffer(length: size, options: .storageModeShared)
-                        buffer_sz[num] = size
-                    }
-                } else if key == "copyin" {
-                    if let info = dict["copyin"] as? [String: Any],
-                       let dest = info["dest"] as? Int,
-                       let dataString = info["data"] as? String,
-                       let data = Data(base64Encoded: dataString),
-                       let buffer = buffers[dest] {
-                        self.copyins.append(dest)
-                        let ptr = buffer.contents()
-                        data.copyBytes(to: ptr.assumingMemoryBound(to: UInt8.self), count: data.count)
-                    }
-                } else if key == "program" {
-                    if let info = dict["program"] as? [String: Any],
-                       let name = info["name"] as? String,
-                       let libString = info["lib"] as? String,
-                       let libData = Data(base64Encoded: libString),
-                       let device = MTLCreateSystemDefaultDevice() {
-                        let dispatchData = libData.withUnsafeBytes { ptr in
-                            DispatchData(bytes: ptr)
+                for item in items {
+                    autoreleasepool {
+                        guard let dict = item as? [String: Any],
+                              let key = dict.keys.first else {
+                            return
                         }
-                        if let library = try? device.makeLibrary(data: dispatchData as! dispatch_data_t) {
-                            if let function = library.makeFunction(name: name) {
-                                if let pipeline = try? device.makeComputePipelineState(function: function) {
+
+                        if key == "buff_alloc" {
+                            if let info = dict["buff_alloc"] as? [String: Any],
+                               let num = info["num"] as? Int,
+                               let size = info["size"] as? Int {
+
+                                buffers[num] = device.makeBuffer(
+                                    length: size,
+                                    options: .storageModeShared
+                                )
+
+                                buffer_sz[num] = size
+                            }
+
+                        } else if key == "copyin" {
+                            if let info = dict["copyin"] as? [String: Any],
+                               let dest = info["dest"] as? Int,
+                               let dataString = info["data"] as? String,
+                               let decodedData = Data(base64Encoded: dataString),
+                               let buffer = buffers[dest] {
+
+                                copyins.append(dest)
+
+                                let ptr = buffer.contents()
+                                decodedData.copyBytes(
+                                    to: ptr.assumingMemoryBound(to: UInt8.self),
+                                    count: decodedData.count
+                                )
+                            }
+
+                        } else if key == "program" {
+                            if let info = dict["program"] as? [String: Any],
+                               let name = info["name"] as? String,
+                               let libString = info["lib"] as? String,
+                               let libData = Data(base64Encoded: libString) {
+
+                                let dispatchData = libData.withUnsafeBytes { ptr in
+                                    DispatchData(bytes: ptr)
+                                }
+
+                                if let library = try? device.makeLibrary(
+                                    data: dispatchData as! dispatch_data_t
+                                ),
+                                let function = library.makeFunction(name: name),
+                                let pipeline = try? device.makeComputePipelineState(
+                                    function: function
+                                ) {
                                     programs[name] = pipeline
                                 }
                             }
+
+                        } else if key == "call" {
+                            if let call = dict["call"] as? [String: Any] {
+                                calls.append(call)
+                            }
+
+                        } else if key == "copyout" {
+                            if let copyout = dict["copyout"] as? Int {
+                                copyouts.append(copyout)
+                            }
                         }
                     }
-                } else if key == "call" {
-                    calls.append(dict["call"] as! [String: Any])
-                } else if key == "copyout" {
-                    copyouts.append(dict["copyout"] as! Int)
                 }
+            } catch {
+                print("Failed reading JSON:", error)
             }
-        } catch {
-            print("Failed reading JSON:", error)
         }
     }
     
@@ -634,6 +665,7 @@ func readUInt32LE(_ bytes: [UInt8], offset: Int) -> UInt32 {
 #Preview {
     ContentView()
 }
+
 
 
 
