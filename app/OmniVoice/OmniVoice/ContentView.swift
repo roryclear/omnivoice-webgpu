@@ -13,8 +13,8 @@ let queue = device.makeCommandQueue()!
 var buffers: [Int: MTLBuffer] = [:]
 var buffer_sz: [Int: Int] = [:] // todo
 var programs: [String: MTLComputePipelineState] = [:]
-let commandBuffer = queue.makeCommandBuffer()!
 var encode_graph: GraphRunner!
+var model_graph: GraphRunner!
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
@@ -271,11 +271,13 @@ class GraphRunner {
     }
     
     func run() {
-        for item in self.calls {
-            let name = item["name"] as! String
-            let pipeline = programs[name]!
-
+        for (index, item) in self.calls.enumerated() {
+            let commandBuffer = queue.makeCommandBuffer()!
             let encoder = commandBuffer.makeComputeCommandEncoder()!
+            print(index, "of", self.calls.count)
+            let name = item["name"] as! String
+            print(name)
+            let pipeline = programs[name]!
 
             encoder.setComputePipelineState(pipeline)
 
@@ -308,9 +310,11 @@ class GraphRunner {
                 threadsPerThreadgroup: threadsPerThreadgroup
             )
             encoder.endEncoding()
+            // todo, all at once is better probably, with just one command buffer init, this is nice to watch though
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
+
         }
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
     }
     
 }
@@ -326,6 +330,7 @@ struct ContentView: View {
         .padding()
         .onAppear {
             encode_graph = GraphRunner(filename: "0.rc")
+            model_graph = GraphRunner(filename: "1.rc")
             runGenerate()
         }
     }
@@ -478,6 +483,17 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
     let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
     print("sched =", sched)
+    
+    model_graph.run()
+    print("RAN!")
+    model_graph.run()
+    print("RAN!")
+    model_graph.run()
+    print("RAN!")
+    model_graph.run()
+    print("RAN!")
+    
+    
 }
 
 func getSched(numSteps: Int, targetLength: Int) -> ([Int], Int) {
