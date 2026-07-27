@@ -768,6 +768,8 @@ class omni:
 
   # todo change back to 16
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
+    style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
+    
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
     chunk_size = self.audio_tokenizer.hop_length
     clip_size = int(len(ref_wav) % chunk_size)
@@ -779,10 +781,9 @@ class omni:
     # [:, 8, :] (NUM_AUDIO_CODEBOOK)
     ref_audio_tokens = ref_audio_tokens.numpy()[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
 
-    target_length = self._estimate_target_tokens(text, ref_text, int(wav_len / self.audio_tokenizer.hop_length),)
-
-    avg_tokens_per_char = target_length / len(text)
-    text_chunk_len = int(AUDIO_CHUNK_DURATION * FRAME_RATE / avg_tokens_per_char)
+    # so c_len doesn't exceed MAX_LEN
+    text_chunk_len = int(MAX_LEN - (len(style_tokens) + len(ref_audio_tokens[0]))) / (max(CHAR_WEIGHTS)*2) # todo, can this be larger?
+    print("rory text_chunk_len =", text_chunk_len)
 
     chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
     chunks = [""]
@@ -798,7 +799,6 @@ class omni:
     res = []
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
-      style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
       text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, chunks[i]) if x.strip())}<|text_end|>")
       ret = self._generate_iterative(text_tokens=text_tokens, target_length=target_length, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, style_tokens=style_tokens)
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
@@ -1054,7 +1054,20 @@ if __name__ == "__main__":
     #pickle.dump(audio, open("short2.pkl", "wb"))
     exp = pickle.load(open("short2.pkl", "rb"))
     write_waveform("out2.wav", audio)
+    exit()
     #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    Tensor.manual_seed(1)
+    audio = model.generate(
+        # todo, why is end bad??
+        text="That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",
+        ref_audio=open("voice3.wav", "rb").read(),
+        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
+        num_steps=32
+    ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
+    #pickle.dump(audio, open("short2.pkl", "wb"))
+    #exp = pickle.load(open("short2.pkl", "rb"))
+    write_waveform("out3.wav", audio)
+
     exit()
     Tensor.manual_seed(42)
     audio = model.generate(
