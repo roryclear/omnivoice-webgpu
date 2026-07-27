@@ -198,7 +198,7 @@ class GraphRunner {
                     if let info = dict["buff_alloc"] as? [String: Any],
                        let num = info["num"] as? Int,
                        let size = info["size"] as? Int {
-                        buffers[num] = MTLCreateSystemDefaultDevice()?.makeBuffer(length: size, options: .storageModeShared)
+                        buffers[num] = device.makeBuffer(length: size, options: .storageModeShared)
                         buffer_sz[num] = size
                     }
                 } else if key == "copyin" {
