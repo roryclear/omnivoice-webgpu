@@ -780,7 +780,7 @@ class omni:
     ref_audio_tokens = self.encode(Tensor([[ref_wav]]))
     # [:, 8, :] (NUM_AUDIO_CODEBOOK)
     ref_audio_tokens = ref_audio_tokens.numpy()[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
-
+  
     # so c_len doesn't exceed MAX_LEN
     text_chunk_len = int(MAX_LEN - (len(style_tokens) + len(ref_audio_tokens[0]))) / (max(CHAR_WEIGHTS)*2) # todo, can this be larger?
 
@@ -803,9 +803,7 @@ class omni:
       wv = self.audio_tokenizer.decode(ret).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
-
     return res
-
 
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   @TinyJit
@@ -1012,6 +1010,7 @@ if __name__ == "__main__":
   model = omni()
   
   if "--test" in sys.argv:
+
     # tinygrad cbfcf36e4 with metalgraph turned off, my macbook air m3
     Tensor.manual_seed(0)
     audio = model.generate(
@@ -1022,7 +1021,7 @@ if __name__ == "__main__":
     #pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
     write_waveform("out4.wav", audio)
-    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
     
     Tensor.manual_seed(0)
     audio = model.generate(
@@ -1033,7 +1032,7 @@ if __name__ == "__main__":
     #pickle.dump(audio, open("short.pkl", "wb"))
     exp = pickle.load(open("short.pkl", "rb"))
     write_waveform("out.wav", audio)
-    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
     
     Tensor.manual_seed(0)
     audio = model.generate(
@@ -1044,32 +1043,35 @@ if __name__ == "__main__":
     #pickle.dump(audio, open("short1.pkl", "wb"))
     exp = pickle.load(open("short1.pkl", "rb"))
     write_waveform("out1.wav", audio)
-    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
     Tensor.manual_seed(1)
     audio = model.generate(
         # todo, why is end bad??
         text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
-        ref_audio=open("voice3.wav", "rb").read(),
-        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
+        ref_audio=open("voice3_short.wav", "rb").read(),
+        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see",
+        #ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
     #pickle.dump(audio, open("short2.pkl", "wb"))
     exp = pickle.load(open("short2.pkl", "rb"))
     write_waveform("out2.wav", audio)
     # exit()
-    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
     Tensor.manual_seed(1)
     audio = model.generate(
         # todo, why is end bad??
         text="That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",
-        ref_audio=open("voice3.wav", "rb").read(),
-        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
+        ref_audio=open("voice3_short.wav", "rb").read(),
+        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see",
+        #ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    #pickle.dump(audio, open("short2.pkl", "wb"))
-    exp = pickle.load(open("short2.pkl", "rb"))
+    #pickle.dump(audio, open("long.pkl", "wb"))
+    exp = pickle.load(open("long.pkl", "rb"))
     write_waveform("out3.wav", audio)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
     exit()
     Tensor.manual_seed(42)
