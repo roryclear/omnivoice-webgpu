@@ -170,6 +170,7 @@ class GraphRunner {
     var calls: [[String: Any]] = []
     var copyouts: [Int] = []
     var copyins: [Int] = []
+    var buffs: Set<Int> = []
 
     init(filename: String) {
         self.filename = filename
@@ -255,8 +256,10 @@ class GraphRunner {
                         } else if key == "call" {
                             if let call = dict["call"] as? [String: Any] {
                                 calls.append(call)
+                                for buff in call["buffers"] as! [Int] {
+                                    buffs.insert(buff)
+                                }
                             }
-
                         } else if key == "copyout" {
                             if let copyout = dict["copyout"] as? Int {
                                 copyouts.append(copyout)
@@ -413,11 +416,15 @@ func generate(
     
     let start = ContinuousClock.now
     encode_graph.run()
+    
     let elapsed = start.duration(to: .now)
     print("Execution time: \(elapsed)")
     
     let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
-
+    
+    // delete no longer used buffers
+    for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
+    
     //todo, if this doesn't change fix
     print("size =",buffer_sz[encode_graph.copyouts[0]]!)
     
