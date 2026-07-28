@@ -19,7 +19,7 @@ let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
 let AUDIO_MASK_ID = 1024
-let MAX_LEN = 2000
+let MAX_LEN = 750
 let NUM_AUDIO_CODEBOOK = 8
 let T_SHIFT = 0.1
 let tokenizer = Tokenizer()
@@ -286,11 +286,17 @@ class GraphRunner {
 
             let bufferIDs = item["buffers"] as! [Int]
             let offsets = item["buffer_offsets"] as! [Int]
-
+            let vals = item["vals"] as! [Int]
+            print("vals =", vals)
 
             for i in 0..<bufferIDs.count {
                 let buffer = buffers[bufferIDs[i]]!
                 encoder.setBuffer(buffer, offset: offsets[i], index: i)
+            }
+            
+            for i in 0..<vals.count{
+                var value = Int32(vals[i]) // todo dict!
+                encoder.setBytes(&value, length: 4, index: i+bufferIDs.count)
             }
             
             let global = item["global_size"] as! [Int]
@@ -382,7 +388,7 @@ func generate(
 
     print("target_length =", targetLength)
     
-    ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
+    //ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
     
     let avgTokensPerChar = Float(targetLength) / Float(text.count)
     let textChunkLen = Int(Float(AUDIO_CHUNK_DURATION) * Float(FRAME_RATE) / avgTokensPerChar)
@@ -492,13 +498,8 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     
     print(model_graph.copyouts)
     let data = Data(bytes: buffers[model_graph.copyouts[0]]!.contents(), count: buffer_sz[model_graph.copyouts[0]]!)
-    
-    data.withUnsafeBytes { rawBuffer in
-        let floatBuffer = rawBuffer.bindMemory(to: Float32.self)
-        for value in floatBuffer {
-            print(value)
-        }
-    }
+    let floatArray: [Float32] = data.withUnsafeBytes { Array($0.bindMemory(to: Float32.self))}
+    print(floatArray)
     
 }
 
