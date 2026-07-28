@@ -763,22 +763,22 @@ class omni:
     #for k,v in get_state_dict(self.audio_tokenizer).items():
     #  if v.dtype == dtypes.float32: v.replace(v.cast(dtypes.float16))
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
-
+  
   # todo change back to 16
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
     style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
     
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
-    chunk_size = self.audio_tokenizer.hop_length
-    clip_size = int(len(ref_wav) % chunk_size)
-    ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
     wav_len = len(ref_wav)
-    ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
-
+    ref_wav = self.expand_wav(ref_wav=ref_wav)
+    print("RORY WAV_LEN =",len(ref_wav))
+    #json.dump(ref_wav, open("voice3_ref_wav_exp.json", "w"))
     ref_audio_tokens = self.encode(Tensor([[ref_wav]]))
     # [:, 8, :] (NUM_AUDIO_CODEBOOK)
     ref_audio_tokens = ref_audio_tokens.numpy()
     ref_audio_tokens = ref_audio_tokens[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
+    #print(ref_audio_tokens, np.array(ref_audio_tokens).shape)
+    #exit()
   
     # so c_len doesn't exceed MAX_LEN
     text_chunk_len = int(MAX_LEN - (len(style_tokens) + len(ref_audio_tokens[0]))) / (max(CHAR_WEIGHTS)*2) # todo, can this be larger?
@@ -803,6 +803,17 @@ class omni:
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
     return res
+
+  def expand_wav(self, ref_wav):
+    chunk_size = self.audio_tokenizer.hop_length
+    clip_size = int(len(ref_wav) % chunk_size)
+    ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
+    wav_len = len(ref_wav)
+    if len(ref_wav) <= (SAMPLING_RATE*20):
+      ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
+    else:
+      ref_wav = ref_wav[:20*SAMPLING_RATE]
+    return ref_wav
 
   # https://github.com/huggingface/transformers/blob/1c75d06e73bf25d48a4379b9452ca009da9cf0a1/src/transformers/models/higgs_audio_v2_tokenizer/modeling_higgs_audio_v2_tokenizer.py#L41
   @TinyJit
@@ -872,6 +883,8 @@ class omni:
     audio_mask[0][:c_len] = cond_audio_mask
     audio_mask[1][:target_length] = cond_audio_mask[-target_length:]
 
+    #print("AUDIO_MASK",audio_mask, "target_length", target_length, "shape",np.array(audio_mask).shape, "sum:", np.array(audio_mask).sum())
+
     attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
 
     for i in range(c_len): attention_mask[0][0][i][:c_len] = [True] * c_len
@@ -888,8 +901,12 @@ class omni:
     layer_ids = Tensor([[i] for i in range(NUM_AUDIO_CODEBOOK)])
     audio_mask = Tensor(audio_mask)
     attention_mask = Tensor(attention_mask)
-
+    #print(input_ids, np.array(input_ids).sum())
     input_ids = Tensor(input_ids)
+    #print("input_ids:",input_ids._buffer()._buf.num)
+    #print("audio_mask:", audio_mask.shape ,audio_mask._buffer()._buf.num, audio_mask.dtype, audio_mask._buffer()._buf.size)
+    #print("c_len =",c_len, "cond_audio_start_idx =",cond_audio_start_idx, "target_length =",target_length)
+    #exit()
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(num_steps):
       print("STEP",step,"of",num_steps)
@@ -898,6 +915,8 @@ class omni:
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       scores = scores.numpy()
+      #print("scores =",scores)
+      #exit()
       pred_tokens = pred_tokens.numpy()
       input_ids = input_ids.numpy()
       pred_tokens = pred_tokens[:, :, :target_length]
@@ -1011,6 +1030,7 @@ if __name__ == "__main__":
   if "--test" in sys.argv:
 
     # tinygrad cbfcf36e4 with metalgraph turned off, my macbook air m3
+    
     Tensor.manual_seed(0)
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
@@ -1071,7 +1091,7 @@ if __name__ == "__main__":
     exp = pickle.load(open("long.pkl", "rb"))
     write_waveform("out3.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
-
+    
     exit()
     Tensor.manual_seed(42)
     audio = model.generate(
