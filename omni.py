@@ -777,7 +777,8 @@ class omni:
 
     ref_audio_tokens = self.encode(Tensor([[ref_wav]]))
     # [:, 8, :] (NUM_AUDIO_CODEBOOK)
-    ref_audio_tokens = ref_audio_tokens[0, :, :int(wav_len / self.audio_tokenizer.hop_length)].numpy()
+    ref_audio_tokens = ref_audio_tokens.numpy()
+    ref_audio_tokens = ref_audio_tokens[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
   
     # so c_len doesn't exceed MAX_LEN
     text_chunk_len = int(MAX_LEN - (len(style_tokens) + len(ref_audio_tokens[0]))) / (max(CHAR_WEIGHTS)*2) # todo, can this be larger?
