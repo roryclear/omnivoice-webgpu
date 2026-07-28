@@ -388,10 +388,37 @@ func generate(
 
     print("target_length =", targetLength)
     
-    //ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
+    ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
     
     let avgTokensPerChar = Float(targetLength) / Float(text.count)
-    let textChunkLen = Int(Float(AUDIO_CHUNK_DURATION) * Float(FRAME_RATE) / avgTokensPerChar)
+    //let textChunkLen = Int(Float(AUDIO_CHUNK_DURATION) * Float(FRAME_RATE) / avgTokensPerChar)
+    let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>").map { Int32($0) }
+    
+    let start = ContinuousClock.now
+    encode_graph.run()
+    
+    let elapsed = start.duration(to: .now)
+    print("Execution time: \(elapsed)")
+    
+    let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
+    
+    // delete no longer used buffers
+    for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
+    
+    let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
+    
+    let T_full = ints.count / 8
+    let T_actual = numRefAudioTokens
+
+    let refAudioTokens = (0..<8).map { channel in
+        let start = channel * T_full
+        let end = start + T_actual
+        return Array(ints[start..<end])
+    }
+
+    print("ref audio tokens =",refAudioTokens)
+    
+    let textChunkLen = Int(Float(MAX_LEN - (style_tokens.count + refAudioTokens[0].count)) / (Float(CHAR_WEIGHTS.max() ?? 0) * 2.0))
 
     let pattern = #"[^。，！？；：、.,?]+[。，！？；：、.,?]?"#
     let regex = try! NSRegularExpression(pattern: pattern)
@@ -420,45 +447,21 @@ func generate(
     print("CHUNKS", chunks.count)
     print(chunks)
     
-    let start = ContinuousClock.now
-    encode_graph.run()
-    
-    let elapsed = start.duration(to: .now)
-    print("Execution time: \(elapsed)")
-    
-    let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
-    
-    // delete no longer used buffers
-    for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
-    
-    let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
-    
-    let T_full = ints.count / 8
-    let T_actual = numRefAudioTokens
-
-    let refAudioTokens = (0..<8).map { channel in
-        let start = channel * T_full
-        let end = start + T_actual
-        return Array(ints[start..<end])
-    }
-
-    print("ref audio tokens =",refAudioTokens)
-    
-    
     for chunk in chunks {
         targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
-        generateIterative(chunk, targetLength: targetLength, refText: refText, refAudioTokens: refAudioTokens)
+        generateIterative(chunk, targetLength: targetLength, refText: refText, refAudioTokens: refAudioTokens, style_tokens: style_tokens)
     }
     
 }
 
-func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [[Int32]], num_steps: Int = 16, language: String = "None") {
-    let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>").map { Int32($0) }
+func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [[Int32]], num_steps: Int = 16, language: String = "None", style_tokens: [Int32] = []) {
     let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>").map { Int32($0) }
+    print("text_tokens",text_tokens, text_tokens.count)
     let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength).map { Int32($0) }
+    print(style_tokens.count, text_tokens.count, refAudioTokens[0].count, target_audio_tokens.count)
     let c_len = style_tokens.count + text_tokens.count + refAudioTokens[0].count + target_audio_tokens.count
     let cond_audio_start_idx = c_len - targetLength - refAudioTokens[0].count
-    print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx)
+    print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx, "target_length =",targetLength)
     
     let base = style_tokens + text_tokens
 
