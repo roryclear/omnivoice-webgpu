@@ -23,6 +23,7 @@ let MAX_LEN = 750
 let NUM_AUDIO_CODEBOOK = 8
 let T_SHIFT = 0.1
 let SAMPLING_RATE = 24_000
+let CHUNK_SIZE = 960
 let tokenizer = Tokenizer()
 
 class Tokenizer {
@@ -354,8 +355,11 @@ struct ContentView: View {
 }
 
 func generate(text: String, refText: String, file: String, num_steps: Int, language: String) {
-    let audio = load_audio(file: file, samplingRate: 24000)
+    var ref_wav = load_audio(file: file, samplingRate: 24000)
+    let wav_len = ref_wav.count
+    ref_wav = expandWav(ref_wav)
 }
+
 
 func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
     let url = Bundle.main.url(forResource: file, withExtension: "wav")!
@@ -394,6 +398,26 @@ func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
     }
 
     return output
+}
+
+func expandWav(_ refWav: [Float]) -> [Float] {
+    var refWav = refWav
+    let clipSize = refWav.count % CHUNK_SIZE
+
+    if clipSize > 0 {
+        refWav = Array(refWav.dropLast(clipSize))
+    }
+
+    let wavLen = refWav.count
+    let targetLen = SAMPLING_RATE * 20
+
+    if wavLen <= targetLen {
+        refWav += Array(repeating: 0.0, count: targetLen - wavLen)
+    } else {
+        refWav = Array(refWav.prefix(targetLen))
+    }
+
+    return refWav
 }
 
 func resample(
@@ -532,6 +556,16 @@ func run_tests() {
     expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
     
+    // expand to 20s
+    value = try! JSONDecoder().decode([Float32].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav", withExtension: "json")!))
+    value = expandWav(value)
+    expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav_exp", withExtension: "json")!)))
+    assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
+    value = try! JSONDecoder().decode([Float32].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav", withExtension: "json")!))
+    value = expandWav(value)
+    expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
+    assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
+
     print("DONE")
 }
 
