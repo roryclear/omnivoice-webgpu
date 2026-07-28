@@ -273,7 +273,7 @@ class GraphRunner {
         }
     }
     
-    func run() {
+    func run(vals_dict: [Int: Int]? = nil) {
         for (index, item) in self.calls.enumerated() {
             let commandBuffer = queue.makeCommandBuffer()!
             let encoder = commandBuffer.makeComputeCommandEncoder()!
@@ -295,7 +295,7 @@ class GraphRunner {
             }
             
             for i in 0..<vals.count{
-                var value = Int32(vals[i]) // todo dict!
+                var value = Int32(vals_dict![vals[i]]!)
                 encoder.setBytes(&value, length: 4, index: i+bufferIDs.count)
             }
             
@@ -497,7 +497,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
     print("sched =", sched)
     
-    model_graph.run()
+    model_graph.run(vals_dict: [547: c_len, 131: targetLength])
     
     print(model_graph.copyouts)
     let data = Data(bytes: buffers[model_graph.copyouts[0]]!.contents(), count: buffer_sz[model_graph.copyouts[0]]!)
