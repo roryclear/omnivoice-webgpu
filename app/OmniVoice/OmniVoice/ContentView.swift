@@ -408,11 +408,11 @@ func generate(
     let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
     
     let T_full = ints.count / 8
-    let T_actual = min(numRefAudioTokens, T_full)
+    let T_actual = numRefAudioTokens
 
-    let refAudioTokens: [[Int32]] = (0..<8).map { channel -> [Int32] in
+    let refAudioTokens = (0..<8).map { channel in
         let start = channel * T_full
-        let end = min(start + T_actual, ints.count)
+        let end = start + T_actual
         return Array(ints[start..<end])
     }
 
@@ -494,9 +494,9 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
     print("sched =", sched)
     // input_ids = input_ids.map { $0.map { $0.map { $0 * 2 } } }
-    input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
-    audio_mask.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1135]!.contents(), $0.baseAddress!, $0.count) }
-    attentionMask.flatMap { $0 }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1136]!.contents(), $0.baseAddress!, $0.count) }
+    //input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
+    //audio_mask.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1135]!.contents(), $0.baseAddress!, $0.count) }
+    //attentionMask.flatMap { $0 }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1136]!.contents(), $0.baseAddress!, $0.count) }
     layer_ids.withUnsafeBytes { memcpy(buffers[1137]!.contents(), $0.baseAddress!, $0.count) }
     
     model_graph.run(vals_dict: [547: c_len, 131: targetLength])
