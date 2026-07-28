@@ -425,9 +425,6 @@ func generate(
     // delete no longer used buffers
     for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
     
-    //todo, if this doesn't change fix
-    print("size =",buffer_sz[encode_graph.copyouts[0]]!)
-    
     let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
     
     let T_full = ints.count / 8
@@ -439,7 +436,7 @@ func generate(
         return Array(ints[start..<end])
     }
 
-    print(refAudioTokens)
+    print("ref audio tokens =",refAudioTokens)
     
     
     for chunk in chunks {
@@ -492,14 +489,16 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     print("sched =", sched)
     
     model_graph.run()
-    print("RAN!")
-    model_graph.run()
-    print("RAN!")
-    model_graph.run()
-    print("RAN!")
-    model_graph.run()
-    print("RAN!")
     
+    print(model_graph.copyouts)
+    let data = Data(bytes: buffers[model_graph.copyouts[0]]!.contents(), count: buffer_sz[model_graph.copyouts[0]]!)
+    
+    data.withUnsafeBytes { rawBuffer in
+        let floatBuffer = rawBuffer.bindMemory(to: Float32.self)
+        for value in floatBuffer {
+            print(value)
+        }
+    }
     
 }
 
