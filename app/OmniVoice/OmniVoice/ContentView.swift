@@ -489,7 +489,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let totalMask = targetLength * NUM_AUDIO_CODEBOOK
 
     var timesteps: [Double] = (0...num_steps).map { i in Double(i) / Double(num_steps)}
-
+    let layer_ids = (0..<NUM_AUDIO_CODEBOOK).map { Int32($0) }
     timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
     let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
     print("sched =", sched)
@@ -497,6 +497,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
     audio_mask.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1135]!.contents(), $0.baseAddress!, $0.count) }
     attentionMask.flatMap { $0 }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1136]!.contents(), $0.baseAddress!, $0.count) }
+    layer_ids.withUnsafeBytes { memcpy(buffers[1137]!.contents(), $0.baseAddress!, $0.count) }
     
     model_graph.run(vals_dict: [547: c_len, 131: targetLength])
     
