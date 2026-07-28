@@ -408,11 +408,11 @@ func generate(
     let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
     
     let T_full = ints.count / 8
-    let T_actual = numRefAudioTokens
+    let T_actual = min(numRefAudioTokens, T_full)
 
-    let refAudioTokens = (0..<8).map { channel in
+    let refAudioTokens: [[Int32]] = (0..<8).map { channel -> [Int32] in
         let start = channel * T_full
-        let end = start + T_actual
+        let end = min(start + T_actual, ints.count)
         return Array(ints[start..<end])
     }
 
