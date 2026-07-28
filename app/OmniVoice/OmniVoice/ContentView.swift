@@ -496,7 +496,8 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
     let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
     print("sched =", sched)
-    
+
+    input_ids.map { $0.map { Array($0.prefix(c_len)) } }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
     //input_ids.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
     
     model_graph.run(vals_dict: [547: c_len, 131: targetLength])
