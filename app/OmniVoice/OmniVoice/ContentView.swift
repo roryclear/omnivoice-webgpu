@@ -473,13 +473,12 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
         input_ids[0][i].replaceSubrange(0..<c_len, with: src.prefix(c_len))
         input_ids[1][i].replaceSubrange(0..<targetLength, with: src.suffix(targetLength))
     }
-    
+    print("target_length =",targetLength)
     let cond_audio_mask = Array(repeating: false, count: cond_audio_start_idx) + Array(repeating: true, count: c_len - cond_audio_start_idx)
     var audio_mask = (0..<2).map { _ in Array(repeating: false, count: MAX_LEN)}
     audio_mask[0].replaceSubrange(0..<c_len, with: cond_audio_mask)
     audio_mask[1].replaceSubrange(0..<targetLength, with: cond_audio_mask.suffix(targetLength))
     
-    print(audio_mask)
     
     var attentionMask = (0..<2).map { _ in (0..<1).map { _ in (0..<MAX_LEN).map { _ in Array(repeating: false, count: MAX_LEN) }}}
     for i in 0..<c_len { attentionMask[0][0][i].replaceSubrange(0..<c_len, with: Array(repeating: true, count: c_len))}
@@ -492,10 +491,9 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let layer_ids = (0..<NUM_AUDIO_CODEBOOK).map { Int32($0) }
     timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
     let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
-    print("sched =", sched)
-    // input_ids = input_ids.map { $0.map { $0.map { $0 * 2 } } }
-    //input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
-    //audio_mask.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1135]!.contents(), $0.baseAddress!, $0.count) }
+
+    input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
+    audio_mask.flatMap { $0.map { $0 ? UInt8(1) : UInt8(0) } }.withUnsafeBytes { memcpy(buffers[1135]!.contents(), $0.baseAddress!, $0.count) }
     //attentionMask.flatMap { $0 }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1136]!.contents(), $0.baseAddress!, $0.count) }
     layer_ids.withUnsafeBytes { memcpy(buffers[1137]!.contents(), $0.baseAddress!, $0.count) }
     
