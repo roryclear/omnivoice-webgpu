@@ -352,7 +352,7 @@ struct ContentView: View {
             refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
             refAudio: audioData,
             num_steps: 16,
-            language: "en"
+            language: "None"
         )
     }
 }
@@ -463,12 +463,9 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let cond_audio_start_idx = c_len - targetLength - refAudioTokens[0].count
     print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx, "target_length =",targetLength)
     
-    let base = style_tokens + text_tokens
-
-    let cond_input_ids = [(0..<NUM_AUDIO_CODEBOOK).map {
-        base + refAudioTokens[$0] + target_audio_tokens
-    }]
-
+    let cond_input_ids = [[Int32]](repeating: [], count: 1).map { _ in (0..<NUM_AUDIO_CODEBOOK).map { i in style_tokens + text_tokens + refAudioTokens[i] + target_audio_tokens }}
+    
+    print("cond_input_ids sum =", cond_input_ids.flatMap { $0 }.flatMap { $0 }.reduce(0, +))
     var input_ids = (0..<2).map { _ in (0..<NUM_AUDIO_CODEBOOK).map { _ in Array(repeating: Int32(AUDIO_MASK_ID), count: MAX_LEN) }}
 
     for i in 0..<NUM_AUDIO_CODEBOOK {
@@ -496,7 +493,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
     let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
     print("sched =", sched)
-
+    
     input_ids.map { $0.map { Array($0.prefix(c_len)) } }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
     //input_ids.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
     
