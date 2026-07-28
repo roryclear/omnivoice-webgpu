@@ -22,6 +22,7 @@ let AUDIO_MASK_ID = 1024
 let MAX_LEN = 750
 let NUM_AUDIO_CODEBOOK = 8
 let T_SHIFT = 0.1
+let SAMPLING_RATE = 24_000
 let tokenizer = Tokenizer()
 
 class Tokenizer {
@@ -338,199 +339,27 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
+            run_tests()
             encode_graph = GraphRunner(filename: "0.rc")
             model_graph = GraphRunner(filename: "1.rc")
-            runGenerate()
+            generate(
+                text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
+                refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
+                file: "voice4",
+                num_steps: 16,
+                language: "None"
+            )
         }
     }
-
-    func runGenerate() {
-        let url = Bundle.main.url(forResource: "voice4", withExtension: "wav")!
-        let audioData = try! Data(contentsOf: url)
-        generate(
-            text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
-            refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
-            refAudio: audioData,
-            num_steps: 16,
-            language: "None"
-        )
-    }
 }
 
-func estimateTargetTokens(_ text: String, _ refText: String, _ numRefAudioTokens: Int) -> Int {
-    let refWeight = refText.unicodeScalars.reduce(Float(0)) { $0 + CHAR_WEIGHTS[Int($1.value)] }
-    let speedFactor = refWeight / Float(numRefAudioTokens)
-    let targetWeight = text.unicodeScalars.reduce(Float(0)) { $0 + CHAR_WEIGHTS[Int($1.value)] }
-    let estimatedDuration = targetWeight / speedFactor
-    return Int(estimatedDuration)
+func generate(text: String, refText: String, file: String, num_steps: Int, language: String) {
+    let audio = load_audio(file: file, samplingRate: 24000)
 }
 
-func generate(
-    text: String,
-    refText: String,
-    refAudio: Data,
-    num_steps: Int = 16,
-    language: String = "None"
-) {
-    let sampling_rate = 24000
-    let chunk_size = 960
-    var ref_wav = load_audio(refAudio, samplingRate: sampling_rate)
-    
-    
-    let clipSize = ref_wav.count % chunk_size
-    if clipSize > 0 { ref_wav.removeLast(clipSize) }
-    let wavLen = ref_wav.count
-    if wavLen < (sampling_rate * 20) { ref_wav.append(contentsOf: Array(repeating: 0.0, count: (sampling_rate * 20) - wavLen)) }
-    
-    let numRefAudioTokens = wavLen / chunk_size
-
-    var targetLength = estimateTargetTokens(text, refText, numRefAudioTokens)
-
-    print("target_length =", targetLength)
-    
-    ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
-    
-    let avgTokensPerChar = Float(targetLength) / Float(text.count)
-    //let textChunkLen = Int(Float(AUDIO_CHUNK_DURATION) * Float(FRAME_RATE) / avgTokensPerChar)
-    let style_tokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>").map { Int32($0) }
-    
-    let start = ContinuousClock.now
-    encode_graph.run()
-    
-    let elapsed = start.duration(to: .now)
-    print("Execution time: \(elapsed)")
-    
-    let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
-    
-    // delete no longer used buffers
-    for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
-    
-    let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
-    
-    let T_full = ints.count / 8
-    let T_actual = numRefAudioTokens
-
-    let refAudioTokens = (0..<8).map { channel in
-        let start = channel * T_full
-        let end = start + T_actual
-        return Array(ints[start..<end])
-    }
-
-    print("ref audio tokens =",refAudioTokens)
-    
-    let textChunkLen = Int(Float(MAX_LEN - (style_tokens.count + refAudioTokens[0].count)) / (Float(CHAR_WEIGHTS.max() ?? 0) * 2.0))
-
-    let pattern = #"[^。，！？；：、.,?]+[。，！？；：、.,?]?"#
-    let regex = try! NSRegularExpression(pattern: pattern)
-    let range = NSRange(text.startIndex..., in: text)
-
-    let chunksSmall = regex.matches(in: text, range: range).compactMap {
-        Range($0.range, in: text).map { String(text[$0]) }
-    }
-
-    var chunks = [""]
-    var j = 0
-
-    for var chunk in chunksSmall {
-        if chunk.first == " " {
-            chunk.removeFirst()
-        }
-
-        if chunks[j].count < textChunkLen + chunk.count {
-            chunks[j] += chunk
-        } else {
-            chunks.append(chunk)
-            j += 1
-        }
-    }
-    
-    print("CHUNKS", chunks.count)
-    print(chunks)
-    
-    for chunk in chunks {
-        targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
-        generateIterative(chunk, targetLength: targetLength, refText: refText, refAudioTokens: refAudioTokens, style_tokens: style_tokens)
-    }
-    
-}
-
-func generateIterative(_ text: String, targetLength: Int, refText: String, refAudioTokens: [[Int32]], num_steps: Int = 16, language: String = "None", style_tokens: [Int32] = []) {
-    let text_tokens = tokenizer.encode("<|text_start|>\(( [refText, text].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")))<|text_end|>").map { Int32($0) }
-    print("text_tokens",text_tokens, text_tokens.count)
-    let target_audio_tokens = Array(repeating: AUDIO_MASK_ID, count: targetLength).map { Int32($0) }
-    print(style_tokens.count, text_tokens.count, refAudioTokens[0].count, target_audio_tokens.count)
-    let c_len = style_tokens.count + text_tokens.count + refAudioTokens[0].count + target_audio_tokens.count
-    let cond_audio_start_idx = c_len - targetLength - refAudioTokens[0].count
-    print("c_len =",c_len, "cond_audio_start_idx", cond_audio_start_idx, "target_length =",targetLength)
-    
-    let cond_input_ids = [[Int32]](repeating: [], count: 1).map { _ in (0..<NUM_AUDIO_CODEBOOK).map { i in style_tokens + text_tokens + refAudioTokens[i] + target_audio_tokens }}
-    
-    print("cond_input_ids sum =", cond_input_ids.flatMap { $0 }.flatMap { $0 }.reduce(0, +))
-    var input_ids = (0..<2).map { _ in (0..<NUM_AUDIO_CODEBOOK).map { _ in Array(repeating: Int32(AUDIO_MASK_ID), count: MAX_LEN) }}
-
-    for i in 0..<NUM_AUDIO_CODEBOOK {
-        let src = cond_input_ids[0][i]
-        input_ids[0][i].replaceSubrange(0..<c_len, with: src.prefix(c_len))
-        input_ids[1][i].replaceSubrange(0..<targetLength, with: src.suffix(targetLength))
-    }
-    print("target_length =",targetLength)
-    let cond_audio_mask = Array(repeating: false, count: cond_audio_start_idx) + Array(repeating: true, count: c_len - cond_audio_start_idx)
-    var audio_mask = (0..<2).map { _ in Array(repeating: false, count: MAX_LEN)}
-    audio_mask[0].replaceSubrange(0..<c_len, with: cond_audio_mask)
-    audio_mask[1].replaceSubrange(0..<targetLength, with: cond_audio_mask.suffix(targetLength))
-    
-    
-    var attentionMask = (0..<2).map { _ in (0..<1).map { _ in (0..<MAX_LEN).map { _ in Array(repeating: false, count: MAX_LEN) }}}
-    for i in 0..<c_len { attentionMask[0][0][i].replaceSubrange(0..<c_len, with: Array(repeating: true, count: c_len))}
-    for i in 0..<targetLength { attentionMask[1][0][i].replaceSubrange(0..<targetLength, with: Array(repeating: true, count: targetLength))}
-    if c_len > targetLength { for i in targetLength..<c_len { attentionMask[1][0][i][i] = true }}
-    
-    let totalMask = targetLength * NUM_AUDIO_CODEBOOK
-
-    var timesteps: [Double] = (0...num_steps).map { i in Double(i) / Double(num_steps)}
-    let layer_ids = (0..<NUM_AUDIO_CODEBOOK).map { Int32($0) }
-    timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
-    let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
-
-    input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
-    audio_mask.flatMap { $0.map { $0 ? UInt8(1) : UInt8(0) } }.withUnsafeBytes { memcpy(buffers[1135]!.contents(), $0.baseAddress!, $0.count) }
-    attentionMask.flatMap { $0 }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1136]!.contents(), $0.baseAddress!, $0.count) }
-    layer_ids.withUnsafeBytes { memcpy(buffers[1137]!.contents(), $0.baseAddress!, $0.count) }
-    
-    model_graph.run(vals_dict: [547: c_len, 131: targetLength])
-    
-    print(model_graph.copyouts)
-    let data = Data(bytes: buffers[model_graph.copyouts[0]]!.contents(), count: buffer_sz[model_graph.copyouts[0]]!)
-    let floatArray: [Float32] = data.withUnsafeBytes { Array($0.bindMemory(to: Float32.self))}
-    print("scores =",floatArray)
-    
-}
-
-func getSched(numSteps: Int, targetLength: Int) -> ([Int], Int) {
-    let totalMask = targetLength * NUM_AUDIO_CODEBOOK
-    var rem = totalMask
-    var sched: [Int] = []
-
-    var timesteps: [Double] = (0...numSteps).map { Double($0) / Double(numSteps) }
-    timesteps = timesteps.map { t in (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t) }
-
-    for step in 0..<numSteps {
-        let num: Int
-        if step == numSteps - 1 {
-            num = rem
-        } else {
-            let value = Int(ceil(Double(totalMask) * (timesteps[step + 1] - timesteps[step])))
-            num = min(value, rem)
-        }
-        if num >= MAX_LEN { return getSched(numSteps: numSteps * 2, targetLength: targetLength) }
-        sched.append(num)
-        rem -= num
-    }
-
-    return (sched, numSteps)
-}
-
-func load_audio(_ audio: Data, samplingRate: Int) -> [Float] {
+func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
+    let url = Bundle.main.url(forResource: file, withExtension: "wav")!
+    let audio = try! Data(contentsOf: url)
     let (data, sr) = load_waveform(audio)
 
     // Convert multi-channel to mono
@@ -693,5 +522,16 @@ func readUInt32LE(_ bytes: [UInt8], offset: Int) -> UInt32 {
 }
 
 
-
+//todo......
+func run_tests() {
+    //audio load
+    var value = load_audio(file: "voice3")
+    var expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav", withExtension: "json")!)))
+    assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
+    value = load_audio(file: "voice4")
+    expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav", withExtension: "json")!)))
+    assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
+    
+    print("DONE")
+}
 
