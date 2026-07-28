@@ -494,7 +494,7 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
 
     input_ids.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
     audio_mask.flatMap { $0.map { $0 ? UInt8(1) : UInt8(0) } }.withUnsafeBytes { memcpy(buffers[1135]!.contents(), $0.baseAddress!, $0.count) }
-    //attentionMask.flatMap { $0 }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1136]!.contents(), $0.baseAddress!, $0.count) }
+    attentionMask.flatMap { $0 }.flatMap { $0 }.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1136]!.contents(), $0.baseAddress!, $0.count) }
     layer_ids.withUnsafeBytes { memcpy(buffers[1137]!.contents(), $0.baseAddress!, $0.count) }
     
     model_graph.run(vals_dict: [547: c_len, 131: targetLength])
