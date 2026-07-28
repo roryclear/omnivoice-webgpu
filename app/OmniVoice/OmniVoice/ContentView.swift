@@ -497,6 +497,8 @@ func generateIterative(_ text: String, targetLength: Int, refText: String, refAu
     let (sched, num_steps) = getSched(numSteps: num_steps, targetLength: targetLength)
     print("sched =", sched)
     
+    //input_ids.flatMap { $0 }.withUnsafeBytes { memcpy(buffers[1134]!.contents(), $0.baseAddress!, $0.count) }
+    
     model_graph.run(vals_dict: [547: c_len, 131: targetLength])
     
     print(model_graph.copyouts)
