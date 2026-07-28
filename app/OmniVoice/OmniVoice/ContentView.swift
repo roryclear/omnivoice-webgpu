@@ -387,8 +387,9 @@ func generate(
     var targetLength = estimateTargetTokens(text, refText, numRefAudioTokens)
 
     print("target_length =", targetLength)
-    
-    ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
+    print(ref_wav.count)
+    print("ref_wav sum =", ref_wav.reduce(0, +))
+    //ref_wav.withUnsafeBytes { memcpy(buffers[encode_graph.copyins[encode_graph.copyins.count - 1]]!.contents(), $0.baseAddress!, ref_wav.count * MemoryLayout<Float>.size) }
     
     let avgTokensPerChar = Float(targetLength) / Float(text.count)
     //let textChunkLen = Int(Float(AUDIO_CHUNK_DURATION) * Float(FRAME_RATE) / avgTokensPerChar)
@@ -401,24 +402,25 @@ func generate(
     print("Execution time: \(elapsed)")
     
     let data = Data(bytes: buffers[encode_graph.copyouts[0]]!.contents(), count: buffer_sz[encode_graph.copyouts[0]]!)
-    
     // delete no longer used buffers
-    for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
-    
-    let ints = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
-    
-    let T_full = ints.count / 8
-    let T_actual = min(numRefAudioTokens, T_full)
+    //for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
+    let refAudioTokensFlat = data.withUnsafeBytes { Array($0.bindMemory(to: Int32.self)) }
 
-    let refAudioTokens: [[Int32]] = (0..<8).map { channel -> [Int32] in
-        let start = channel * T_full
-        let end = min(start + T_actual, ints.count)
-        return Array(ints[start..<end])
-    }
-
-    print("ref audio tokens =",refAudioTokens)
+    print("ref audio tokens =",refAudioTokensFlat, refAudioTokensFlat.count)
     
-    let textChunkLen = Int(Float(MAX_LEN - (style_tokens.count + refAudioTokens[0].count)) / (Float(CHAR_WEIGHTS.max() ?? 0) * 2.0))
+    let maxN = wavLen / chunk_size
+    let n = min(refAudioTokensFlat.count / 8, maxN)
+
+    var refAudioTokens = Array(
+        repeating: Array(repeating: Int32(0), count: n),
+        count: 8
+    )
+
+    for i in 0..<8 { for j in 0..<n { refAudioTokens[i][j] = refAudioTokensFlat[i * n + j]}}
+
+    print("refAudioTokens shape = [8, \(n)]")
+    
+    let textChunkLen = Int(Float(MAX_LEN - (style_tokens.count + refAudioTokens.count)) / (Float(CHAR_WEIGHTS.max() ?? 0) * 2.0))
 
     let pattern = #"[^。，！？；：、.,?]+[。，！？；：、.,?]?"#
     let regex = try! NSRegularExpression(pattern: pattern)
@@ -446,11 +448,12 @@ func generate(
     
     print("CHUNKS", chunks.count)
     print(chunks)
-    
+    /*
     for chunk in chunks {
         targetLength = estimateTargetTokens(chunk, refText, numRefAudioTokens)
         generateIterative(chunk, targetLength: targetLength, refText: refText, refAudioTokens: refAudioTokens, style_tokens: style_tokens)
     }
+     */
     
 }
 

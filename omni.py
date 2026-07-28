@@ -774,9 +774,19 @@ class omni:
     ref_wav = ref_wav[:-clip_size] if clip_size > 0 else ref_wav
     wav_len = len(ref_wav)
     ref_wav = ref_wav + [0] * ((SAMPLING_RATE*20) - wav_len)
-
+    print(ref_wav)
+    print(np.array(ref_wav).sum())
+    print(Tensor([[ref_wav]]).dtype)
+    #print(np.array(ref_wav).shape, np.array(ref_wav).sum())
+    #exit()
     ref_audio_tokens = self.encode(Tensor([[ref_wav]]))
+    for x in ref_audio_tokens.flatten().numpy(): print(x)
+    print(ref_audio_tokens.shape)
+    print(int(wav_len / self.audio_tokenizer.hop_length))
+    exit()
+
     # [:, 8, :] (NUM_AUDIO_CODEBOOK)
+    # can't have these two different sizes in one graph!
     ref_audio_tokens = ref_audio_tokens[0, :, :int(wav_len / self.audio_tokenizer.hop_length)].numpy()
   
     # so c_len doesn't exceed MAX_LEN
@@ -887,14 +897,21 @@ class omni:
     layer_ids = Tensor([[i] for i in range(NUM_AUDIO_CODEBOOK)])
     audio_mask = Tensor(audio_mask)
     attention_mask = Tensor(attention_mask)
-
+    print(np.array(input_ids).sum())
+    exit()
     input_ids = Tensor(input_ids)
+    print("shape input ids =",input_ids.shape, input_ids.dtype, input_ids._buffer()._buf.num, input_ids._buffer().size, input_ids._buffer().offset)
+    print("shape audio_mask =",audio_mask.shape, audio_mask.dtype, audio_mask._buffer()._buf.num, audio_mask._buffer().size, audio_mask._buffer().offset)
+    print("shape attention_mask =",attention_mask.shape, attention_mask.dtype, attention_mask._buffer()._buf.num, attention_mask._buffer().size, attention_mask._buffer().offset)
     tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
     for step in range(num_steps):
       print("STEP",step,"of",num_steps)
       pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=audio_mask[:, :c_len_var], 
                           attention_mask=attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids,
                           c_len_var=c_len_var, t_len_var=t_len_var)
+      
+      print("scores =",scores.numpy())
+      exit()
 
       scores = scores.numpy()
       pred_tokens = pred_tokens.numpy()
