@@ -345,8 +345,8 @@ struct ContentView: View {
             model_graph = GraphRunner(filename: "1.rc")
             generate(
                 text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
-                refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
-                file: "voice4",
+                refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
+                file: "voice4_short",
                 num_steps: 16,
                 language: "None"
             )
@@ -594,7 +594,7 @@ func run_tests() {
     expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_audio_tokens", withExtension: "json")!))[0]
     assert(out == expected_tokens, "Token mismatch: got \(out), expected \(expected_tokens)")
     
-    print(out)
+
     print("DONE")
 }
 
