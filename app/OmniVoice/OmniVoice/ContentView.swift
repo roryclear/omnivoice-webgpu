@@ -24,6 +24,7 @@ let NUM_AUDIO_CODEBOOK = 8
 let T_SHIFT = 0.1
 let SAMPLING_RATE = 24_000
 let CHUNK_SIZE = 960
+let REF_AUDIO_LEN = 10
 let tokenizer = Tokenizer()
 
 class Tokenizer {
@@ -272,9 +273,6 @@ class GraphRunner {
         }
         
     }
-
-    private func loadFile() {
-    }
     
     func run(vals_dict: [Int: Int]? = nil) {
         for (index, item) in self.calls.enumerated() {
@@ -407,7 +405,7 @@ func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
     return output
 }
 
-func expandWav(_ refWav: [Float]) -> [Float] {
+func expandWav(_ refWav: [Float], ref_audio_length: Int = REF_AUDIO_LEN) -> [Float] {
     var refWav = refWav
     let clipSize = refWav.count % CHUNK_SIZE
 
@@ -416,7 +414,7 @@ func expandWav(_ refWav: [Float]) -> [Float] {
     }
 
     let wavLen = refWav.count
-    let targetLen = SAMPLING_RATE * 20
+    let targetLen = SAMPLING_RATE * ref_audio_length
 
     if wavLen <= targetLen {
         refWav += Array(repeating: 0.0, count: targetLen - wavLen)
@@ -552,10 +550,10 @@ func readUInt32LE(_ bytes: [UInt8], offset: Int) -> UInt32 {
     ContentView()
 }
 
-func get_ref_tokens() -> [[Int32]] {
+func get_ref_tokens(ref_audio_length: Int = REF_AUDIO_LEN) -> [[Int32]] {
     let count = buffer_sz[encode_graph.copyouts[0]]!
     let flat = Array(UnsafeBufferPointer(start: buffers[encode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Int32.self), count: count))
-    let prefixCount = Int((20 * SAMPLING_RATE * NUM_AUDIO_CODEBOOK) / CHUNK_SIZE)
+    let prefixCount = Int((REF_AUDIO_LEN * SAMPLING_RATE * NUM_AUDIO_CODEBOOK) / CHUNK_SIZE)
     let trimmed = Array(flat.prefix(prefixCount))
     let n = trimmed.count / NUM_AUDIO_CODEBOOK
     return stride(from: 0, to: trimmed.count, by: n).map { Array(trimmed[$0..<($0 + n)]) }
@@ -564,23 +562,24 @@ func get_ref_tokens() -> [[Int32]] {
 //todo......
 func run_tests() {
     //audio load
-    var value = load_audio(file: "voice3")
+    var value = load_audio(file: "voice3_short")
     var expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
-    value = load_audio(file: "voice4")
+    value = load_audio(file: "voice4_short")
     expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
     
-    // expand to 20s
+    // expand to REF_AUDIO_LEN s
     value = try! JSONDecoder().decode([Float32].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav", withExtension: "json")!))
     value = expandWav(value)
     expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav_exp", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
+    
     value = try! JSONDecoder().decode([Float32].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav", withExtension: "json")!))
     value = expandWav(value)
     expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
-    
+
     // encode
     encode_graph = GraphRunner(filename: "0.rc")
     value = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
@@ -590,12 +589,12 @@ func run_tests() {
     var expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_audio_tokens", withExtension: "json")!))[0]
     assert(out == expected_tokens, "Token mismatch: got \(out), expected \(expected_tokens)")
     
-    value = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
+    
+    value = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav_exp", withExtension: "json")!)))
     memcpy(buffers[encode_graph.copyins.last!]!.contents(), value, value.count * MemoryLayout<Float>.stride)
-
     encode_graph.run()
     out = get_ref_tokens()
-    expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_audio_tokens", withExtension: "json")!))[0]
+    expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_audio_tokens", withExtension: "json")!))[0]
     assert(out == expected_tokens, "Token mismatch: got \(out), expected \(expected_tokens)")
     
     //tokenizer test
@@ -607,8 +606,8 @@ func run_tests() {
     toks = tokenizer.encode("<|text_start|>That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.<|text_end|>")
     assert(toks == [151674, 4792, 594, 432, 11, 2484, 279, 2150, 389, 279, 1899, 11, 4227, 3123, 364, 60912, 1052, 594, 5530, 304, 1128, 358, 1977, 11, 358, 2776, 35398, 2220, 57610, 9471, 47776, 714, 358, 1513, 944, 1414, 1105, 476, 2453, 979, 358, 2776, 978, 14810, 11, 2055, 470, 311, 697, 11699, 2309, 323, 8844, 11, 432, 594, 26345, 429, 358, 2776, 8756, 8305, 323, 807, 32486, 752, 11, 1473, 697, 3579, 389, 5883, 1221, 582, 3278, 1490, 11, 498, 646, 944, 653, 4279, 3017, 13627, 48236, 518, 697, 21669, 44497, 65, 9777, 1786, 590, 567, 49299, 1446, 11174, 1495, 67147, 11, 714, 358, 2776, 63111, 697, 52059, 288, 9842, 553, 65518, 19837, 1550, 448, 279, 33327, 304, 279, 12884, 2009, 45843, 11, 6414, 92186, 11, 19277, 49340, 1495, 576, 3940, 435, 3279, 369, 35398, 2849, 323, 304, 35398, 5510, 1988, 1526, 279, 62473, 11, 807, 1490, 432, 15016, 576, 9396, 315, 3691, 13, 151675])
     
-    //model_graph = GraphRunner(filename: "1.rc")
-    //for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
+    model_graph = GraphRunner(filename: "1.rc")
+    for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
     //model_graph.run()
     
 
