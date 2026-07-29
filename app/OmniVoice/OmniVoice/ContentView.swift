@@ -562,10 +562,31 @@ func run_tests() {
     expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav_exp", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
     value = try! JSONDecoder().decode([Float32].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav", withExtension: "json")!))
+    let voice4_wav_len = value.count
     value = expandWav(value)
     expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
-
+    
+    // encode
+    encode_graph = GraphRunner(filename: "0.rc")
+    value = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
+    memcpy(buffers[encode_graph.copyins.last!]!.contents(), value, value.count * MemoryLayout<Float>.stride)
+    encode_graph.run()
+    var out = Array(UnsafeBufferPointer(start: buffers[encode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Int32.self), count: buffer_sz[encode_graph.copyouts[0]]!))
+    out = Array(out.prefix(Int((20 * SAMPLING_RATE) / CHUNK_SIZE)))
+    var expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_audio_tokens", withExtension: "json")!))[0][0]
+    assert(out.map { Int32($0) } == expected_tokens, "Token mismatch: got \(out.map { Int($0) }), expected \(expected_tokens)")
+    
+    value = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav_exp", withExtension: "json")!)))
+    memcpy(buffers[encode_graph.copyins.last!]!.contents(), value, value.count * MemoryLayout<Float>.stride)
+    encode_graph.run()
+    out = Array(UnsafeBufferPointer(start: buffers[encode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Int32.self), count: buffer_sz[encode_graph.copyouts[0]]!))
+    out = Array(out.prefix(Int((20 * SAMPLING_RATE) / CHUNK_SIZE)))
+    expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_audio_tokens", withExtension: "json")!))[0][0]
+    assert(out.map { Int32($0) } == expected_tokens, "Token mismatch: got \(out.map { Int($0) }), expected \(expected_tokens)")
+    
+    
+    print(out)
     print("DONE")
 }
 
