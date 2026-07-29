@@ -766,7 +766,6 @@ class omni:
   
   # todo change back to 16
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
-    style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
     
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
     wav_len = len(ref_wav)
@@ -781,14 +780,15 @@ class omni:
     #exit()
   
     # so c_len doesn't exceed MAX_LEN
-    text_chunk_len = int(MAX_LEN - (len(style_tokens) + len(ref_audio_tokens[0]))) / (max(CHAR_WEIGHTS)*2) # todo, can this be larger?
-
+    style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
     chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
     chunks = [""]
     j = 0
     for i in range(len(chunks_small)):
       if chunks_small[i][0] == " ": chunks_small[i] = chunks_small[i][1:]
-      if len(chunks[j]) < text_chunk_len + len(chunks_small[i]):
+      target_length = self._estimate_largest_target_tokens((chunks[j]+chunks_small[i]), ref_text, int(wav_len / self.audio_tokenizer.hop_length))
+      text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, (chunks[j]+chunks_small[i])) if x.strip())}<|text_end|>")
+      if len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + target_length < MAX_LEN:
         chunks[j] += chunks_small[i]
       else:
         chunks.append(chunks_small[i])
@@ -833,6 +833,13 @@ class omni:
     estimated_duration = target_weight / speed_factor
     return int(estimated_duration)
 
+  def _estimate_largest_target_tokens(self, text, ref_text, num_ref_audio_tokens):
+    ref_weight = 2.5 * len(ref_text) # avg char weight is 2.85, lowest is 0, 2.5 is probably worst case?
+    speed_factor = ref_weight / num_ref_audio_tokens
+    target_weight = max(CHAR_WEIGHTS) * len(text)
+    estimated_duration = target_weight / speed_factor
+    return int(estimated_duration)
+
   @TinyJit
   def __call__(self, input_ids, audio_mask, attention_mask, tokens, layer_ids, c_len_var, t_len_var):
     pred_tokens = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
@@ -865,10 +872,6 @@ class omni:
   def _generate_iterative(self, text_tokens, target_length, ref_audio_tokens, num_steps=16, style_tokens=None):
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
     c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + target_length
-    if c_len > MAX_LEN:
-      print("reference audio too long! use a shorter file for better results")
-      target_length -= (c_len - MAX_LEN)
-      c_len = MAX_LEN
     cond_audio_start_idx = c_len - target_length - len(ref_audio_tokens[0])
 
     cond_input_ids = [[]]
@@ -1037,7 +1040,7 @@ if __name__ == "__main__":
         ref_audio=open("voice4.wav", "rb").read(),
         ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
     )
-    #pickle.dump(audio, open("short4.pkl", "wb"))
+    pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
     write_waveform("out4.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1048,7 +1051,7 @@ if __name__ == "__main__":
         ref_audio=open("voice.wav", "rb").read(),
         ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking, as is likely clear, I am referring to the Iran deal",
     )
-    #pickle.dump(audio, open("short.pkl", "wb"))
+    pickle.dump(audio, open("short.pkl", "wb"))
     exp = pickle.load(open("short.pkl", "rb"))
     write_waveform("out.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1059,7 +1062,7 @@ if __name__ == "__main__":
         ref_audio=open("voice2.wav", "rb").read(),
         ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    #pickle.dump(audio, open("short1.pkl", "wb"))
+    pickle.dump(audio, open("short1.pkl", "wb"))
     exp = pickle.load(open("short1.pkl", "rb"))
     write_waveform("out1.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1073,7 +1076,7 @@ if __name__ == "__main__":
         #ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    #pickle.dump(audio, open("short2.pkl", "wb"))
+    pickle.dump(audio, open("short2.pkl", "wb"))
     exp = pickle.load(open("short2.pkl", "rb"))
     write_waveform("out2.wav", audio)
     # exit()
@@ -1087,7 +1090,7 @@ if __name__ == "__main__":
         #ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    pickle.dump(audio, open("long.pkl", "wb"))
+    #pickle.dump(audio, open("long.pkl", "wb"))
     exp = pickle.load(open("long.pkl", "rb"))
     write_waveform("out3.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
