@@ -340,7 +340,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            run_tests()
+            //run_tests()
             encode_graph = GraphRunner(filename: "0.rc")
             model_graph = GraphRunner(filename: "1.rc")
             generate(
@@ -358,6 +358,10 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
     var ref_wav = load_audio(file: file, samplingRate: 24000)
     let wav_len = ref_wav.count
     ref_wav = expandWav(ref_wav)
+    memcpy(buffers[encode_graph.copyins.last!]!.contents(), ref_wav, ref_wav.count * MemoryLayout<Float>.stride)
+    encode_graph.run()
+    let ref_audio_tokens = get_ref_tokens()
+    print(ref_audio_tokens)
 }
 
 
