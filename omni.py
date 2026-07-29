@@ -882,7 +882,7 @@ class omni:
     scores_out[:, :t_len_var] += Tensor.where(tokens[:, :t_len_var] == AUDIO_MASK_ID, scores[:, :t_len_var], -float("inf"))
     return pred_tokens, scores_out
 
-  def _generate_iterative(self, text_tokens, target_length, ref_audio_tokens, num_steps=16, style_tokens=None):
+  def get_inputs(self, text_tokens, target_length, ref_audio_tokens, style_tokens):
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
     c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + target_length
     cond_audio_start_idx = c_len - target_length - len(ref_audio_tokens[0])
@@ -907,8 +907,12 @@ class omni:
     for i in range(target_length): attention_mask[1][0][i][:target_length] = [True] * target_length
     for i in range(target_length, c_len): attention_mask[1][0][i][i] = True
 
-    sched, num_steps = get_sched(num_steps=num_steps, target_length=target_length)
+    return c_len, audio_mask, attention_mask, input_ids
 
+
+  def _generate_iterative(self, text_tokens, target_length, ref_audio_tokens, num_steps=16, style_tokens=None):
+    c_len, audio_mask, attention_mask, input_ids = self.get_inputs(text_tokens, target_length, ref_audio_tokens, style_tokens)
+    sched, num_steps = get_sched(num_steps=num_steps, target_length=target_length)
     print("sched, num_steps =",sched, num_steps)
 
     c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
@@ -917,12 +921,7 @@ class omni:
     layer_ids = Tensor([[i] for i in range(NUM_AUDIO_CODEBOOK)])
     audio_mask = Tensor(audio_mask)
     attention_mask = Tensor(attention_mask)
-    #print(input_ids, np.array(input_ids).sum())
     input_ids = Tensor(input_ids)
-    #print("input_ids:",input_ids._buffer()._buf.num)
-    #print("audio_mask:", audio_mask.shape ,audio_mask._buffer()._buf.num, audio_mask.dtype, audio_mask._buffer()._buf.size)
-    #print("c_len =",c_len, "cond_audio_start_idx =",cond_audio_start_idx, "target_length =",target_length)
-    #exit()
     tokens = Tensor([[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)])
     for step in range(num_steps):
       print("STEP",step,"of",num_steps)
