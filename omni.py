@@ -787,10 +787,16 @@ class omni:
     chunks = self.get_chunks(text, ref_text, wav_len, style_tokens, ref_audio_tokens)
     print("CHUNKS", len(chunks), chunks)
     res = []
+    rets = []
+    target_lengths = []
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
       text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, chunks[i]) if x.strip())}<|text_end|>")
       ret = self._generate_iterative(text_tokens=text_tokens, target_length=target_length, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, style_tokens=style_tokens)
+      rets.append(ret)
+      target_lengths.append(target_length)
+    for ret, target_length in zip(rets, target_lengths):
+      target_lengths.append(target_length)
       wv = self.audio_tokenizer.decode(Tensor(ret)).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
