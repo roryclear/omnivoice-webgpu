@@ -791,7 +791,7 @@ class omni:
       target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
       text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, chunks[i]) if x.strip())}<|text_end|>")
       ret = self._generate_iterative(text_tokens=text_tokens, target_length=target_length, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, style_tokens=style_tokens)
-      wv = self.audio_tokenizer.decode(ret).numpy().tolist()
+      wv = self.audio_tokenizer.decode(Tensor(ret)).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
     return res
@@ -925,8 +925,6 @@ class omni:
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       scores = scores.numpy()
-      #print("scores =",scores)
-      #exit()
       pred_tokens = pred_tokens.numpy()
       input_ids = input_ids.numpy()
       pred_tokens = pred_tokens[:, :, :target_length]
@@ -948,7 +946,7 @@ class omni:
       tokens = Tensor(tokens)
       input_ids = Tensor(input_ids)
 
-    return tokens
+    return tokens.numpy().tolist()
 
 def get_sched(num_steps, target_length):
   timesteps = [i / num_steps for i in range(num_steps + 1)]
@@ -1015,7 +1013,7 @@ class Handler(BaseHTTPRequestHandler):
         text=data['target_text'],
         ref_audio=data['ref_audio'],
         ref_text=data['ref_text'],
-        num_steps=16,
+        num_steps=32,
         language=data["language"]
       )
       wav_bytes = waveform_to_wav_bytes(audio, SAMPLING_RATE)
@@ -1050,18 +1048,18 @@ if __name__ == "__main__":
     #pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
     write_waveform("out4.wav", audio)
-    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
     
-    Tensor.manual_seed(1)
+    Tensor.manual_seed(4)
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
         ref_audio=open("short_voice_samples/voice.wav", "rb").read(),
-        ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue",
+        ref_text="Nothing is ever as it seems anymore, and simple declarations bring deeper intrigue",
     )
     #pickle.dump(audio, open("short.pkl", "wb"))
     exp = pickle.load(open("short.pkl", "rb"))
     write_waveform("out.wav", audio)
-    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
     
     Tensor.manual_seed(0)
     audio = model.generate(
@@ -1072,7 +1070,7 @@ if __name__ == "__main__":
     #pickle.dump(audio, open("short1.pkl", "wb"))
     exp = pickle.load(open("short1.pkl", "rb"))
     write_waveform("out1.wav", audio)
-    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
 
     Tensor.manual_seed(1)
     audio = model.generate(
@@ -1097,10 +1095,10 @@ if __name__ == "__main__":
         #ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    #pickle.dump(audio, open("long.pkl", "wb"))
+    pickle.dump(audio, open("long.pkl", "wb"))
     exp = pickle.load(open("long.pkl", "rb"))
     write_waveform("out3.wav", audio)
-    #np.testing.assert_allclose(exp, audio, rtol=1e-5)
+    np.testing.assert_allclose(exp, audio, rtol=1e-5)
     
     exit()
     Tensor.manual_seed(42)
