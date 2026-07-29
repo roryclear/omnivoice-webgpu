@@ -89,7 +89,7 @@ class SimpleTokenizer:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
   
-MAX_LEN = 750
+MAX_LEN = 500
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 POSITION_TEMP = 5.0
@@ -793,7 +793,7 @@ class omni:
       else:
         chunks.append(chunks_small[i])
         j+=1
-    print("CHUNKS", len(chunks))
+    print("CHUNKS", len(chunks), chunks)
     res = []
     for i in range(len(chunks)):
       target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
@@ -1037,10 +1037,10 @@ if __name__ == "__main__":
     Tensor.manual_seed(0)
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
-        ref_audio=open("voice4.wav", "rb").read(),
-        ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds emm we're on about eleven right now, so I just need to say a few more words, thank you",
+        ref_audio=open("short_voice_samples/voice4.wav", "rb").read(),
+        ref_text="This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
     )
-    pickle.dump(audio, open("short4.pkl", "wb"))
+    #pickle.dump(audio, open("short4.pkl", "wb"))
     exp = pickle.load(open("short4.pkl", "rb"))
     write_waveform("out4.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1048,10 +1048,10 @@ if __name__ == "__main__":
     Tensor.manual_seed(0)
     audio = model.generate(
         text="Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? 谢谢你",
-        ref_audio=open("voice.wav", "rb").read(),
-        ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue, which we are now going to have to spend today unpacking, as is likely clear, I am referring to the Iran deal",
+        ref_audio=open("short_voice_samples/voice.wav", "rb").read(),
+        ref_text="Nothing is ever as it seems anymore and simple declarations bring deeper intrigue",
     )
-    pickle.dump(audio, open("short.pkl", "wb"))
+    #pickle.dump(audio, open("short.pkl", "wb"))
     exp = pickle.load(open("short.pkl", "rb"))
     write_waveform("out.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1059,10 +1059,10 @@ if __name__ == "__main__":
     Tensor.manual_seed(0)
     audio = model.generate(
         text="Testing testing one two three, this has different text for me to read, so I can test that the tiny jit is working, thank you for listening",
-        ref_audio=open("voice2.wav", "rb").read(),
-        ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that, in Iran, where, in one week virtually, we knocked out their entire navy, their entire air force",
+        ref_audio=open("short_voice_samples/voice2.wav", "rb").read(),
+        ref_text="And eh all of the people, I mean we have the greatest military anywhere in the world, and you saw that",
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    pickle.dump(audio, open("short1.pkl", "wb"))
+    #pickle.dump(audio, open("short1.pkl", "wb"))
     exp = pickle.load(open("short1.pkl", "rb"))
     write_waveform("out1.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
@@ -1071,12 +1071,12 @@ if __name__ == "__main__":
     audio = model.generate(
         # todo, why is end bad??
         text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
-        ref_audio=open("voice3_short.wav", "rb").read(),
-        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see",
+        ref_audio=open("short_voice_samples/voice3.wav", "rb").read(),
+        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass",
         #ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    pickle.dump(audio, open("short2.pkl", "wb"))
+    #pickle.dump(audio, open("short2.pkl", "wb"))
     exp = pickle.load(open("short2.pkl", "rb"))
     write_waveform("out2.wav", audio)
     # exit()
@@ -1085,8 +1085,8 @@ if __name__ == "__main__":
     audio = model.generate(
         # todo, why is end bad??
         text="That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.",
-        ref_audio=open("voice3_short.wav", "rb").read(),
-        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see",
+        ref_audio=open("short_voice_samples/voice3.wav", "rb").read(),
+        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass",
         #ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, that's all they see. People like you or I know, we have an unshakeable belief that cars are living entities",
         num_steps=32
     ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
