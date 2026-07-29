@@ -799,7 +799,7 @@ class omni:
       target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
       text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, chunks[i]) if x.strip())}<|text_end|>")
       ret = self._generate_iterative(text_tokens=text_tokens, target_length=target_length, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, style_tokens=style_tokens)
-      wv = self.audio_tokenizer.decode(ret).numpy().tolist()
+      wv = self.audio_tokenizer.decode(Tensor(ret)).numpy().tolist()
       wv = wv[:target_length * self.audio_tokenizer.hop_length]
       res.extend(wv)
     return res
@@ -902,13 +902,14 @@ class omni:
     audio_mask = Tensor(audio_mask)
     attention_mask = Tensor(attention_mask)
     #print(input_ids, np.array(input_ids).sum())
-    input_ids = Tensor(input_ids)
     #print("input_ids:",input_ids._buffer()._buf.num)
     #print("audio_mask:", audio_mask.shape ,audio_mask._buffer()._buf.num, audio_mask.dtype, audio_mask._buffer()._buf.size)
     #print("c_len =",c_len, "cond_audio_start_idx =",cond_audio_start_idx, "target_length =",target_length)
     #exit()
-    tokens = Tensor.full((NUM_AUDIO_CODEBOOK, MAX_LEN), AUDIO_MASK_ID, dtype=dtypes.int)
+    tokens = [[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)]
     for step in range(num_steps):
+      tokens = Tensor(tokens)
+      input_ids = Tensor(input_ids)
       print("STEP",step,"of",num_steps)
       pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=audio_mask[:, :c_len_var], 
                           attention_mask=attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids,
@@ -934,9 +935,6 @@ class omni:
       tokens[:, :target_length] = sample_tokens
       input_ids[0: 1, :,  c_len-target_length:c_len] = sample_tokens
       input_ids[1: 2, :, :target_length] = sample_tokens
-
-      tokens = Tensor(tokens)
-      input_ids = Tensor(input_ids)
 
     return tokens
 
