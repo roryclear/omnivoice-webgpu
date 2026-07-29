@@ -19,7 +19,7 @@ let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
 let AUDIO_MASK_ID = 1024
-let MAX_LEN = 750
+let MAX_LEN = 500
 let NUM_AUDIO_CODEBOOK = 8
 let T_SHIFT = 0.1
 let SAMPLING_RATE = 24_000
@@ -559,6 +559,60 @@ func get_ref_tokens(ref_audio_length: Int = REF_AUDIO_LEN) -> [[Int32]] {
     return stride(from: 0, to: trimmed.count, by: n).map { Array(trimmed[$0..<($0 + n)]) }
 }
 
+func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int], num_ref_tokens: Int) -> [String] {
+    print("rory inputs")
+    print(text)
+    print(refText)
+    print(wavLen)
+    print(styleTokens)
+    print(num_ref_tokens)
+    let pattern = #"[^。，！？；：、.,?]+[。，！？；：、.,?]?"#
+    let regex = try! NSRegularExpression(pattern: pattern, options: [])
+
+    let nsText = text as NSString
+    let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+
+    var chunksSmall: [String] = matches.map {
+        nsText.substring(with: $0.range)
+    }
+
+    var chunks: [String] = [""]
+    var j = 0
+
+    for i in 0..<chunksSmall.count {
+        if chunksSmall[i].first == " " {
+            chunksSmall[i].removeFirst()
+        }
+
+        let combined = chunks[j] + chunksSmall[i]
+        
+        let targetLength = estimateLargestTargetTokens(text: combined, refText: refText, numRefAudioTokens: Int(wavLen / CHUNK_SIZE))
+
+        let joinedText = [refText, combined].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+
+        let textTokens = tokenizer.encode("<|text_start|>\(joinedText)<|text_end|>")
+
+        if styleTokens.count + textTokens.count + num_ref_tokens + targetLength < MAX_LEN {
+
+            chunks[j] += chunksSmall[i]
+        } else {
+            chunks.append(chunksSmall[i])
+            j += 1
+        }
+    }
+
+    return chunks
+}
+
+func estimateLargestTargetTokens(text: String, refText: String, numRefAudioTokens: Int) -> Int {
+    let refWeight = 2.5 * Double(refText.count)
+    let speedFactor = refWeight / Double(numRefAudioTokens)
+    let maxCharWeight = Double(CHAR_WEIGHTS.max() ?? 0.0)
+    let targetWeight = maxCharWeight * Double(text.count)
+    let estimatedDuration = targetWeight / speedFactor
+    return Int(estimatedDuration)
+}
+
 //todo......
 func run_tests() {
     //audio load
@@ -602,14 +656,29 @@ func run_tests() {
     let language = "None"
     let tok = Tokenizer()
     var toks = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
+    var ref_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_audio_tokens", withExtension: "json")!))[0]
     assert(toks == [151669, 151670, 4064, 151671, 151672, 4064, 151673])
     toks = tokenizer.encode("<|text_start|>That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black.<|text_end|>")
     assert(toks == [151674, 4792, 594, 432, 11, 2484, 279, 2150, 389, 279, 1899, 11, 4227, 3123, 364, 60912, 1052, 594, 5530, 304, 1128, 358, 1977, 11, 358, 2776, 35398, 2220, 57610, 9471, 47776, 714, 358, 1513, 944, 1414, 1105, 476, 2453, 979, 358, 2776, 978, 14810, 11, 2055, 470, 311, 697, 11699, 2309, 323, 8844, 11, 432, 594, 26345, 429, 358, 2776, 8756, 8305, 323, 807, 32486, 752, 11, 1473, 697, 3579, 389, 5883, 1221, 582, 3278, 1490, 11, 498, 646, 944, 653, 4279, 3017, 13627, 48236, 518, 697, 21669, 44497, 65, 9777, 1786, 590, 567, 49299, 1446, 11174, 1495, 67147, 11, 714, 358, 2776, 63111, 697, 52059, 288, 9842, 553, 65518, 19837, 1550, 448, 279, 33327, 304, 279, 12884, 2009, 45843, 11, 6414, 92186, 11, 19277, 49340, 1495, 576, 3940, 435, 3279, 369, 35398, 2849, 323, 304, 35398, 5510, 1988, 1526, 279, 62473, 11, 807, 1490, 432, 15016, 576, 9396, 315, 3691, 13, 151675])
     
+    //test chunks
+    value = try! JSONDecoder().decode([Float32].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav", withExtension: "json")!))
+    var text = "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this"
+    let ref_text = "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds"
+    let wav_len = 171139
+    var chunks = ["Testing testing one two three,this is made with Omni-Voice.Can you hear me?or not?", "thank you for listening to this"]
+    toks = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
+    var chunks_out = getChunks(text: text, refText: ref_text, wavLen: wav_len, styleTokens: toks, num_ref_tokens: Int(value.count / CHUNK_SIZE))
+    assert(chunks_out == chunks, "mismatch: got \(chunks_out), expected \(chunks)")
+    
+    text = "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen, it's fitting that I'm miles ahead and they chase me, show your face on TV then we'll see, you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses, but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare, eyes glazed, garage burnt down The fire raged for forty days and in forty ways But through the blaze, they see it fade The sea of black."
+    chunks = ["That's it,turn the page on the day,walk away 'Cause there's sense in what I say,", "I'm forty-fifth generation roman but I don't know them or care when I'm spitting,", "So return to your sitting position and listen,it's fitting that I'm miles ahead and they chase me,", "show your face on TV then we'll see,", "you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses,", "but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare,eyes glazed,", "garage burnt down The fire raged for forty days and in forty ways But through the blaze,", "they see it fade The sea of black."]
+    chunks_out = getChunks(text: text, refText: ref_text, wavLen: wav_len, styleTokens: toks, num_ref_tokens: Int(value.count / CHUNK_SIZE))
+    assert(chunks_out == chunks, "mismatch: got \(chunks_out), expected \(chunks)")
+    
     model_graph = GraphRunner(filename: "1.rc")
     for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
     //model_graph.run()
-    
 
     print("DONE")
 }
