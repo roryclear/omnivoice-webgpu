@@ -339,11 +339,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            run_tests()
-            /*
-            encode_graph = GraphRunner(filename: "0.rc")
-            model_graph = GraphRunner(filename: "1.rc")
-            
+            //run_tests()
             generate(
                 text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
                 refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
@@ -351,18 +347,25 @@ struct ContentView: View {
                 num_steps: 16,
                 language: "None"
             )
-             */
         }
     }
 }
 
 func generate(text: String, refText: String, file: String, num_steps: Int, language: String) {
+    encode_graph = GraphRunner(filename: "0.rc")
+    //model_graph = GraphRunner(filename: "1.rc")
     var ref_wav = load_audio(file: file, samplingRate: 24000)
+    let wav_len = ref_wav.count
     ref_wav = expandWav(ref_wav)
     memcpy(buffers[encode_graph.copyins.last!]!.contents(), ref_wav, ref_wav.count * MemoryLayout<Float>.stride)
     encode_graph.run()
-    let ref_audio_tokens = get_ref_tokens()
+    var ref_audio_tokens = get_ref_tokens()
+    ref_audio_tokens = ref_audio_tokens .map { Array($0.prefix(wav_len / CHUNK_SIZE)) }
+    var styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
+    let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
+    print(chunks)
     print(ref_audio_tokens)
+    print("h")
 }
 
 
