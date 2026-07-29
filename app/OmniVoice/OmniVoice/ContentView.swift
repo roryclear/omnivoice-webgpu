@@ -545,6 +545,14 @@ func readUInt32LE(_ bytes: [UInt8], offset: Int) -> UInt32 {
     ContentView()
 }
 
+func get_ref_tokens() -> [[Int32]] {
+    let count = buffer_sz[encode_graph.copyouts[0]]!
+    let flat = Array(UnsafeBufferPointer(start: buffers[encode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Int32.self), count: count))
+    let prefixCount = Int((20 * SAMPLING_RATE * NUM_AUDIO_CODEBOOK) / CHUNK_SIZE)
+    let trimmed = Array(flat.prefix(prefixCount))
+    let n = trimmed.count / NUM_AUDIO_CODEBOOK
+    return stride(from: 0, to: trimmed.count, by: n).map { Array(trimmed[$0..<($0 + n)]) }
+}
 
 //todo......
 func run_tests() {
@@ -562,7 +570,6 @@ func run_tests() {
     expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav_exp", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
     value = try! JSONDecoder().decode([Float32].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav", withExtension: "json")!))
-    let voice4_wav_len = value.count
     value = expandWav(value)
     expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
@@ -572,27 +579,18 @@ func run_tests() {
     value = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
     memcpy(buffers[encode_graph.copyins.last!]!.contents(), value, value.count * MemoryLayout<Float>.stride)
     encode_graph.run()
-    var out = Array(UnsafeBufferPointer(start: buffers[encode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Int32.self), count: buffer_sz[encode_graph.copyouts[0]]!))
-    var prefixCount = Int((20 * SAMPLING_RATE * NUM_AUDIO_CODEBOOK) / CHUNK_SIZE)
-    var trimmedOut = Array(out.prefix(prefixCount))
-    var n = trimmedOut.count / NUM_AUDIO_CODEBOOK
-    var out2: [[Int32]] = stride(from: 0, to: trimmedOut.count, by: n).map { Array(trimmedOut[$0..<($0 + n)])}
+    var out = get_ref_tokens()
     var expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_audio_tokens", withExtension: "json")!))[0]
-    assert(out2 == expected_tokens, "Token mismatch: got \(out2), expected \(expected_tokens)")
+    assert(out == expected_tokens, "Token mismatch: got \(out), expected \(expected_tokens)")
     
-    value = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav_exp", withExtension: "json")!)))
+    value = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_wav_exp", withExtension: "json")!)))
     memcpy(buffers[encode_graph.copyins.last!]!.contents(), value, value.count * MemoryLayout<Float>.stride)
     encode_graph.run()
-    out = Array(UnsafeBufferPointer(start: buffers[encode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Int32.self), count: buffer_sz[encode_graph.copyouts[0]]!))
-    prefixCount = Int((20 * SAMPLING_RATE * NUM_AUDIO_CODEBOOK) / CHUNK_SIZE)
-    trimmedOut = Array(out.prefix(prefixCount))
-    n = trimmedOut.count / NUM_AUDIO_CODEBOOK
-    out2 = stride(from: 0, to: trimmedOut.count, by: n).map { Array(trimmedOut[$0..<($0 + n)])}
-    expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_audio_tokens", withExtension: "json")!))[0]
-    assert(out2 == expected_tokens, "Token mismatch: got \(out2), expected \(expected_tokens)")
+    out = get_ref_tokens()
+    expected_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_audio_tokens", withExtension: "json")!))[0]
+    assert(out == expected_tokens, "Token mismatch: got \(out), expected \(expected_tokens)")
     
-    
-    print(out2)
+    print(out)
     print("DONE")
 }
 
