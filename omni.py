@@ -766,13 +766,12 @@ class omni:
   
   # todo change back to 16
   def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
-    
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
     wav_len = len(ref_wav)
     ref_wav = self.expand_wav(ref_wav=ref_wav)
     print("RORY WAV_LEN =",len(ref_wav))
     #json.dump(ref_wav, open("voice3_ref_wav_exp.json", "w"))
-    ref_audio_tokens = self.encode(Tensor([[ref_wav]]))
+    ref_audio_tokens = self.encode(Tensor([[ref_wav]])) # todo, use 10s instead of 20s?
     # [:, 8, :] (NUM_AUDIO_CODEBOOK)
     ref_audio_tokens = ref_audio_tokens.numpy()
     ref_audio_tokens = ref_audio_tokens[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
@@ -781,6 +780,19 @@ class omni:
   
     # so c_len doesn't exceed MAX_LEN
     style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
+    chunks = self.get_chunks(text, ref_text, wav_len, style_tokens, ref_audio_tokens)
+    print("CHUNKS", len(chunks), chunks)
+    res = []
+    for i in range(len(chunks)):
+      target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
+      text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, chunks[i]) if x.strip())}<|text_end|>")
+      ret = self._generate_iterative(text_tokens=text_tokens, target_length=target_length, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, style_tokens=style_tokens)
+      wv = self.audio_tokenizer.decode(ret).numpy().tolist()
+      wv = wv[:target_length * self.audio_tokenizer.hop_length]
+      res.extend(wv)
+    return res
+
+  def get_chunks(self, text, ref_text, wav_len, style_tokens, ref_audio_tokens):
     chunks_small = re.findall(r"[^。，！？；：、.,?]+[。，！？；：、.,?]?", text) # eng and cn gaps
     chunks = [""]
     j = 0
@@ -793,16 +805,7 @@ class omni:
       else:
         chunks.append(chunks_small[i])
         j+=1
-    print("CHUNKS", len(chunks), chunks)
-    res = []
-    for i in range(len(chunks)):
-      target_length = self._estimate_target_tokens(chunks[i], ref_text, int(wav_len / self.audio_tokenizer.hop_length))
-      text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, chunks[i]) if x.strip())}<|text_end|>")
-      ret = self._generate_iterative(text_tokens=text_tokens, target_length=target_length, ref_audio_tokens=ref_audio_tokens, num_steps=num_steps, style_tokens=style_tokens)
-      wv = self.audio_tokenizer.decode(ret).numpy().tolist()
-      wv = wv[:target_length * self.audio_tokenizer.hop_length]
-      res.extend(wv)
-    return res
+    return chunks
 
   def expand_wav(self, ref_wav):
     chunk_size = self.audio_tokenizer.hop_length
