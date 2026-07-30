@@ -498,39 +498,47 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
     for chunk in chunks {
         let target_length = estimateTargetTokens(text: chunk, refText: refText, numRefAudioTokens: ref_audio_tokens[0].count)
-        let combined = [refText, chunk].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")
-        let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>").map { Int32($0) }
-        let (c_len, audio_mask, attention_mask, input_ids) = getInputs(textTokens: text_tokens, targetLength: target_length, refAudioTokens: ref_audio_tokens, styleTokens: styleTokens)
-        print(input_ids)
-        
-        //copyins
-        let input_ids_flat = input_ids.flatMap { $0.flatMap { $0 } }
-        buffers[1134]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
-        
-        let attention_mask_flat = attention_mask.flatMap { $0.flatMap { $0.flatMap { $0 } } }
-        buffers[1135]!.contents().copyMemory(from: attention_mask_flat, byteCount: attention_mask_flat.count)
-        
-        let audio_mask_flat = audio_mask.flatMap { $0 }
-        buffers[1080]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
-        
-        model_graph.run(vals_dict: [131: target_length ,367: c_len])
-        let scores_out = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))
-        let n = scores_out.count / 8
-        var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
-        
-        let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1705]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1705]!))[0..<(MAX_LEN * 8)]
-        let pred_tokens = (0..<8).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
-        
-        
-        print("scores =",scores)
-        
-        print("\n\npred tokens =",pred_tokens)
-        
-        let croppedScores: [[Float32]] = scores.map { row in Array(row.prefix(target_length))}
-        scores = croppedScores
-        
-        print(model_graph.copyins)
-        print("1")
+        let (sched, num_steps) = get_sched(numSteps: num_steps, targetLength: target_length)
+        for i in 0..<num_steps {
+            let combined = [refText, chunk].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")
+            let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>").map { Int32($0) }
+            let (c_len, audio_mask, attention_mask, input_ids) = getInputs(textTokens: text_tokens, targetLength: target_length, refAudioTokens: ref_audio_tokens, styleTokens: styleTokens)
+            print(input_ids)
+            
+            //copyins
+            let input_ids_flat = input_ids.flatMap { $0.flatMap { $0 } }
+            buffers[1134]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
+            
+            let attention_mask_flat = attention_mask.flatMap { $0.flatMap { $0.flatMap { $0 } } }
+            buffers[1135]!.contents().copyMemory(from: attention_mask_flat, byteCount: attention_mask_flat.count)
+            
+            let audio_mask_flat = audio_mask.flatMap { $0 }
+            buffers[1080]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
+            
+            model_graph.run(vals_dict: [131: target_length ,367: c_len])
+            let scores_out = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))[0..<(8 * MAX_LEN)]
+            let n = scores_out.count / 8
+            var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
+            
+            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1705]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1705]!))[0..<(MAX_LEN * 8)]
+            let pred_tokens = (0..<8).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
+            
+            
+            print("scores =",scores)
+            scores = scores.map { Array($0.prefix(target_length)) }
+            print(scores)
+            print("\n\npred tokens =",pred_tokens)
+            
+            let flatScores = scores.flatMap { $0 }
+            print("\n\n",flatScores, flatScores.count)
+            let sortedIdx = flatScores.indices.sorted { flatScores[$0] > flatScores[$1]}
+            //print(sortedIdx)
+            let topkIdx = Array(sortedIdx.prefix(sched[i]))
+            print(topkIdx)
+            
+            print(model_graph.copyins)
+            print("1")
+        }
     }
 }
 
