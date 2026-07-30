@@ -369,6 +369,12 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
         let combined = [refText, chunk].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")
         let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>").map { Int32($0) }
         let (c_len, audio_mask, attention_mask, input_ids) = getInputs(textTokens: text_tokens, targetLength: target_length, refAudioTokens: ref_audio_tokens, styleTokens: styleTokens)
+        print(input_ids)
+        
+        //copyins
+        let input_ids_flat = input_ids.flatMap { $0.flatMap { $0 } }
+        buffers[1134]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
+        
         model_graph.run(vals_dict: [131: target_length ,367: c_len])
         var scores = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))
         print(scores)
