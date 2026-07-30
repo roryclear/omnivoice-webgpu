@@ -470,8 +470,8 @@ struct ContentView: View {
             //let graph = GraphRunner(filename: "1.rc")
             //graph.diffGraphJSON("1.rc", "1b.rc")
             //print("1")
-            run_tests()
-            /*
+            //run_tests()
+            
             generate(
                 text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
                 refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
@@ -479,7 +479,6 @@ struct ContentView: View {
                 num_steps: 16,
                 language: "None"
             )
-             */
         }
     }
 }
@@ -515,8 +514,20 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
         buffers[1080]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
         
         model_graph.run(vals_dict: [131: target_length ,367: c_len])
-        var scores = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))
-        print(scores)
+        let scores_out = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))
+        let n = scores_out.count / 8
+        var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
+        
+        let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1705]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1705]!))[0..<(MAX_LEN*8)]
+        
+        
+        print("scores =",scores)
+        
+        print("\n\npred tokens =",pred_tokens_out)
+        
+        let croppedScores: [[Float32]] = scores.map { row in Array(row.prefix(target_length))}
+        scores = croppedScores
+        
         print(model_graph.copyins)
         print("1")
     }
