@@ -508,13 +508,13 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
             //copyins
             
             let input_ids_flat = input_ids.flatMap { $0.flatMap { $0 } }
-            buffers[1134]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
+            buffers[1135]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
             
             let attention_mask_flat = attention_mask.flatMap { $0.flatMap { $0.flatMap { $0 } } }
-            buffers[1135]!.contents().copyMemory(from: attention_mask_flat, byteCount: attention_mask_flat.count)
+            buffers[1134]!.contents().copyMemory(from: attention_mask_flat, byteCount: attention_mask_flat.count)
             
             let tokens_flat = tokens.flatMap { $0 }
-            buffers[1137]!.contents().copyMemory(from: tokens_flat, byteCount: tokens_flat.count * MemoryLayout<Int32>.stride)
+            buffers[1136]!.contents().copyMemory(from: tokens_flat, byteCount: tokens_flat.count * MemoryLayout<Int32>.stride)
             
             let audio_mask_flat = audio_mask.flatMap { $0 }
             buffers[1080]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
@@ -524,7 +524,7 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
             let n = scores_out.count / NUM_AUDIO_CODEBOOK
             var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
             
-            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1705]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1705]!))[0..<(MAX_LEN * NUM_AUDIO_CODEBOOK)]
+            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1704]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1704]!))[0..<(MAX_LEN * NUM_AUDIO_CODEBOOK)]
             var pred_tokens = (0..<NUM_AUDIO_CODEBOOK).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
             
             
