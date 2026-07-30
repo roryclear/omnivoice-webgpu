@@ -496,8 +496,9 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
     ref_audio_tokens = ref_audio_tokens .map { Array($0.prefix(wav_len / CHUNK_SIZE)) }
     var styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
-    var tokens: [[Int32]] = Array(repeating: Array(repeating: Int32(AUDIO_MASK_ID), count: MAX_LEN), count: NUM_AUDIO_CODEBOOK)
+    var rets: [[[Int32]]] = []
     for chunk in chunks {
+        var tokens: [[Int32]] = Array(repeating: Array(repeating: Int32(AUDIO_MASK_ID), count: MAX_LEN), count: NUM_AUDIO_CODEBOOK)
         let target_length = estimateTargetTokens(text: chunk, refText: refText, numRefAudioTokens: ref_audio_tokens[0].count)
         let (sched, num_steps) = get_sched(numSteps: num_steps, targetLength: target_length)
         let combined = [refText, chunk].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")
@@ -505,6 +506,7 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
         var (c_len, audio_mask, attention_mask, input_ids) = getInputs(textTokens: text_tokens, targetLength: target_length, refAudioTokens: ref_audio_tokens, styleTokens: styleTokens)
         for step in 0..<num_steps {
             //copyins
+            
             let input_ids_flat = input_ids.flatMap { $0.flatMap { $0 } }
             buffers[1134]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
             
@@ -526,7 +528,7 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
             var pred_tokens = (0..<NUM_AUDIO_CODEBOOK).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
             
             
-            print("scores =",scores)
+            print(step,"scores =",scores)
             scores = scores.map { Array($0.prefix(target_length)) }
             pred_tokens = pred_tokens.map { Array($0.prefix(target_length)) }
                 
@@ -558,9 +560,11 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
             }
             
             print(model_graph.copyins)
-            print("1")
         }
+        rets.append(tokens)
     }
+    print("rory rets =",rets)
+    print("1")
 }
 
 
