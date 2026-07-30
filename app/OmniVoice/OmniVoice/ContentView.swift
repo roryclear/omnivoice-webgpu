@@ -339,8 +339,8 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            run_tests()
-            /*
+            //run_tests()
+            
             generate(
                 text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
                 refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
@@ -348,7 +348,6 @@ struct ContentView: View {
                 num_steps: 16,
                 language: "None"
             )
-             */
         }
     }
 }
@@ -367,7 +366,9 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
     print(chunks)
     for chunk in chunks {
-        
+        let target_length = estimateTargetTokens(text: chunk, refText: refText, numRefAudioTokens: ref_audio_tokens[0].count)
+        print(target_length)
+        print("1")
     }
 }
 
