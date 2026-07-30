@@ -854,7 +854,7 @@ class omni:
     return int(estimated_duration)
 
   @TinyJit
-  def __call__(self, input_ids, audio_mask, attention_mask, tokens, layer_ids, c_len_var, t_len_var):
+  def __call__(self, input_ids, audio_mask, attention_mask, tokens, c_len_var, t_len_var):
     pred_tokens = Tensor.zeros(1, NUM_AUDIO_CODEBOOK, MAX_LEN)
     text_embeds = self.llm.embed_tokens(input_ids[:, 0, :])
     shifted_ids = input_ids * audio_mask.unsqueeze(1) + self.codebook_layer_offsets.view(1, -1, 1)
@@ -871,7 +871,7 @@ class omni:
     log_probs = Tensor.log_softmax(c_log_probs + GUIDANCE_SCALE * (c_log_probs - u_log_probs), axis=-1,)
 
     pred_tokens[:, :, :t_len_var] += log_probs.argmax(axis=-1)
-    scores = log_probs.max(axis=-1)[0] - (layer_ids * LAYER_PENTALTY_FACTOR)
+    scores = log_probs.max(axis=-1)[0] - (Tensor.arange(NUM_AUDIO_CODEBOOK).unsqueeze(-1) * LAYER_PENTALTY_FACTOR)
 
     scaled_logits = scores / POSITION_TEMP
     u = Tensor.rand(NUM_AUDIO_CODEBOOK, MAX_LEN)
@@ -918,19 +918,24 @@ class omni:
     c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
     t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
 
-    layer_ids = Tensor([[i] for i in range(NUM_AUDIO_CODEBOOK)])
     audio_mask = Tensor(audio_mask)
     attention_mask = Tensor(attention_mask)
     input_ids = Tensor(input_ids)
+
+    #print("audio_mask", audio_mask._buffer()._buf.num)
+    #print("attention_mask", attention_mask._buffer()._buf.num)
+    #print("input_ids", input_ids._buffer()._buf.num)
+
     tokens = Tensor([[AUDIO_MASK_ID for _ in range(MAX_LEN)] for _ in range(NUM_AUDIO_CODEBOOK)])
     for step in range(num_steps):
       print("STEP",step,"of",num_steps)
       pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=audio_mask[:, :c_len_var], 
-                          attention_mask=attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens, layer_ids=layer_ids,
+                          attention_mask=attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens,
                           c_len_var=c_len_var, t_len_var=t_len_var)
 
       scores = scores.numpy()
       pred_tokens = pred_tokens.numpy()
+      
       input_ids = input_ids.numpy()
       pred_tokens = pred_tokens[:, :, :target_length]
       scores = scores[:, :target_length]
