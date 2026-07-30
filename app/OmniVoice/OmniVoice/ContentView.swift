@@ -28,8 +28,8 @@ let REF_AUDIO_LEN = 10
 let tokenizer = Tokenizer()
 
 class Tokenizer {
-    let specialTokens: [String: Int]
-    let normalTokensBytes: [[UInt8]: Int]
+    let specialTokens: [String: Int32]
+    let normalTokensBytes: [[UInt8]: Int32]
 
     private let byteDecoder: [Character: UInt8]
 
@@ -67,14 +67,14 @@ class Tokenizer {
             uniqueKeysWithValues: addedTokens.map {
                 (
                     $0["content"] as! String,
-                    $0["id"] as! Int
+                    $0["id"] as! Int32
                 )
             }
         )
 
         // Normal vocab
         let model = json["model"] as! [String: Any]
-        let vocab = model["vocab"] as! [String: Int]
+        let vocab = model["vocab"] as! [String: Int32]
 
         let normal = Dictionary(
             uniqueKeysWithValues: vocab.map { token, id in
@@ -92,8 +92,8 @@ class Tokenizer {
     }
 
 
-    func encode(_ text: String) -> [Int] {
-        var result: [Int] = []
+    func encode(_ text: String) -> [Int32] {
+        var result: [Int32] = []
 
         var remaining = text
 
@@ -130,7 +130,7 @@ class Tokenizer {
     }
 
 
-    private func encodeWord(_ word: String) -> [Int] {
+    private func encodeWord(_ word: String) -> [Int32] {
         let bytes = Array(word.utf8)
 
         if let id = normalTokensBytes[bytes] {
@@ -142,7 +142,7 @@ class Tokenizer {
         }
 
         while true {
-            var bestID = Int.max
+            var bestID = Int32.max
             var bestIndex = -1
 
             for i in 0..<(parts.count - 1) {
@@ -339,8 +339,8 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            //run_tests()
-            
+            run_tests()
+            /*
             generate(
                 text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
                 refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
@@ -348,6 +348,7 @@ struct ContentView: View {
                 num_steps: 16,
                 language: "None"
             )
+             */
         }
     }
 }
@@ -364,11 +365,11 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
     ref_audio_tokens = ref_audio_tokens .map { Array($0.prefix(wav_len / CHUNK_SIZE)) }
     var styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
-    print(chunks)
     for chunk in chunks {
         let target_length = estimateTargetTokens(text: chunk, refText: refText, numRefAudioTokens: ref_audio_tokens[0].count)
         let combined = [refText, chunk].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")
-        let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>")
+        let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>").map { Int32($0) }
+        let (c_len, audio_mask, attention_mask, input_ids) = getInputs(textTokens: text_tokens, targetLength: target_length, refAudioTokens: ref_audio_tokens, styleTokens: styleTokens)
     }
 }
 
@@ -611,7 +612,7 @@ func get_ref_tokens(ref_audio_length: Int = REF_AUDIO_LEN) -> [[Int32]] {
     return stride(from: 0, to: trimmed.count, by: n).map { Array(trimmed[$0..<($0 + n)]) }
 }
 
-func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int], num_ref_tokens: Int) -> [String] {
+func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32], num_ref_tokens: Int) -> [String] {
     print("rory inputs")
     print(text)
     print(refText)
