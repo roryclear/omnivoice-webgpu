@@ -664,6 +664,15 @@ func estimateLargestTargetTokens(text: String, refText: String, numRefAudioToken
     return Int(estimatedDuration)
 }
 
+func estimateTargetTokens(text: String, refText: String, numRefAudioTokens: Int,) -> Int {
+    func weightSum(for string: String) -> Double {return string.unicodeScalars.reduce(0.0) { sum, scalar in sum + Double(CHAR_WEIGHTS[Int(scalar.value)] ?? 0.0) }}
+    let refWeight = weightSum(for: refText)
+    let speedFactor = refWeight / Double(numRefAudioTokens)
+    let targetWeight = weightSum(for: text)
+    let estimatedDuration = targetWeight / speedFactor
+    return Int(estimatedDuration)
+}
+
 //todo......
 func run_tests() {
     //audio load
@@ -739,6 +748,8 @@ func run_tests() {
         refAudioTokens: ref_audio_tokens,
         styleTokens: styleTokens
     )
+    let target_length = estimateTargetTokens(text: "Testing testing one two three,this is made with Omni-Voice.Can you hear me?or not?", refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds", numRefAudioTokens: ref_audio_tokens[0].count)
+    assert(target_length == 131)
     let exp_audio_mask = try! JSONDecoder().decode([[Bool]].self, from: Data(contentsOf: Bundle.main.url(forResource: "exp_audio_mask", withExtension: "json")!))
     let exp_attention_mask = try! JSONDecoder().decode([[[[Bool]]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "exp_attention_mask", withExtension: "json")!))
     let exp_input_ids = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "exp_input_ids", withExtension: "json")!))
