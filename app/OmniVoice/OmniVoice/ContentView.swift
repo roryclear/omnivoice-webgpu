@@ -339,7 +339,8 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            //run_tests()
+            run_tests()
+            /*
             generate(
                 text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
                 refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
@@ -347,6 +348,7 @@ struct ContentView: View {
                 num_steps: 16,
                 language: "None"
             )
+             */
         }
     }
 }
@@ -364,8 +366,9 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
     var styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
     print(chunks)
-    print(ref_audio_tokens)
-    print("h")
+    for chunk in chunks {
+        
+    }
 }
 
 
@@ -406,6 +409,51 @@ func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
     }
 
     return output
+}
+
+func getInputs(textTokens: [Int32], targetLength: Int, refAudioTokens: [[Int32]], styleTokens: [Int32]) -> (Int, [[Bool]], [[[[Bool]]]], [[[Int32]]]) {
+    let targetAudioTokens = Array(repeating: Int32(AUDIO_MASK_ID), count: targetLength)
+    print(styleTokens.count, textTokens.count, refAudioTokens[0].count, targetLength)
+    let c_len = styleTokens.count + textTokens.count + refAudioTokens[0].count + targetLength
+    let condAudioStartIdx = c_len - targetLength - refAudioTokens[0].count
+
+    var condinput_ids: [[[Int32]]] = [[]]
+    for i in 0..<NUM_AUDIO_CODEBOOK { condinput_ids[0].append(styleTokens + textTokens + refAudioTokens[i] + targetAudioTokens) }
+    var input_ids = Array(
+        repeating: Array(
+            repeating: Array(repeating: Int32(AUDIO_MASK_ID), count: MAX_LEN),
+            count: NUM_AUDIO_CODEBOOK
+        ),
+        count: 2
+    )
+
+    for i in 0..<NUM_AUDIO_CODEBOOK {for j in 0..<c_len {input_ids[0][i][j] = condinput_ids[0][i][j]}}
+    for i in 0..<NUM_AUDIO_CODEBOOK {
+        let start = condinput_ids[0][i].count - targetLength
+        for j in 0..<targetLength { input_ids[1][i][j] = condinput_ids[0][i][start + j] }
+    }
+
+    let condaudio_mask = Array(repeating: false, count: condAudioStartIdx) + Array(repeating: true, count: c_len - condAudioStartIdx)
+
+    var audio_mask = Array(repeating: Array(repeating: false, count: MAX_LEN), count: 2)
+    for i in 0..<c_len {audio_mask[0][i] = condaudio_mask[i]}
+    for i in 0..<targetLength { audio_mask[1][i] = condaudio_mask[condaudio_mask.count - targetLength + i]}
+
+    var attentionMask = Array(
+        repeating: Array(
+            repeating: Array(
+                repeating: Array(repeating: false, count: MAX_LEN),
+                count: MAX_LEN
+            ),
+            count: 1
+        ),
+        count: 2
+    )
+    for i in 0..<c_len { for j in 0..<c_len { attentionMask[0][0][i][j] = true } }
+    for i in 0..<targetLength { for j in 0..<targetLength { attentionMask[1][0][i][j] = true }}
+    for i in targetLength..<c_len { attentionMask[1][0][i][i] = true}
+
+    return (c_len, audio_mask, attentionMask, input_ids)
 }
 
 func expandWav(_ refWav: [Float], ref_audio_length: Int = REF_AUDIO_LEN) -> [Float] {
@@ -678,6 +726,20 @@ func run_tests() {
     chunks = ["That's it,turn the page on the day,walk away 'Cause there's sense in what I say,", "I'm forty-fifth generation roman but I don't know them or care when I'm spitting,", "So return to your sitting position and listen,it's fitting that I'm miles ahead and they chase me,", "show your face on TV then we'll see,", "you can't do half My crew laughs at your rhubarb-and-custard verses You rain down curses,", "but I'm waving your hearses driving by Streets riding high with the beats in the sky All stare,eyes glazed,", "garage burnt down The fire raged for forty days and in forty ways But through the blaze,", "they see it fade The sea of black."]
     chunks_out = getChunks(text: text, refText: ref_text, wavLen: wav_len, styleTokens: toks, num_ref_tokens: Int(value.count / CHUNK_SIZE))
     assert(chunks_out == chunks, "mismatch: got \(chunks_out), expected \(chunks)")
+    
+    
+    //get inputs
+    var tokens: [Int32] = [151674, 1986, 374, 264, 53807, 1034, 369, 847, 7743, 11, 773, 429, 7861, 7751, 7743, 646, 12322, 847, 7743, 13, 358, 1184, 311, 3061, 369, 911, 220, 16, 20, 6486, 26768, 7497, 825, 1378, 2326, 22416, 374, 1865, 448, 85225, 19625, 8834, 53280, 498, 6723, 752, 30, 269, 537, 30, 151675]
+    let styleTokens: [Int32] = [151669, 151670, 4064, 151671, 151672, 4064, 151673].map { Int32($0) }
+    var ref_audio_tokens = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice4_ref_audio_tokens", withExtension: "json")!))[0]
+    ref_audio_tokens = ref_audio_tokens .map { Array($0.prefix(wav_len / CHUNK_SIZE)) }
+    let (c_len, audio_mask, attention_mask, input_ids) = getInputs(
+        textTokens: tokens,
+        targetLength: 131,
+        refAudioTokens: ref_audio_tokens,
+        styleTokens: styleTokens
+    )
+    assert(c_len == 367)
     
     model_graph = GraphRunner(filename: "1.rc")
     for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
