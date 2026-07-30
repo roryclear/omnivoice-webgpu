@@ -367,8 +367,8 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
     print(chunks)
     for chunk in chunks {
         let target_length = estimateTargetTokens(text: chunk, refText: refText, numRefAudioTokens: ref_audio_tokens[0].count)
-        print(target_length)
-        print("1")
+        let combined = [refText, chunk].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")
+        let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>")
     }
 }
 
