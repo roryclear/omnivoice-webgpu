@@ -375,6 +375,12 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
         let input_ids_flat = input_ids.flatMap { $0.flatMap { $0 } }
         buffers[1134]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
         
+        let attention_mask_flat = attention_mask.flatMap { $0.flatMap { $0.flatMap { $0 } } }
+        buffers[1135]!.contents().copyMemory(from: attention_mask_flat, byteCount: attention_mask_flat.count)
+        
+        let audio_mask_flat = audio_mask.flatMap { $0 }
+        buffers[1080]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
+        
         model_graph.run(vals_dict: [131: target_length ,367: c_len])
         var scores = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))
         print(scores)
