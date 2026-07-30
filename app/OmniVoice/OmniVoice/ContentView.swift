@@ -547,7 +547,7 @@ func get_sched(numSteps: Int, targetLength: Int) -> ([Int], Int) {
         }
         sched.append(num)
         if num >= MAX_LEN {
-            return getSched(
+            return get_sched(
                 numSteps: numSteps * 2,
                 targetLength: targetLength
             )
