@@ -518,12 +518,13 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
         let n = scores_out.count / 8
         var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
         
-        let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1705]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1705]!))[0..<(MAX_LEN*8)]
+        let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1705]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1705]!))[0..<(MAX_LEN * 8)]
+        let pred_tokens = (0..<8).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
         
         
         print("scores =",scores)
         
-        print("\n\npred tokens =",pred_tokens_out)
+        print("\n\npred tokens =",pred_tokens)
         
         let croppedScores: [[Float32]] = scores.map { row in Array(row.prefix(target_length))}
         scores = croppedScores
