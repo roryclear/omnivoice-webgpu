@@ -739,7 +739,14 @@ func run_tests() {
         refAudioTokens: ref_audio_tokens,
         styleTokens: styleTokens
     )
+    let exp_audio_mask = try! JSONDecoder().decode([[Bool]].self, from: Data(contentsOf: Bundle.main.url(forResource: "exp_audio_mask", withExtension: "json")!))
+    let exp_attention_mask = try! JSONDecoder().decode([[[[Bool]]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "exp_attention_mask", withExtension: "json")!))
+    let exp_input_ids = try! JSONDecoder().decode([[[Int32]]].self, from: Data(contentsOf: Bundle.main.url(forResource: "exp_input_ids", withExtension: "json")!))
     assert(c_len == 367)
+    assert(exp_audio_mask == audio_mask)
+    assert(exp_attention_mask == attention_mask)
+    assert(exp_input_ids == input_ids)
+    
     
     model_graph = GraphRunner(filename: "1.rc")
     for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
