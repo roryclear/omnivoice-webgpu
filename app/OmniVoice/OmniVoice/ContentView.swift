@@ -327,6 +327,134 @@ class GraphRunner {
         }
     }
     
+    //debug slop
+    func diffGraphJSON(_ file1: String, _ file2: String) {
+        func load(_ filename: String) -> [[String: Any]]? {
+            guard let url = Bundle.main.url(forResource: filename, withExtension: nil) else {
+                print("File not found:", filename)
+                return nil
+            }
+            do {
+                let data = try Data(contentsOf: url)
+                return try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+            } catch {
+                print(error)
+                return nil
+            }
+        }
+
+        guard let a = load(file1), let b = load(file2) else { return }
+
+        func extract(_ items: [[String: Any]]) -> (
+            buffers: [Int: [String: Any]],
+            bufferData: [Int: String],
+            programs: [String: String],
+            programUsage: Set<String>,
+            bufferUsage: Set<Int>
+        ) {
+            var buffers = [Int: [String: Any]]()
+            var bufferData = [Int: String]()
+            var programs = [String: String]()
+            var programUsage = Set<String>()
+            var bufferUsage = Set<Int>()
+
+            for item in items {
+                guard let key = item.keys.first else { continue }
+
+                switch key {
+                case "buff_alloc":
+                    if let info = item[key] as? [String: Any],
+                       let num = info["num"] as? Int {
+                        buffers[num] = info
+                    }
+
+                case "copyin":
+                    if let info = item[key] as? [String: Any],
+                       let dest = info["dest"] as? Int,
+                       let data = info["data"] as? String {
+                        bufferData[dest] = data
+                    }
+
+                case "program":
+                    if let info = item[key] as? [String: Any],
+                       let name = info["name"] as? String,
+                       let lib = info["lib"] as? String {
+                        programs[name] = lib
+                    }
+
+                case "call":
+                    if let info = item[key] as? [String: Any] {
+                        if let name = info["name"] as? String {
+                            programUsage.insert(name)
+                        }
+                        if let bufs = info["buffers"] as? [Int] {
+                            for b in bufs {
+                                bufferUsage.insert(b)
+                            }
+                        }
+                    }
+
+                default:
+                    break
+                }
+            }
+
+            return (buffers, bufferData, programs, programUsage, bufferUsage)
+        }
+
+        let x = extract(a)
+        let y = extract(b)
+
+        print("\n=== Programs only in \(file1) ===")
+        for p in Set(x.programs.keys).subtracting(y.programs.keys) {
+            print(p)
+        }
+
+        print("\n=== Programs only in \(file2) ===")
+        for p in Set(y.programs.keys).subtracting(x.programs.keys) {
+            print(p)
+        }
+
+        print("\n=== Buffers only in \(file1) ===")
+        for b in Set(x.buffers.keys).subtracting(y.buffers.keys) {
+            print(b)
+        }
+
+        print("\n=== Buffers only in \(file2) ===")
+        for b in Set(y.buffers.keys).subtracting(x.buffers.keys) {
+            print(b)
+        }
+
+        print("\n=== Buffers with different copyin data ===")
+        for b in Set(x.bufferData.keys).intersection(y.bufferData.keys) {
+            if x.bufferData[b] != y.bufferData[b] {
+                print("buffer \(b)")
+            }
+        }
+
+        print("\n=== Programs with different binaries ===")
+        for p in Set(x.programs.keys).intersection(y.programs.keys) {
+            if x.programs[p] != y.programs[p] {
+                print(p)
+            }
+        }
+
+        print("\n=== Programs used only in one ===")
+        for p in x.programUsage.subtracting(y.programUsage) {
+            print("\(p) only used in \(file1)")
+        }
+        for p in y.programUsage.subtracting(x.programUsage) {
+            print("\(p) only used in \(file2)")
+        }
+
+        print("\n=== Buffers used only in one ===")
+        for b in x.bufferUsage.subtracting(y.bufferUsage) {
+            print("\(b) only used in \(file1)")
+        }
+        for b in y.bufferUsage.subtracting(x.bufferUsage) {
+            print("\(b) only used in \(file2)")
+        }
+    }
 }
 
 struct ContentView: View {
@@ -339,7 +467,11 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            //run_tests()
+            //let graph = GraphRunner(filename: "1.rc")
+            //graph.diffGraphJSON("1.rc", "1b.rc")
+            //print("1")
+            run_tests()
+            /*
             generate(
                 text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
                 refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
@@ -347,6 +479,7 @@ struct ContentView: View {
                 num_steps: 16,
                 language: "None"
             )
+             */
         }
     }
 }
@@ -384,10 +517,45 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
         model_graph.run(vals_dict: [131: target_length ,367: c_len])
         var scores = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))
         print(scores)
+        print(model_graph.copyins)
         print("1")
     }
 }
 
+
+func get_sched(numSteps: Int, targetLength: Int) -> ([Int], Int) {
+    let timesteps = (0...numSteps).map { i -> Double in
+        Double(i) / Double(numSteps)
+    }.map { t -> Double in
+        (T_SHIFT * t) / (1 + (T_SHIFT - 1) * t)
+    }
+
+    let totalMask = targetLength * NUM_AUDIO_CODEBOOK
+    var rem = totalMask
+    var sched: [Int] = []
+
+    for step in 0..<numSteps {
+        let num: Int
+
+        if step == numSteps - 1 {
+            num = rem
+        } else {
+            num = min(
+                Int(ceil(Double(totalMask) * (timesteps[step + 1] - timesteps[step]))),
+                rem
+            )
+        }
+        sched.append(num)
+        if num >= MAX_LEN {
+            return getSched(
+                numSteps: numSteps * 2,
+                targetLength: targetLength
+            )
+        }
+        rem -= num
+    }
+    return (sched, numSteps)
+}
 
 func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
     let url = Bundle.main.url(forResource: file, withExtension: "wav")!
@@ -774,6 +942,9 @@ func run_tests() {
     assert(exp_attention_mask == attention_mask)
     assert(exp_input_ids == input_ids)
     
+    let (sched, num_steps) = get_sched(numSteps: 16, targetLength: 131)
+    assert(sched == [7, 8, 9, 11, 12, 14, 17, 20, 25, 31, 40, 53, 75, 115, 198, 413])
+    assert(num_steps == 16)
     
     model_graph = GraphRunner(filename: "1.rc")
     for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
