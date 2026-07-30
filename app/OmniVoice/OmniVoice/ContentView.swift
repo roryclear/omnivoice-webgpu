@@ -529,15 +529,12 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
             print("scores =",scores)
             scores = scores.map { Array($0.prefix(target_length)) }
             pred_tokens = pred_tokens.map { Array($0.prefix(target_length)) }
-            print(scores)
-            print("\n\npred tokens =",pred_tokens)
                 
             let flatScores = scores.flatMap { $0 }
             print("\n\n",flatScores, flatScores.count)
             let sortedIdx = flatScores.indices.sorted { flatScores[$0] > flatScores[$1]}
             //print(sortedIdx)
             let topkIdx = Array(sortedIdx.prefix(sched[step]))
-            print(topkIdx)
             
             //todo untested from here
             
