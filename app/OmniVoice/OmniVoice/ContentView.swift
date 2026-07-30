@@ -339,8 +339,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            run_tests()
-            /*
+            //run_tests()
             generate(
                 text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
                 refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
@@ -348,20 +347,20 @@ struct ContentView: View {
                 num_steps: 16,
                 language: "None"
             )
-             */
         }
     }
 }
 
 func generate(text: String, refText: String, file: String, num_steps: Int, language: String) {
     encode_graph = GraphRunner(filename: "0.rc")
-    //model_graph = GraphRunner(filename: "1.rc")
     var ref_wav = load_audio(file: file, samplingRate: 24000)
     let wav_len = ref_wav.count
     ref_wav = expandWav(ref_wav)
     memcpy(buffers[encode_graph.copyins.last!]!.contents(), ref_wav, ref_wav.count * MemoryLayout<Float>.stride)
     encode_graph.run()
     var ref_audio_tokens = get_ref_tokens()
+    model_graph = GraphRunner(filename: "1.rc")
+    for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
     ref_audio_tokens = ref_audio_tokens .map { Array($0.prefix(wav_len / CHUNK_SIZE)) }
     var styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
@@ -370,6 +369,10 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
         let combined = [refText, chunk].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")
         let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>").map { Int32($0) }
         let (c_len, audio_mask, attention_mask, input_ids) = getInputs(textTokens: text_tokens, targetLength: target_length, refAudioTokens: ref_audio_tokens, styleTokens: styleTokens)
+        model_graph.run(vals_dict: [131: target_length ,367: c_len])
+        var scores = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))
+        print(scores)
+        print("1")
     }
 }
 
@@ -415,7 +418,6 @@ func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
 
 func getInputs(textTokens: [Int32], targetLength: Int, refAudioTokens: [[Int32]], styleTokens: [Int32]) -> (Int, [[Bool]], [[[[Bool]]]], [[[Int32]]]) {
     let targetAudioTokens = Array(repeating: Int32(AUDIO_MASK_ID), count: targetLength)
-    print(styleTokens.count, textTokens.count, refAudioTokens[0].count, targetLength)
     let c_len = styleTokens.count + textTokens.count + refAudioTokens[0].count + targetLength
     let condAudioStartIdx = c_len - targetLength - refAudioTokens[0].count
 
