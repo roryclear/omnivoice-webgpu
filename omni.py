@@ -933,7 +933,8 @@ class omni:
       pred_tokens, scores = self(input_ids=input_ids[:, :, :c_len_var], audio_mask=audio_mask[:, :c_len_var], 
                           attention_mask=attention_mask[:, :, :c_len_var, :c_len_var], tokens=tokens,
                           c_len_var=c_len_var, t_len_var=t_len_var)
-
+      #print("tokens", tokens._buffer()._buf.num)
+      #print("pred_tokens", pred_tokens._buffer()._buf.num)
       scores = scores.numpy()
       pred_tokens = pred_tokens.numpy()
       
