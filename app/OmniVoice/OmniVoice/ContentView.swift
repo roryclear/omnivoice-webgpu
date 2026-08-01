@@ -311,6 +311,7 @@ class GraphRunner {
                 height: globals_dict?[global[1]] ?? global[1],
                 depth: globals_dict?[global[2]] ?? global[2]
             )
+            
 
             let threadsPerThreadgroup = MTLSize(
                 width: local[0],
@@ -477,8 +478,8 @@ struct ContentView: View {
             
             generate(
                 text: "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
-                refText: "it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass",
-                file: "jezza-10s",
+                refText: "Yeah so I was just on the thirty three there, on my way to astro, and like I'm just reading my book and looking out the window, and I look",
+                file: "rory-10s",
                 num_steps: 16,
                 language: "None"
             )
@@ -495,6 +496,7 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
     encode_graph.run()
     var ref_audio_tokens = get_ref_tokens()
     model_graph = GraphRunner(filename: "1.rc")
+    model_graph2 = GraphRunner(filename: "2.rc")
     for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
     ref_audio_tokens = ref_audio_tokens .map { Array($0.prefix(wav_len / CHUNK_SIZE)) }
     var styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
@@ -520,9 +522,13 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
             buffers[1136]!.contents().copyMemory(from: tokens_flat, byteCount: tokens_flat.count * MemoryLayout<Int32>.stride)
             
             let audio_mask_flat = audio_mask.flatMap { $0 }
-            buffers[1134]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
+            buffers[1080]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
             
-            model_graph.run(vals_dict: [157: target_length ,431: c_len], globals_dict: [157: target_length ,431: c_len, 431*2: c_len*2])
+            if (step == 0) {
+                model_graph.run(vals_dict: [113: target_length ,373: c_len], globals_dict: [113: target_length ,373: c_len, 373*2: c_len*2])
+            } else {
+                model_graph2.run(vals_dict: [113: target_length ,373: c_len], globals_dict: [113: target_length ,373: c_len, 373*2: c_len*2])
+            }
             let scores_out = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]! / 4))[0..<(NUM_AUDIO_CODEBOOK * MAX_LEN)]
             let n = scores_out.count / NUM_AUDIO_CODEBOOK
             var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
