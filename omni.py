@@ -90,7 +90,7 @@ class SimpleTokenizer:
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
   
 # ios needs to be like 500 for RAM
-MAX_LEN = 1000
+MAX_LEN = 1500
 REF_AUDIO_LEN = 15
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
@@ -767,21 +767,17 @@ class omni:
     self.codebook_layer_offsets = (Tensor.arange(NUM_AUDIO_CODEBOOK) * AUDIO_VOCAB_SIZE)
   
   # todo change back to 16
-  def generate(self, text, ref_text, ref_audio, ref_audio_tokens=None, num_steps=16, language="None"):
+  def generate(self, text, cv_path=None, ref_audio_tokens=None, num_steps=16, language="None"):
+    with open(cv_path, "r") as f: vc = json.load(f)
+    ref_text = vc["ref_text"]
+    ref_audio = base64.b64decode(vc["ref_audio"])
+
     ref_wav = load_audio(ref_audio, SAMPLING_RATE)
     wav_len = len(ref_wav)
-    #json.dump(ref_wav, open("voice3_ref_wav.json", "w"))
     ref_wav = self.expand_wav(ref_wav=ref_wav)
-    #json.dump(ref_wav, open("voice3_ref_wav_exp.json", "w"))
-    #exit()
-    print("RORY WAV_LEN =",len(ref_wav))
     ref_audio_tokens = self.encode(Tensor([[ref_wav]])) # todo, use 10s instead of 20s?
-    # [:, 8, :] (NUM_AUDIO_CODEBOOK)
     ref_audio_tokens = ref_audio_tokens.numpy()
-    #json.dump(ref_audio_tokens.tolist(), open("voice3_ref_audio_tokens.json", "w"))
     ref_audio_tokens = ref_audio_tokens[0, :, :int(wav_len / self.audio_tokenizer.hop_length)]
-    #print(ref_audio_tokens, np.array(ref_audio_tokens).shape)
-    #exit()
   
     # so c_len doesn't exceed MAX_LEN
     style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
@@ -848,7 +844,7 @@ class omni:
     return int(estimated_duration)
 
   def _estimate_largest_target_tokens(self, text, ref_text, num_ref_audio_tokens):
-    ref_weight = 2.5 * len(ref_text) # avg char weight is 2.85, lowest is 0, 2.5 is probably worst case?
+    ref_weight = 4 * len(ref_text) # avg char weight is 2.85, lowest is 0, 2.5 is probably worst case?
     speed_factor = ref_weight / num_ref_audio_tokens
     target_weight = max(CHAR_WEIGHTS) * len(text)
     estimated_duration = target_weight / speed_factor
@@ -993,6 +989,15 @@ class Handler(BaseHTTPRequestHandler):
       self.send_header("Content-Length", str(len(content)))
       self.end_headers()
       self.wfile.write(content)
+    elif self.path == "/voices":
+      voices = glob.glob("voices/*.cv")
+      voice_names = [os.path.splitext(os.path.basename(v))[0] for v in voices]
+      content = json.dumps(voice_names).encode('utf-8')
+      self.send_response(200)
+      self.send_header("Content-Type", "application/json")
+      self.send_header("Content-Length", str(len(content)))
+      self.end_headers()
+      self.wfile.write(content)
 
     else:
       self.send_response(404)
@@ -1012,6 +1017,8 @@ class Handler(BaseHTTPRequestHandler):
           data['ref_audio'] = content
         elif b'name="ref_text"' in part:
           data['ref_text'] = content.decode()
+        elif b'name="voice_name"' in part:
+          data['voice_name'] = content.decode()
         elif b'name="target_text"' in part:
           data['target_text'] = content.decode()
         elif b'name="language"' in part:
@@ -1046,23 +1053,33 @@ def write_waveform(file_name, audio):
 
 if __name__ == "__main__":
   import os
+  import glob
+  import base64
   model = omni()
   
   if "--test" in sys.argv:
+    '''
+    with open("voices/rory-15s.wav", "rb") as f:
+      voice = {"ref_text":"Yeah so I was just on the thirty three there, on my way to astro, and like I'm just reading my book and looking out the window, and I look, and there's a dog getting on the bus, and the thing has a leap card in its mouth, and it jumps up and taps the machine",
+        "ref_audio":base64.b64encode(f.read()).decode("ascii")} 
+      json.dump(voice, open("voices/rory.cv", "w"))
+    '''
+
     # tinygrad cbfcf36e4 with metalgraph turned off, my macbook air m3
     os.makedirs("outputs", exist_ok=True)
     Tensor.manual_seed(0)
+
     audio = model.generate(
         text="That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
-        ref_audio=open("voices/rory-15s.wav", "rb").read(),
-        ref_text="Yeah so I was just on the thirty three there, on my way to astro, and like I'm just reading my book and looking out the window, and I look, and there's a dog getting on the bus, and the thing has a leap card in its mouth, and it jumps up and taps the machine",
-        num_steps=32
+        cv_path="voices/rory.cv",
+        num_steps=32,
+        language="None"
     )
     pickle.dump(audio, open("outputs/rory.pkl", "wb"))
     exp = pickle.load(open("outputs/rory.pkl", "rb"))
     write_waveform("outputs/rory.wav", audio)
     np.testing.assert_allclose(exp, audio, rtol=1e-5)
-    
+    exit()
     Tensor.manual_seed(1)
     audio = model.generate(
         text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
