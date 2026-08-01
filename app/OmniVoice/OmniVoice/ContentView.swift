@@ -15,6 +15,7 @@ var buffer_sz: [Int: Int] = [:] // todo
 var programs: [String: MTLComputePipelineState] = [:]
 var encode_graph: GraphRunner!
 var model_graph: GraphRunner!
+var model_graph2: GraphRunner!
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
@@ -274,7 +275,7 @@ class GraphRunner {
         
     }
     
-    func run(vals_dict: [Int: Int]? = nil) {
+    func run(vals_dict: [Int: Int]? = nil, globals_dict: [Int: Int]? = [:]) {
         for (index, item) in self.calls.enumerated() {
             let commandBuffer = queue.makeCommandBuffer()!
             let encoder = commandBuffer.makeComputeCommandEncoder()!
@@ -304,9 +305,9 @@ class GraphRunner {
             let local = item["local_size"] as! [Int]
 
             let threadsPerGrid = MTLSize(
-                width: global[0],
-                height: global[1],
-                depth: global[2]
+                width: globals_dict?[global[0]] ?? global[0],
+                height: globals_dict?[global[1]] ?? global[1],
+                depth: globals_dict?[global[2]] ?? global[2]
             )
 
             let threadsPerThreadgroup = MTLSize(
@@ -474,8 +475,8 @@ struct ContentView: View {
             
             generate(
                 text: "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
-                refText: "Yeah so I was just on the thirty three there, on my way to astro, and like I'm just reading my book and looking out the window, and I look",
-                file: "rory-10s",
+                refText: "it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass",
+                file: "jezza-10s",
                 num_steps: 16,
                 language: "None"
             )
@@ -517,9 +518,9 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
             buffers[1136]!.contents().copyMemory(from: tokens_flat, byteCount: tokens_flat.count * MemoryLayout<Int32>.stride)
             
             let audio_mask_flat = audio_mask.flatMap { $0 }
-            buffers[1080]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
+            buffers[1134]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
             
-            model_graph.run(vals_dict: [131: target_length ,367: c_len])
+            model_graph.run(vals_dict: [113: target_length ,373: c_len], globals_dict: [373: c_len])
             let scores_out = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))[0..<(NUM_AUDIO_CODEBOOK * MAX_LEN)]
             let n = scores_out.count / NUM_AUDIO_CODEBOOK
             var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
