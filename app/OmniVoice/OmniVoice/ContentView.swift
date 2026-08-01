@@ -303,6 +303,8 @@ class GraphRunner {
             
             let global = item["global_size"] as! [Int]
             let local = item["local_size"] as! [Int]
+            
+            print("global_size =", global)
 
             let threadsPerGrid = MTLSize(
                 width: globals_dict?[global[0]] ?? global[0],
@@ -520,12 +522,12 @@ func generate(text: String, refText: String, file: String, num_steps: Int, langu
             let audio_mask_flat = audio_mask.flatMap { $0 }
             buffers[1134]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
             
-            model_graph.run(vals_dict: [113: target_length ,373: c_len], globals_dict: [373: c_len])
-            let scores_out = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]!))[0..<(NUM_AUDIO_CODEBOOK * MAX_LEN)]
+            model_graph.run(vals_dict: [157: target_length ,431: c_len], globals_dict: [157: target_length ,431: c_len, 431*2: c_len*2])
+            let scores_out = Array(UnsafeBufferPointer(start: buffers[model_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[model_graph.copyouts[0]]! / 4))[0..<(NUM_AUDIO_CODEBOOK * MAX_LEN)]
             let n = scores_out.count / NUM_AUDIO_CODEBOOK
             var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
             
-            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1704]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1704]!))[0..<(MAX_LEN * NUM_AUDIO_CODEBOOK)]
+            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1704]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1704]! / 4))[0..<(MAX_LEN * NUM_AUDIO_CODEBOOK)]
             var pred_tokens = (0..<NUM_AUDIO_CODEBOOK).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
             
             
@@ -832,7 +834,7 @@ func readUInt32LE(_ bytes: [UInt8], offset: Int) -> UInt32 {
 }
 
 func get_ref_tokens(ref_audio_length: Int = REF_AUDIO_LEN) -> [[Int32]] {
-    let count = buffer_sz[encode_graph.copyouts[0]]!
+    let count = buffer_sz[encode_graph.copyouts[0]]! / 4
     let flat = Array(UnsafeBufferPointer(start: buffers[encode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Int32.self), count: count))
     let prefixCount = Int((REF_AUDIO_LEN * SAMPLING_RATE * NUM_AUDIO_CODEBOOK) / CHUNK_SIZE)
     let trimmed = Array(flat.prefix(prefixCount))
