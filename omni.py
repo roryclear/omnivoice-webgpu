@@ -1014,7 +1014,7 @@ class Handler(BaseHTTPRequestHandler):
         content = part.split(b'\r\n\r\n', 1)[1]
         content = content.rsplit(b'\r\n', 1)[0]
         if b'name="file"' in part:
-          data['ref_audio'] = content
+          data['file'] = content
         elif b'name="ref_text"' in part:
           data['ref_text'] = content.decode()
         elif b'name="voice_name"' in part:
@@ -1024,14 +1024,20 @@ class Handler(BaseHTTPRequestHandler):
         elif b'name="language"' in part:
           data['language'] = content.decode()
       
+      if 'file' in data:
+        with open("voices/tmp.wav", "wb") as f: f.write(data['file'])
+        with open("voices/tmp.wav", "rb") as f:
+          voice = {"ref_text":data['ref_text'],
+        "ref_audio":base64.b64encode(f.read()).decode("ascii")} 
+          json.dump(voice, open(f"voices/{data['voice_name']}.cv", "w"))
+
       print("RORY REF_TEXT =",data['ref_text'])
       print("RORY TEXT =",data['target_text'])
       print("RORY LANG =",data.get('language'))
 
       audio = model.generate(
         text=data['target_text'],
-        ref_audio=data['ref_audio'],
-        ref_text=data['ref_text'],
+        cv_path=f"voices/{data['voice_name']}.cv",
         num_steps=32,
         language=data["language"]
       )
