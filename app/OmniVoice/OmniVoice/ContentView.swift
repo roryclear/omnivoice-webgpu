@@ -473,9 +473,9 @@ struct ContentView: View {
             //run_tests()
             
             generate(
-                text: "Testing testing one two three, this is made with Omni-Voice. Can you hear me? or not? thank you for listening to this",
-                refText: "This is a wav file for my voice, so that omni voice can capture my voice. I need to talk for about 15 seconds",
-                file: "voice4_short",
+                text: "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
+                refText: "Yeah so I was just on the thirty three there, on my way to astro, and like I'm just reading my book and looking out the window, and I look",
+                file: "rory-10s",
                 num_steps: 16,
                 language: "None"
             )
