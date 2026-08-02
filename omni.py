@@ -90,8 +90,8 @@ class SimpleTokenizer:
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
   
 # ios needs to be like 500 for RAM
-MAX_LEN = 1500
-REF_AUDIO_LEN = 15
+MAX_LEN = 500
+REF_AUDIO_LEN = 10
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 POSITION_TEMP = 5.0
@@ -844,7 +844,7 @@ class omni:
     return int(estimated_duration)
 
   def _estimate_largest_target_tokens(self, text, ref_text, num_ref_audio_tokens):
-    ref_weight = 4 * len(ref_text) # avg char weight is 2.85, lowest is 0, 2.5 is probably worst case?
+    ref_weight = 2.5 * len(ref_text) # avg char weight is 2.85, lowest is 0, 2.5 is probably worst case?
     speed_factor = ref_weight / num_ref_audio_tokens
     target_weight = max(CHAR_WEIGHTS) * len(text)
     estimated_duration = target_weight / speed_factor

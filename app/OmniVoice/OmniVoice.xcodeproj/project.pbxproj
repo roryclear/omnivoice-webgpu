@@ -7,12 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BEBF1EE73012D1B200320C21 /* 0.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEBF1EE63012D1B200320C21 /* 0.rc */; };
+		BEC81FED301E636C009D81BB /* 0.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC81FEA301E636C009D81BB /* 0.rc */; };
+		BEC81FEE301E636C009D81BB /* 2.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC81FEC301E636C009D81BB /* 2.rc */; };
+		BEC81FEF301E636C009D81BB /* 1.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC81FEB301E636C009D81BB /* 1.rc */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		BE6ED7D43010E89400847188 /* OmniVoice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OmniVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		BEBF1EE63012D1B200320C21 /* 0.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 0.rc; sourceTree = "<group>"; };
+		BEC81FEA301E636C009D81BB /* 0.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 0.rc; sourceTree = "<group>"; };
+		BEC81FEB301E636C009D81BB /* 1.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 1.rc; sourceTree = "<group>"; };
+		BEC81FEC301E636C009D81BB /* 2.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 2.rc; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -37,7 +41,9 @@
 		BE6ED7CB3010E89400847188 = {
 			isa = PBXGroup;
 			children = (
-				BEBF1EE63012D1B200320C21 /* 0.rc */,
+				BEC81FEA301E636C009D81BB /* 0.rc */,
+				BEC81FEB301E636C009D81BB /* 1.rc */,
+				BEC81FEC301E636C009D81BB /* 2.rc */,
 				BE6ED7D63010E89400847188 /* OmniVoice */,
 				BE6ED7D53010E89400847188 /* Products */,
 			);
@@ -115,7 +121,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BEBF1EE73012D1B200320C21 /* 0.rc in Resources */,
+				BEC81FED301E636C009D81BB /* 0.rc in Resources */,
+				BEC81FEE301E636C009D81BB /* 2.rc in Resources */,
+				BEC81FEF301E636C009D81BB /* 1.rc in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
