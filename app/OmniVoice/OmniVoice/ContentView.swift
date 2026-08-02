@@ -475,21 +475,28 @@ struct ContentView: View {
             //graph.diffGraphJSON("1.rc", "1b.rc")
             //print("1")
             //run_tests()
-            
-            generate(
-                text: "That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
-                refText: "Yeah so I was just on the thirty three there, on my way to astro, and like I'm just reading my book and looking out the window, and I look",
-                file: "rory-10s",
-                num_steps: 16,
-                language: "None"
-            )
+            generate(text:"That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen", cvFile:"jezza", num_steps: 32, language: "None")
         }
     }
 }
 
-func generate(text: String, refText: String, file: String, num_steps: Int, language: String) {
+struct CVFile: Decodable {
+    let ref_text: String
+    let ref_audio: String // base64 encoded wav
+}
+
+func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     encode_graph = GraphRunner(filename: "0.rc")
-    var ref_wav = load_audio(file: file, samplingRate: 24000)
+    guard let url = Bundle.main.url(forResource: cvFile, withExtension: "cv"),
+          let data = try? Data(contentsOf: url) else {
+        fatalError("Failed to load CV file")
+    }
+
+    let decoder = JSONDecoder()
+    guard let cv = try? decoder.decode(CVFile.self, from: data) else { fatalError("Failed to decode CV JSON")}
+
+    let refText = cv.ref_text
+    var ref_wav = loadAudioFromBase64(cv.ref_audio, samplingRate: 24000)
     let wav_len = ref_wav.count
     ref_wav = expandWav(ref_wav)
     memcpy(buffers[encode_graph.copyins.last!]!.contents(), ref_wav, ref_wav.count * MemoryLayout<Float>.stride)
@@ -611,12 +618,13 @@ func get_sched(numSteps: Int, targetLength: Int) -> ([Int], Int) {
     return (sched, numSteps)
 }
 
-func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
-    let url = Bundle.main.url(forResource: file, withExtension: "wav")!
-    let audio = try! Data(contentsOf: url)
-    let (data, sr) = load_waveform(audio)
+func loadAudioFromBase64(_ base64: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
+    guard let audioData = Data(base64Encoded: base64) else {
+        fatalError("Invalid base64 audio")
+    }
 
-    // Convert multi-channel to mono
+    let (data, sr) = load_waveform(audioData)
+
     let sampleCount = data[0].count
     var mono = [Float]()
     mono.reserveCapacity(sampleCount)
@@ -628,25 +636,16 @@ func load_audio(file: String, samplingRate: Int = SAMPLING_RATE) -> [Float] {
         }
         mono.append(sum / Float(data.count))
     }
-
-    // Resample
     let resampled = resample([mono], origSR: sr, targetSR: samplingRate)[0]
-
-    // RMS
     let rms = sqrt(
         resampled.reduce(0.0) { $0 + Double($1 * $1) } /
         Double(resampled.count)
     )
-
-    print("rms =", rms)
-
     var output = resampled
-
     if rms > 0 && rms < 0.1 {
         let scale = Float(0.1 / rms)
         output = output.map { $0 * scale }
     }
-
     return output
 }
 
@@ -849,7 +848,6 @@ func get_ref_tokens(ref_audio_length: Int = REF_AUDIO_LEN) -> [[Int32]] {
 }
 
 func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32], num_ref_tokens: Int) -> [String] {
-    print("rory inputs")
     print(text)
     print(refText)
     print(wavLen)
@@ -864,6 +862,8 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
     var chunksSmall: [String] = matches.map {
         nsText.substring(with: $0.range)
     }
+    
+    print(chunksSmall)
 
     var chunks: [String] = [""]
     var j = 0
@@ -876,11 +876,12 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
         let combined = chunks[j] + chunksSmall[i]
         
         let targetLength = estimateLargestTargetTokens(text: combined, refText: refText, numRefAudioTokens: Int(wavLen / CHUNK_SIZE))
+        print(combined, targetLength)
 
         let joinedText = [refText, combined].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
 
         let textTokens = tokenizer.encode("<|text_start|>\(joinedText)<|text_end|>")
-
+        print(styleTokens.count + textTokens.count + num_ref_tokens + targetLength)
         if styleTokens.count + textTokens.count + num_ref_tokens + targetLength < MAX_LEN {
 
             chunks[j] += chunksSmall[i]
@@ -889,7 +890,7 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
             j += 1
         }
     }
-
+    print(chunks)
     return chunks
 }
 
@@ -914,6 +915,7 @@ func estimateTargetTokens(text: String, refText: String, numRefAudioTokens: Int,
 //todo......
 func run_tests() {
     //audio load
+    /*
     var value = load_audio(file: "voice3_short")
     var expected = (try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "voice3_ref_wav", withExtension: "json")!)))
     assert(value.count == expected.count && zip(value, expected).allSatisfy { abs($0 - $1) < 1e-5 })
@@ -1005,6 +1007,8 @@ func run_tests() {
     //model_graph.run()
 
     print("DONE")
+     */
 }
+
 
 
