@@ -1019,17 +1019,18 @@ class Handler(BaseHTTPRequestHandler):
           data['ref_text'] = content.decode()
         elif b'name="voice_name"' in part:
           data['voice_name'] = content.decode()
+        elif b'name="selected_voice"' in part:
+          selected_voice = content.decode()
         elif b'name="target_text"' in part:
           data['target_text'] = content.decode()
         elif b'name="language"' in part:
           data['language'] = content.decode()
       
-      if 'file' in data:
-        with open("voices/tmp.wav", "wb") as f: f.write(data['file'])
-        with open("voices/tmp.wav", "rb") as f:
-          voice = {"ref_text":data['ref_text'],
-        "ref_audio":base64.b64encode(f.read()).decode("ascii")} 
-          json.dump(voice, open(f"voices/{data['voice_name']}.cv", "w"))
+      if len(data["ref_text"]) > 0:
+        voice = { "ref_text": data['ref_text'], "ref_audio": base64.b64encode(data['file']).decode("ascii")}
+        with open(f"voices/{data['voice_name']}.cv", "w") as f: json.dump(voice, f)
+      else: data['voice_name'] = selected_voice
+
 
       print("RORY REF_TEXT =",data['ref_text'])
       print("RORY TEXT =",data['target_text'])

@@ -8,6 +8,9 @@
     <option value="None">Auto Language</option>
   </select><br>
    <input type="text" name="voice_name" placeholder="Voice name"><br>
+  <select name="selected_voice" id="selected_voice">
+    <option value="">Select Voice</option>
+  </select><br>
   <button type="submit">Submit</button>
 </form>
 
@@ -37,7 +40,27 @@ async function loadLanguages() {
   }
 }
 
+async function loadVoices() {
+  try {
+    const res = await fetch("/voices");
+    const voices = await res.json();
+
+    const voiceSelect = document.getElementById("selected_voice");
+
+    voices.forEach(voice => {
+      const option = document.createElement("option");
+      option.value = voice;
+      option.textContent = voice;
+      voiceSelect.appendChild(option);
+    });
+  } catch (err) {
+    voiceSelect.innerHTML = '<option value="">Failed to load voices</option>';
+    console.error(err);
+  }
+}
+
 loadLanguages();
+loadVoices();
 
 // Form submit (unchanged)
 form.addEventListener("submit", async (e) => {
