@@ -29,6 +29,12 @@ let CHUNK_SIZE = 960
 let REF_AUDIO_LEN = 10
 let tokenizer = Tokenizer()
 
+let AUDIO_MASK_BUF = 1080
+let ATTENTION_MASK_BUF = 1134
+let TOKENS_BUF = 1136
+let INPUT_IDS_BUF = 1135
+let PRED_TOKENS_BUF = 1702
+
 class Tokenizer {
     let specialTokens: [String: Int32]
     let normalTokensBytes: [[UInt8]: Int32]
@@ -472,7 +478,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            generate(text:"That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen", cvFile:"rory", num_steps: 32, language: "None")
+            generate(text:"That's it, turn the page on the day, walk away ,'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, so return to your sitting position and listen", cvFile:"jezza-10s", num_steps: 32, language: "None")
         }
     }
 }
@@ -519,16 +525,16 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
             //copyins
             
             let input_ids_flat = input_ids.flatMap { $0.flatMap { $0 } }
-            buffers[1135]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
+            buffers[INPUT_IDS_BUF]!.contents().copyMemory(from: input_ids_flat, byteCount: input_ids_flat.count * MemoryLayout<Int32>.stride)
             
             let attention_mask_flat = attention_mask.flatMap { $0.flatMap { $0.flatMap { $0 } } }
-            buffers[1134]!.contents().copyMemory(from: attention_mask_flat, byteCount: attention_mask_flat.count)
+            buffers[ATTENTION_MASK_BUF]!.contents().copyMemory(from: attention_mask_flat, byteCount: attention_mask_flat.count)
             
             let tokens_flat = tokens.flatMap { $0 }
-            buffers[1136]!.contents().copyMemory(from: tokens_flat, byteCount: tokens_flat.count * MemoryLayout<Int32>.stride)
+            buffers[TOKENS_BUF]!.contents().copyMemory(from: tokens_flat, byteCount: tokens_flat.count * MemoryLayout<Int32>.stride)
             
             let audio_mask_flat = audio_mask.flatMap { $0 }
-            buffers[1080]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
+            buffers[AUDIO_MASK_BUF]!.contents().copyMemory(from: audio_mask_flat, byteCount: audio_mask_flat.count)
             
             if (step == 0) {
                 model_graph.run(vals_dict: [113: target_length ,373: c_len], globals_dict: [113: target_length ,373: c_len, 373*2: c_len*2])
@@ -539,7 +545,7 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
             let n = scores_out.count / NUM_AUDIO_CODEBOOK
             var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
             
-            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1702]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1702]! / 4))[0..<(MAX_LEN * NUM_AUDIO_CODEBOOK)]
+            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[PRED_TOKENS_BUF]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[PRED_TOKENS_BUF]! / 4))[0..<(MAX_LEN * NUM_AUDIO_CODEBOOK)]
             var pred_tokens = (0..<NUM_AUDIO_CODEBOOK).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
             
             
@@ -584,7 +590,7 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     var combinedWaveform: [Float] = []
     for (i, ret) in rets.enumerated() {
         let flatRet = ret.flatMap { $0 }
-        buffers[1136]!.contents().copyMemory(from: flatRet, byteCount: flatRet.count * 4)
+        buffers[TOKENS_BUF]!.contents().copyMemory(from: flatRet, byteCount: flatRet.count * 4)
         decode_graph.run()
         let wv = Array(Array(UnsafeBufferPointer(start: buffers[decode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self),count: buffer_sz[decode_graph.copyouts[0]]! / 4))[0..<(target_lengths[i] * CHUNK_SIZE)])
         combinedWaveform.append(contentsOf: wv)
@@ -721,7 +727,7 @@ func loadAudioFromBase64(_ base64: String, samplingRate: Int = SAMPLING_RATE) ->
 
 func getInputs(textTokens: [Int32], targetLength: Int, refAudioTokens: [[Int32]], styleTokens: [Int32]) -> (Int, [[Bool]], [[[[Bool]]]], [[[Int32]]]) {
     let targetAudioTokens = Array(repeating: Int32(AUDIO_MASK_ID), count: targetLength)
-    let c_len = styleTokens.count + textTokens.count + refAudioTokens[0].count + targetLength
+    var c_len = styleTokens.count + textTokens.count + refAudioTokens[0].count + targetLength
     let condAudioStartIdx = c_len - targetLength - refAudioTokens[0].count
 
     var condinput_ids: [[[Int32]]] = [[]]
@@ -939,13 +945,9 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
     var j = 0
 
     for i in 0..<chunksSmall.count {
-        if chunksSmall[i].first == " " {
-            chunksSmall[i].removeFirst()
-        }
-
         let combined = chunks[j] + chunksSmall[i]
         
-        let targetLength = estimateLargestTargetTokens(text: combined, refText: refText, numRefAudioTokens: Int(wavLen / CHUNK_SIZE))
+        let targetLength = estimateTargetTokens(text: combined, refText: refText, numRefAudioTokens: Int(wavLen / CHUNK_SIZE))
         print(combined, targetLength)
 
         let joinedText = [refText, combined].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
@@ -962,15 +964,6 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
     }
     print(chunks)
     return chunks
-}
-
-func estimateLargestTargetTokens(text: String, refText: String, numRefAudioTokens: Int) -> Int {
-    let refWeight = 2.5 * Double(refText.count)
-    let speedFactor = refWeight / Double(numRefAudioTokens)
-    let maxCharWeight = Double(CHAR_WEIGHTS.max() ?? 0.0)
-    let targetWeight = maxCharWeight * Double(text.count)
-    let estimatedDuration = targetWeight / speedFactor
-    return Int(estimatedDuration)
 }
 
 func estimateTargetTokens(text: String, refText: String, numRefAudioTokens: Int,) -> Int {
