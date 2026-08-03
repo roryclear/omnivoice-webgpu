@@ -16,6 +16,7 @@ var programs: [String: MTLComputePipelineState] = [:]
 var encode_graph: GraphRunner!
 var model_graph: GraphRunner!
 var model_graph2: GraphRunner!
+var decode_graph: GraphRunner!
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
@@ -500,14 +501,16 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     var ref_audio_tokens = get_ref_tokens()
     model_graph = GraphRunner(filename: "1.rc")
     model_graph2 = GraphRunner(filename: "2.rc")
-    for b in encode_graph.buffs.subtracting(model_graph.buffs) { buffers[b] = nil }
+    //todo shrink graphs (spread the allocs to where needed?
     ref_audio_tokens = ref_audio_tokens .map { Array($0.prefix(wav_len / CHUNK_SIZE)) }
     var styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
     var rets: [[[Int32]]] = []
+    var target_lengths: [Int] = []
     for chunk in chunks {
         var tokens: [[Int32]] = Array(repeating: Array(repeating: Int32(AUDIO_MASK_ID), count: MAX_LEN), count: NUM_AUDIO_CODEBOOK)
         let target_length = estimateTargetTokens(text: chunk, refText: refText, numRefAudioTokens: ref_audio_tokens[0].count)
+        target_lengths.append(target_length)
         let (sched, num_steps) = get_sched(numSteps: num_steps, targetLength: target_length)
         let combined = [refText, chunk].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: " ")
         let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>").map { Int32($0) }
@@ -536,7 +539,7 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
             let n = scores_out.count / NUM_AUDIO_CODEBOOK
             var scores = stride(from: 0, to: scores_out.count, by: n).map { Array(scores_out[$0..<min($0 + n, scores_out.count)])}
             
-            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1704]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1704]! / 4))[0..<(MAX_LEN * NUM_AUDIO_CODEBOOK)]
+            let pred_tokens_out = Array(UnsafeBufferPointer(start: buffers[1702]!.contents().assumingMemoryBound(to: Float32.self), count: buffer_sz[1702]! / 4))[0..<(MAX_LEN * NUM_AUDIO_CODEBOOK)]
             var pred_tokens = (0..<NUM_AUDIO_CODEBOOK).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
             
             
@@ -575,10 +578,74 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
         }
         rets.append(tokens)
     }
+    
+    // todo move and copyin
+    decode_graph = GraphRunner(filename: "100.rc")
+    decode_graph.run()
+    let wv = Array(Array(UnsafeBufferPointer(start: buffers[decode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self),count: buffer_sz[decode_graph.copyouts[0]]! / 4))[0..<(target_lengths[0] * CHUNK_SIZE)])
+    let wavData = waveformToWavBytes(audio: wv, sampleRate: SAMPLING_RATE)
+    
+    let fileURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp.wav")
+
+    do {
+        try wavData.write(to: fileURL)
+        print("Saved to \(fileURL.path)")
+    } catch {
+        print("Error writing file: \(error)")
+    }
+    
     print("rory rets =",rets)
     print("1")
 }
 
+func waveformToWavBytes(audio: [Float], sampleRate: Int) -> Data {
+    let channels: UInt16 = 1
+    let bitsPerSample: UInt16 = 16
+    let bytesPerSample = Int(bitsPerSample / 8)
+
+    // Clip and convert to Int16
+    let audioInt16: [Int16] = audio.map {
+        let clipped = max(-1.0, min(1.0, $0))
+        return Int16(clipped * 32767.0)
+    }
+
+    let byteRate = UInt32(sampleRate) * UInt32(channels) * UInt32(bytesPerSample)
+    let blockAlign = channels * UInt16(bytesPerSample)
+    let dataSize = UInt32(audioInt16.count * bytesPerSample)
+    let chunkSize = UInt32(36) + dataSize
+
+    var data = Data()
+
+    // Helper to append values as little-endian
+    func append<T>(_ value: T) {
+        var v = value
+        withUnsafeBytes(of: &v) { data.append(contentsOf: $0) }
+    }
+
+    // RIFF header
+    data.append("RIFF".data(using: .ascii)!)
+    append(chunkSize)
+    data.append("WAVE".data(using: .ascii)!)
+
+    // fmt chunk
+    data.append("fmt ".data(using: .ascii)!)
+    append(UInt32(16))                  // Subchunk1Size
+    append(UInt16(1))                   // PCM format
+    append(channels)
+    append(UInt32(sampleRate))
+    append(byteRate)
+    append(blockAlign)
+    append(bitsPerSample)
+
+    // data chunk
+    data.append("data".data(using: .ascii)!)
+    append(dataSize)
+
+    // Audio samples
+    audioInt16.forEach { append($0) }
+
+    return data
+}
 
 func get_sched(numSteps: Int, targetLength: Int) -> ([Int], Int) {
     let timesteps = (0...numSteps).map { i -> Double in
