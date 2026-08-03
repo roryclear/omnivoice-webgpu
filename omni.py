@@ -882,6 +882,7 @@ class omni:
   def get_inputs(self, text_tokens, target_length, ref_audio_tokens, style_tokens):
     target_audio_tokens = [AUDIO_MASK_ID for _ in range(target_length)]
     c_len = len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + target_length
+    c_len = min(c_len, MAX_LEN) # todo
     cond_audio_start_idx = c_len - target_length - len(ref_audio_tokens[0])
 
     cond_input_ids = [[]]
@@ -1077,8 +1078,8 @@ if __name__ == "__main__":
     Tensor.manual_seed(0)
 
     audio = model.generate(
-        text="That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
-        cv_path="voices/rory.cv",
+        text="That's it, turn the page on the day, walk away ,'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
+        cv_path="voices/jezza-10s.cv",
         num_steps=32,
         language="None"
     )
