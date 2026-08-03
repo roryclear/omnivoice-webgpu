@@ -805,7 +805,7 @@ class omni:
     j = 0
     for i in range(len(chunks_small)):
       if chunks_small[i][0] == " ": chunks_small[i] = chunks_small[i][1:]
-      target_length = self._estimate_largest_target_tokens((chunks[j]+chunks_small[i]), ref_text, int(wav_len / self.audio_tokenizer.hop_length))
+      target_length = self._estimate_target_tokens((chunks[j]+chunks_small[i]), ref_text, int(wav_len / self.audio_tokenizer.hop_length))
       text_tokens = tok.encode(f"<|text_start|>{' '.join(x.strip() for x in (ref_text, (chunks[j]+chunks_small[i])) if x.strip())}<|text_end|>")
       if len(style_tokens) + len(text_tokens) + len(ref_audio_tokens[0]) + target_length < MAX_LEN:
         chunks[j] += chunks_small[i]
@@ -840,13 +840,6 @@ class omni:
     ref_weight = sum(CHAR_WEIGHTS[ord(c)] for c in ref_text)
     speed_factor = ref_weight / num_ref_audio_tokens
     target_weight = sum(CHAR_WEIGHTS[ord(c)] for c in text)
-    estimated_duration = target_weight / speed_factor
-    return int(estimated_duration)
-
-  def _estimate_largest_target_tokens(self, text, ref_text, num_ref_audio_tokens):
-    ref_weight = 2.5 * len(ref_text) # avg char weight is 2.85, lowest is 0, 2.5 is probably worst case?
-    speed_factor = ref_weight / num_ref_audio_tokens
-    target_weight = max(CHAR_WEIGHTS) * len(text)
     estimated_duration = target_weight / speed_factor
     return int(estimated_duration)
 
@@ -899,7 +892,6 @@ class omni:
     #print("AUDIO_MASK",audio_mask, "target_length", target_length, "shape",np.array(audio_mask).shape, "sum:", np.array(audio_mask).sum())
 
     attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
-
     for i in range(c_len): attention_mask[0][0][i][:c_len] = [True] * c_len
     for i in range(target_length): attention_mask[1][0][i][:target_length] = [True] * target_length
     for i in range(target_length, c_len): attention_mask[1][0][i][i] = True
@@ -1065,20 +1057,20 @@ if __name__ == "__main__":
   model = omni()
   
   if "--test" in sys.argv:
-    '''
-    with open("voices/rory-15s.wav", "rb") as f:
+    
+    with open("voices/rory-10s.wav", "rb") as f:
       voice = {"ref_text":"Yeah so I was just on the thirty three there, on my way to astro, and like I'm just reading my book and looking out the window, and I look, and there's a dog getting on the bus, and the thing has a leap card in its mouth, and it jumps up and taps the machine",
         "ref_audio":base64.b64encode(f.read()).decode("ascii")} 
       json.dump(voice, open("voices/rory.cv", "w"))
-    '''
+    
 
     # tinygrad cbfcf36e4 with metalgraph turned off, my macbook air m3
     os.makedirs("outputs", exist_ok=True)
     Tensor.manual_seed(0)
 
     audio = model.generate(
-        text="That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
-        cv_path="voices/rory.cv",
+        text="That's it, turn the page on the day, walk away ,'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
+        cv_path="voices/rory-10s.cv",
         num_steps=32,
         language="None"
     )
