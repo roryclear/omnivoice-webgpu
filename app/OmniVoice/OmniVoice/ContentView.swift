@@ -471,11 +471,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            //let graph = GraphRunner(filename: "1.rc")
-            //graph.diffGraphJSON("1.rc", "1b.rc")
-            //print("1")
-            //run_tests()
-            generate(text:"That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen", cvFile:"jezza", num_steps: 32, language: "None")
+            generate(text:"That's it, turn the page on the day, walk away 'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen", cvFile:"rory", num_steps: 32, language: "None")
         }
     }
 }
