@@ -581,9 +581,16 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     
     // todo move and copyin
     decode_graph = GraphRunner(filename: "100.rc")
-    decode_graph.run()
-    let wv = Array(Array(UnsafeBufferPointer(start: buffers[decode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self),count: buffer_sz[decode_graph.copyouts[0]]! / 4))[0..<(target_lengths[0] * CHUNK_SIZE)])
-    let wavData = waveformToWavBytes(audio: wv, sampleRate: SAMPLING_RATE)
+    var combinedWaveform: [Float] = []
+    for (i, ret) in rets.enumerated() {
+        let flatRet = ret.flatMap { $0 }
+        buffers[1136]!.contents().copyMemory(from: flatRet, byteCount: flatRet.count * 4)
+        decode_graph.run()
+        let wv = Array(Array(UnsafeBufferPointer(start: buffers[decode_graph.copyouts[0]]!.contents().assumingMemoryBound(to: Float32.self),count: buffer_sz[decode_graph.copyouts[0]]! / 4))[0..<(target_lengths[i] * CHUNK_SIZE)])
+        combinedWaveform.append(contentsOf: wv)
+    }
+    
+    let wavData = waveformToWavBytes(audio: combinedWaveform, sampleRate: SAMPLING_RATE)
     
     let fileURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp.wav")
 
