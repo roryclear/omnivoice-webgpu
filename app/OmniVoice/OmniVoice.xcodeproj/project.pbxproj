@@ -7,16 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BEC81FED301E636C009D81BB /* 0.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC81FEA301E636C009D81BB /* 0.rc */; };
-		BEC81FEE301E636C009D81BB /* 2.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC81FEC301E636C009D81BB /* 2.rc */; };
-		BEC81FEF301E636C009D81BB /* 1.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC81FEB301E636C009D81BB /* 1.rc */; };
+		BE45B97A3020C40B00C809AE /* 2.rc in Resources */ = {isa = PBXBuildFile; fileRef = BE45B9783020C40B00C809AE /* 2.rc */; };
+		BE45B97B3020C40B00C809AE /* 100.rc in Resources */ = {isa = PBXBuildFile; fileRef = BE45B9793020C40B00C809AE /* 100.rc */; };
+		BE45B97C3020C40B00C809AE /* 1.rc in Resources */ = {isa = PBXBuildFile; fileRef = BE45B9773020C40B00C809AE /* 1.rc */; };
+		BE45B97D3020C40B00C809AE /* 0.rc in Resources */ = {isa = PBXBuildFile; fileRef = BE45B9763020C40B00C809AE /* 0.rc */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		BE45B9763020C40B00C809AE /* 0.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 0.rc; sourceTree = "<group>"; };
+		BE45B9773020C40B00C809AE /* 1.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 1.rc; sourceTree = "<group>"; };
+		BE45B9783020C40B00C809AE /* 2.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 2.rc; sourceTree = "<group>"; };
+		BE45B9793020C40B00C809AE /* 100.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 100.rc; sourceTree = "<group>"; };
 		BE6ED7D43010E89400847188 /* OmniVoice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OmniVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		BEC81FEA301E636C009D81BB /* 0.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 0.rc; sourceTree = "<group>"; };
-		BEC81FEB301E636C009D81BB /* 1.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 1.rc; sourceTree = "<group>"; };
-		BEC81FEC301E636C009D81BB /* 2.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 2.rc; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -41,9 +43,10 @@
 		BE6ED7CB3010E89400847188 = {
 			isa = PBXGroup;
 			children = (
-				BEC81FEA301E636C009D81BB /* 0.rc */,
-				BEC81FEB301E636C009D81BB /* 1.rc */,
-				BEC81FEC301E636C009D81BB /* 2.rc */,
+				BE45B9763020C40B00C809AE /* 0.rc */,
+				BE45B9773020C40B00C809AE /* 1.rc */,
+				BE45B9783020C40B00C809AE /* 2.rc */,
+				BE45B9793020C40B00C809AE /* 100.rc */,
 				BE6ED7D63010E89400847188 /* OmniVoice */,
 				BE6ED7D53010E89400847188 /* Products */,
 			);
@@ -121,9 +124,10 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BEC81FED301E636C009D81BB /* 0.rc in Resources */,
-				BEC81FEE301E636C009D81BB /* 2.rc in Resources */,
-				BEC81FEF301E636C009D81BB /* 1.rc in Resources */,
+				BE45B97A3020C40B00C809AE /* 2.rc in Resources */,
+				BE45B97B3020C40B00C809AE /* 100.rc in Resources */,
+				BE45B97C3020C40B00C809AE /* 1.rc in Resources */,
+				BE45B97D3020C40B00C809AE /* 0.rc in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
