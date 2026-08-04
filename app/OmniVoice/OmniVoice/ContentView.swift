@@ -8,6 +8,7 @@
 import SwiftUI
 import Foundation
 internal import Combine
+import AVFoundation
 
 let device = MTLCreateSystemDefaultDevice()!
 let queue = device.makeCommandQueue()!
@@ -19,6 +20,7 @@ var model_graph: GraphRunner!
 var model_graph2: GraphRunner!
 var decode_graph: GraphRunner!
 var generationProgress: Float = 0.0
+var audioPlayer: AVAudioPlayer?
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
@@ -479,66 +481,87 @@ struct ContentView: View {
     @State private var selectedLanguage: String = "None"
     @State private var progress: Float = 0.0
     @State private var isGenerating: Bool = false
+    @State private var showPlayer: Bool = false
 
     var body: some View {
-            VStack(spacing: 20) {
+        VStack(spacing: 20) {
 
-                TextField("Enter text...", text: $inputText)
-                    .textFieldStyle(.roundedBorder)
+            TextField("Enter text...", text: $inputText)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
+            Picker("Voice", selection: $selectedVoice) {
+                ForEach(voices, id: \.self) { voice in
+                    Text(voice).tag(voice)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal)
+
+            Picker("Language", selection: $selectedLanguage) {
+                Text("Auto").tag("None")
+                ForEach(languages) { language in Text(language.name).tag(language.id) }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal)
+            
+            if isGenerating {
+                ProgressView(value: progress)
                     .padding(.horizontal)
-
-                Picker("Voice", selection: $selectedVoice) {
-                    ForEach(voices, id: \.self) { voice in
-                        Text(voice).tag(voice)
+                Text("\(Int(progress * 100))%")
+            }
+            
+            if showPlayer {
+                let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
+                HStack {
+                    Button(action: { playAudio(url) }) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.largeTitle)
                     }
-                }
-                .pickerStyle(.menu)
-                .padding(.horizontal)
-
-                Picker("Language", selection: $selectedLanguage) {
-                    Text("Auto").tag("None")
-                    ForEach(languages) { language in Text(language.name).tag(language.id) }
-                }
-                .pickerStyle(.menu)
-                .padding(.horizontal)
-                
-                if isGenerating {
-                    ProgressView(value: progress)
-                        .padding(.horizontal)
-                    Text("\(Int(progress * 100))%")
-                }
-                
-                Button("Generate Audio") {
-                    isGenerating = true
-                    progress = 0
-                    Task.detached {
-                        generate(
-                            text: inputText,
-                            cvFile: selectedVoice,
-                            num_steps: 32,
-                            language: selectedLanguage
-                        )
-                        generationProgress = 1.0
+                    ShareLink(item: url) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.title2)
                     }
                 }
             }
-            .padding()
-            .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
-                if isGenerating {
-                    progress = generationProgress
-                    if generationProgress >= 1.0 {
-                        isGenerating = false
-                        generationProgress = 0
-                    }
+            
+            Button("Generate Audio") {
+                showPlayer = false
+                isGenerating = true
+                progress = 0
+                Task.detached {
+                    generate(
+                        text: inputText,
+                        cvFile: selectedVoice,
+                        num_steps: 32,
+                        language: selectedLanguage
+                    )
+                    generationProgress = 1.0
                 }
-            }
-            .onAppear {
-                loadVoices()
-                loadLanguages()
             }
         }
+        .padding()
+        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+            if isGenerating {
+                progress = generationProgress
+                if generationProgress >= 1.0 {
+                    isGenerating = false
+                    generationProgress = 0
+                    showPlayer = true
+                }
+            }
+        }
+        .onAppear {
+            loadVoices()
+            loadLanguages()
+        }
+    }
     
-
+    func playAudio(_ url: URL) {
+        audioPlayer = try? AVAudioPlayer(contentsOf: url)
+        audioPlayer?.play()
+    }
+    
     func loadVoices() {
         guard let urls = Bundle.main.urls(forResourcesWithExtension: "cv", subdirectory: nil) else { return }
         voices = urls.map { $0.deletingPathExtension().lastPathComponent }
@@ -679,7 +702,7 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     
     let wavData = waveformToWavBytes(audio: combinedWaveform, sampleRate: SAMPLING_RATE)
     
-    let fileURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp.wav")
+    let fileURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
 
     do {
         try wavData.write(to: fileURL)
