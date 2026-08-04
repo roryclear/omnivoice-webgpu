@@ -7,16 +7,20 @@
 
 import SwiftUI
 import Foundation
+internal import Combine
+import AVFoundation
 
 let device = MTLCreateSystemDefaultDevice()!
 let queue = device.makeCommandQueue()!
 var buffers: [Int: MTLBuffer] = [:]
-var buffer_sz: [Int: Int] = [:] // todo
+var buffer_sz: [Int: Int] = [:]
 var programs: [String: MTLComputePipelineState] = [:]
 var encode_graph: GraphRunner!
 var model_graph: GraphRunner!
 var model_graph2: GraphRunner!
 var decode_graph: GraphRunner!
+var generationProgress: Float = 0.0
+var audioPlayer: AVAudioPlayer?
 let CHAR_WEIGHTS = try! JSONDecoder().decode([Float].self, from: Data(contentsOf: Bundle.main.url(forResource: "char_weights", withExtension: "json")!))
 let AUDIO_CHUNK_DURATION = 15.0
 let FRAME_RATE = 25
@@ -470,16 +474,121 @@ class GraphRunner {
 }
 
 struct ContentView: View {
+    @State private var inputText: String = ""
+    @State private var voices: [String] = []
+    @State private var selectedVoice: String = ""
+    @State private var languages: [Language] = []
+    @State private var selectedLanguage: String = "None"
+    @State private var progress: Float = 0.0
+    @State private var isGenerating: Bool = false
+    @State private var showPlayer: Bool = false
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        VStack(spacing: 20) {
+
+            TextField("Enter text...", text: $inputText)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
+            Picker("Voice", selection: $selectedVoice) {
+                ForEach(voices, id: \.self) { voice in
+                    Text(voice).tag(voice)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal)
+
+            Picker("Language", selection: $selectedLanguage) {
+                Text("Auto").tag("None")
+                ForEach(languages) { language in Text(language.name).tag(language.id) }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal)
+            
+            if isGenerating {
+                ProgressView(value: progress)
+                    .padding(.horizontal)
+                Text("\(Int(progress * 100))%")
+            }
+            
+            if showPlayer {
+                let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
+                HStack {
+                    Button(action: { playAudio(url) }) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.largeTitle)
+                    }
+                    ShareLink(item: url) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.title2)
+                    }
+                }
+            }
+            
+            Button("Generate Audio") {
+                showPlayer = false
+                isGenerating = true
+                progress = 0
+                Task.detached {
+                    generate(
+                        text: inputText,
+                        cvFile: selectedVoice,
+                        num_steps: 32,
+                        language: selectedLanguage
+                    )
+                    generationProgress = 1.0
+                }
+            }
         }
         .padding()
+        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+            if isGenerating {
+                progress = generationProgress
+                if generationProgress >= 1.0 {
+                    isGenerating = false
+                    generationProgress = 0
+                    showPlayer = true
+                }
+            }
+        }
         .onAppear {
-            generate(text:"That's it, turn the page on the day, walk away ,'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen", cvFile:"rory", num_steps: 32, language: "None")
+            loadVoices()
+            loadLanguages()
+        }
+    }
+    
+    func playAudio(_ url: URL) {
+        audioPlayer = try? AVAudioPlayer(contentsOf: url)
+        audioPlayer?.play()
+    }
+    
+    func loadVoices() {
+        guard let urls = Bundle.main.urls(forResourcesWithExtension: "cv", subdirectory: nil) else { return }
+        voices = urls.map { $0.deletingPathExtension().lastPathComponent }
+        if selectedVoice.isEmpty { selectedVoice = voices.first ?? ""}
+    }
+    
+    struct Language: Identifiable, Codable {
+        let id: String
+        let name: String
+    }
+    
+    func loadLanguages() {
+        guard let url = Bundle.main.url(
+            forResource: "languages",
+            withExtension: "json"
+        ) else {
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            languages = try JSONDecoder().decode(
+                [Language].self,
+                from: data
+            )
+        } catch {
+            print("Failed to load languages:", error)
         }
     }
 }
@@ -514,7 +623,7 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
     var rets: [[[Int32]]] = []
     var target_lengths: [Int] = []
-    for chunk in chunks {
+    for (idx, chunk) in chunks.enumerated() {
         var tokens: [[Int32]] = Array(repeating: Array(repeating: Int32(AUDIO_MASK_ID), count: MAX_LEN), count: NUM_AUDIO_CODEBOOK)
         let target_length = estimateTargetTokens(text: chunk, refText: refText, numRefAudioTokens: ref_audio_tokens[0].count)
         target_lengths.append(target_length)
@@ -523,6 +632,7 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
         let text_tokens = tokenizer.encode("<|text_start|>\(combined)<|text_end|>").map { Int32($0) }
         var (c_len, audio_mask, attention_mask, input_ids) = getInputs(textTokens: text_tokens, targetLength: target_length, refAudioTokens: ref_audio_tokens, styleTokens: styleTokens)
         for step in 0..<num_steps {
+            generationProgress = Float(step + idx * num_steps) / Float(chunks.count * num_steps)
             //copyins
             
             let input_ids_flat = input_ids.flatMap { $0.flatMap { $0 } }
@@ -592,7 +702,7 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     
     let wavData = waveformToWavBytes(audio: combinedWaveform, sampleRate: SAMPLING_RATE)
     
-    let fileURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tmp.wav")
+    let fileURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
 
     do {
         try wavData.write(to: fileURL)
@@ -603,6 +713,14 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     
     print("rory rets =",rets)
     print("1")
+    
+    buffers.removeAll()
+    buffer_sz.removeAll()
+    programs.removeAll()
+    encode_graph = nil
+    model_graph = nil
+    model_graph2 = nil
+    decode_graph = nil
 }
 
 func waveformToWavBytes(audio: [Float], sampleRate: Int) -> Data {
@@ -929,11 +1047,7 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
     let nsText = text as NSString
     let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
 
-    var chunksSmall: [String] = matches.map {
-        nsText.substring(with: $0.range)
-    }
-    
-    print(chunksSmall)
+    let chunksSmall: [String] = matches.map { nsText.substring(with: $0.range) }
 
     var chunks: [String] = [""]
     var j = 0
@@ -961,7 +1075,7 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
 }
 
 func estimateTargetTokens(text: String, refText: String, numRefAudioTokens: Int,) -> Int {
-    func weightSum(for string: String) -> Double {return string.unicodeScalars.reduce(0.0) { sum, scalar in sum + Double(CHAR_WEIGHTS[Int(scalar.value)] ?? 0.0) }}
+    func weightSum(for string: String) -> Double {return string.unicodeScalars.reduce(0.0) { sum, scalar in sum + Double(CHAR_WEIGHTS[Int(scalar.value)]) }}
     let refWeight = weightSum(for: refText)
     let speedFactor = refWeight / Double(numRefAudioTokens)
     let targetWeight = weightSum(for: text)
