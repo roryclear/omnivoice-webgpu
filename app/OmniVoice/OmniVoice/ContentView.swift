@@ -478,7 +478,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            generate(text:"That's it, turn the page on the day, walk away ,'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, so return to your sitting position and listen", cvFile:"jezza-10s", num_steps: 32, language: "None")
+            generate(text:"That's it, turn the page on the day, walk away ,'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen", cvFile:"rory", num_steps: 32, language: "None")
         }
     }
 }
@@ -509,7 +509,7 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     model_graph2 = GraphRunner(filename: "2.rc")
     //todo shrink graphs (spread the allocs to where needed?
     ref_audio_tokens = ref_audio_tokens .map { Array($0.prefix(wav_len / CHUNK_SIZE)) }
-    var styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
+    let styleTokens = tokenizer.encode("<|denoise|><|lang_start|>\(language)<|lang_end|><|instruct_start|>None<|instruct_end|>")
     let chunks = getChunks(text: text, refText: refText, wavLen: wav_len, styleTokens: styleTokens, num_ref_tokens: Int(wav_len / CHUNK_SIZE))
     var rets: [[[Int32]]] = []
     var target_lengths: [Int] = []
@@ -549,24 +549,19 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
             var pred_tokens = (0..<NUM_AUDIO_CODEBOOK).map { i in Array(pred_tokens_out[(i * MAX_LEN)..<((i + 1) * MAX_LEN)])}
             
             
-            print(step,"scores =",scores)
             scores = scores.map { Array($0.prefix(target_length)) }
             pred_tokens = pred_tokens.map { Array($0.prefix(target_length)) }
                 
             let flatScores = scores.flatMap { $0 }
-            print("\n\n",flatScores, flatScores.count)
             let sortedIdx = flatScores.indices.sorted { flatScores[$0] > flatScores[$1]}
-            //print(sortedIdx)
             let topkIdx = Array(sortedIdx.prefix(sched[step]))
             
-            //todo untested from here
-            
             var sampleTokens = tokens.map { Array($0.prefix(target_length)) }
-            sampleTokens = sampleTokens.flatMap { $0 }
+            sampleTokens = sampleTokens.compactMap { $0 }
             
             let predFlat = pred_tokens.flatMap { $0 }
             var sampleTokensFlat = sampleTokens.flatMap { $0 }
-            for (i, idx) in topkIdx.enumerated() { sampleTokensFlat[idx] = Int32(predFlat[idx]) }
+            for (_, idx) in topkIdx.enumerated() { sampleTokensFlat[idx] = Int32(predFlat[idx]) }
             
             sampleTokens = stride(from: 0, to: sampleTokensFlat.count, by: target_length).map { Array(sampleTokensFlat[$0..<($0 + target_length)]) }
             
@@ -579,8 +574,6 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
                     input_ids[1][i][j] = sampleTokens[i][j]
                 }
             }
-            
-            print(model_graph.copyins)
         }
         rets.append(tokens)
     }
