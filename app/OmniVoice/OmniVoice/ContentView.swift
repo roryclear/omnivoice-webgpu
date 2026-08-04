@@ -11,7 +11,7 @@ import Foundation
 let device = MTLCreateSystemDefaultDevice()!
 let queue = device.makeCommandQueue()!
 var buffers: [Int: MTLBuffer] = [:]
-var buffer_sz: [Int: Int] = [:] // todo
+var buffer_sz: [Int: Int] = [:]
 var programs: [String: MTLComputePipelineState] = [:]
 var encode_graph: GraphRunner!
 var model_graph: GraphRunner!
@@ -471,23 +471,43 @@ class GraphRunner {
 
 struct ContentView: View {
     @State private var inputText: String = ""
+    @State private var voices: [String] = []
+    @State private var selectedVoice: String = ""
 
     var body: some View {
         VStack(spacing: 20) {
+
             TextField("Enter text...", text: $inputText)
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal)
 
+            Picker("Voice", selection: $selectedVoice) {
+                ForEach(voices, id: \.self) { voice in
+                    Text(voice).tag(voice)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal)
+
             Button("Generate Audio") {
                 generate(
                     text: inputText,
-                    cvFile: "rory",
+                    cvFile: selectedVoice,
                     num_steps: 48,
                     language: "None"
                 )
             }
         }
         .padding()
+        .onAppear {
+            loadVoices()
+        }
+    }
+
+    func loadVoices() {
+        guard let urls = Bundle.main.urls(forResourcesWithExtension: "cv", subdirectory: nil) else { return }
+        voices = urls.map { $0.deletingPathExtension().lastPathComponent }
+        if selectedVoice.isEmpty { selectedVoice = voices.first ?? ""}
     }
 }
 
@@ -610,6 +630,14 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     
     print("rory rets =",rets)
     print("1")
+    
+    buffers.removeAll()
+    buffer_sz.removeAll()
+    programs.removeAll()
+    encode_graph = nil
+    model_graph = nil
+    model_graph2 = nil
+    decode_graph = nil
 }
 
 func waveformToWavBytes(audio: [Float], sampleRate: Int) -> Data {
