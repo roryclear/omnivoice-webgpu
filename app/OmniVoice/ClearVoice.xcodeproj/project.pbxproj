@@ -18,7 +18,7 @@
 		BE45B9773020C40B00C809AE /* 1.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 1.rc; sourceTree = "<group>"; };
 		BE45B9783020C40B00C809AE /* 2.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 2.rc; sourceTree = "<group>"; };
 		BE45B9793020C40B00C809AE /* 100.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 100.rc; sourceTree = "<group>"; };
-		BE6ED7D43010E89400847188 /* OmniVoice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OmniVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BE6ED7D43010E89400847188 /* ClearVoice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClearVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -55,7 +55,7 @@
 		BE6ED7D53010E89400847188 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				BE6ED7D43010E89400847188 /* OmniVoice.app */,
+				BE6ED7D43010E89400847188 /* ClearVoice.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -63,9 +63,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		BE6ED7D33010E89400847188 /* OmniVoice */ = {
+		BE6ED7D33010E89400847188 /* ClearVoice */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = BE6ED7DF3010E89500847188 /* Build configuration list for PBXNativeTarget "OmniVoice" */;
+			buildConfigurationList = BE6ED7DF3010E89500847188 /* Build configuration list for PBXNativeTarget "ClearVoice" */;
 			buildPhases = (
 				BE6ED7D03010E89400847188 /* Sources */,
 				BE6ED7D13010E89400847188 /* Frameworks */,
@@ -78,11 +78,11 @@
 			fileSystemSynchronizedGroups = (
 				BE6ED7D63010E89400847188 /* OmniVoice */,
 			);
-			name = OmniVoice;
+			name = ClearVoice;
 			packageProductDependencies = (
 			);
 			productName = OmniVoice;
-			productReference = BE6ED7D43010E89400847188 /* OmniVoice.app */;
+			productReference = BE6ED7D43010E89400847188 /* ClearVoice.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -100,7 +100,7 @@
 					};
 				};
 			};
-			buildConfigurationList = BE6ED7CF3010E89400847188 /* Build configuration list for PBXProject "OmniVoice" */;
+			buildConfigurationList = BE6ED7CF3010E89400847188 /* Build configuration list for PBXProject "ClearVoice" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -114,7 +114,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				BE6ED7D33010E89400847188 /* OmniVoice */,
+				BE6ED7D33010E89400847188 /* ClearVoice */,
 			);
 		};
 /* End PBXProject section */
@@ -351,7 +351,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		BE6ED7CF3010E89400847188 /* Build configuration list for PBXProject "OmniVoice" */ = {
+		BE6ED7CF3010E89400847188 /* Build configuration list for PBXProject "ClearVoice" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				BE6ED7DD3010E89500847188 /* Debug */,
@@ -360,7 +360,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		BE6ED7DF3010E89500847188 /* Build configuration list for PBXNativeTarget "OmniVoice" */ = {
+		BE6ED7DF3010E89500847188 /* Build configuration list for PBXNativeTarget "ClearVoice" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				BE6ED7E03010E89500847188 /* Debug */,
