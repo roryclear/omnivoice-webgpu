@@ -499,12 +499,14 @@ struct ContentView: View {
             .padding(.horizontal)
             
             Button("Generate Audio") {
-                generate(
-                    text: inputText,
-                    cvFile: selectedVoice,
-                    num_steps: 48,
-                    language: "None"
-                )
+                Task.detached {
+                    generate(
+                        text: inputText,
+                        cvFile: selectedVoice,
+                        num_steps: 32,
+                        language: selectedLanguage
+                    )
+                }
             }
         }
         .padding()
