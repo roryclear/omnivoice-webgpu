@@ -540,9 +540,8 @@ struct AddVoiceView: View {
 
 
     func startRecording() {
-        #if os(iOS)
         requestMicrophonePermission()
-        #endif
+        configureAudioSession()
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(UUID().uuidString).wav")
@@ -577,6 +576,25 @@ struct AddVoiceView: View {
         }
     }
 
+    func configureAudioSession() {
+        #if os(iOS)
+        do {
+            let session = AVAudioSession.sharedInstance()
+
+            try session.setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.defaultToSpeaker]
+            )
+
+            try session.setActive(true)
+
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        #endif
+    }
+    
     func stopRecording() {
         recorder?.stop()
         recorder = nil
@@ -617,8 +635,8 @@ struct AddVoiceView: View {
     }
 
 
-    #if os(iOS)
     func requestMicrophonePermission() {
+    #if os(iOS)
         AVAudioApplication.requestRecordPermission { granted in
             if !granted {
                 DispatchQueue.main.async {
@@ -626,8 +644,9 @@ struct AddVoiceView: View {
                 }
             }
         }
-    }
     #endif
+    }
+    
 }
 
 struct ContentView: View {
