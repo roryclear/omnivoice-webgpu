@@ -470,17 +470,24 @@ class GraphRunner {
 }
 
 struct ContentView: View {
+    @State private var inputText: String = ""
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        VStack(spacing: 20) {
+            TextField("Enter text...", text: $inputText)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
+            Button("Generate Audio") {
+                generate(
+                    text: inputText,
+                    cvFile: "rory",
+                    num_steps: 48,
+                    language: "None"
+                )
+            }
         }
         .padding()
-        .onAppear {
-            generate(text:"That's it, turn the page on the day, walk away ,'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen", cvFile:"rory", num_steps: 32, language: "None")
-        }
     }
 }
 
@@ -929,11 +936,7 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
     let nsText = text as NSString
     let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
 
-    var chunksSmall: [String] = matches.map {
-        nsText.substring(with: $0.range)
-    }
-    
-    print(chunksSmall)
+    let chunksSmall: [String] = matches.map { nsText.substring(with: $0.range) }
 
     var chunks: [String] = [""]
     var j = 0
@@ -961,7 +964,7 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
 }
 
 func estimateTargetTokens(text: String, refText: String, numRefAudioTokens: Int,) -> Int {
-    func weightSum(for string: String) -> Double {return string.unicodeScalars.reduce(0.0) { sum, scalar in sum + Double(CHAR_WEIGHTS[Int(scalar.value)] ?? 0.0) }}
+    func weightSum(for string: String) -> Double {return string.unicodeScalars.reduce(0.0) { sum, scalar in sum + Double(CHAR_WEIGHTS[Int(scalar.value)]) }}
     let refWeight = weightSum(for: refText)
     let speedFactor = refWeight / Double(numRefAudioTokens)
     let targetWeight = weightSum(for: text)
