@@ -336,141 +336,259 @@ class GraphRunner {
                     threadsPerThreadgroup: threadsPerThreadgroup
                 )
                 encoder.endEncoding()
-                // todo, all at once is better probably, with just one command buffer init, this is nice to watch though
             }
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
         }
     }
-    
-    //debug slop
-    func diffGraphJSON(_ file1: String, _ file2: String) {
-        func load(_ filename: String) -> [[String: Any]]? {
-            guard let url = Bundle.main.url(forResource: filename, withExtension: nil) else {
-                print("File not found:", filename)
-                return nil
+}
+
+struct AddVoiceView: View {
+    var onDismiss: () -> Void = {}
+
+    @State private var audioURL: URL?
+    @State private var transcript = ""
+    @State private var voiceName = ""
+
+    @State private var recorder: AVAudioRecorder?
+    @State private var player: AVAudioPlayer?
+
+    @State private var isRecording = false
+    @State private var isPlaying = false
+    @State private var errorMessage: String?
+
+    var canSubmit: Bool {
+        audioURL != nil &&
+        !voiceName.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !transcript.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+
+            Button {
+                startRecording()
+            } label: {
+                Image(systemName: "mic.circle.fill")
+                    .font(.largeTitle)
             }
-            do {
-                let data = try Data(contentsOf: url)
-                return try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-            } catch {
-                print(error)
-                return nil
-            }
-        }
+            .disabled(isRecording)
 
-        guard let a = load(file1), let b = load(file2) else { return }
-
-        func extract(_ items: [[String: Any]]) -> (
-            buffers: [Int: [String: Any]],
-            bufferData: [Int: String],
-            programs: [String: String],
-            programUsage: Set<String>,
-            bufferUsage: Set<Int>
-        ) {
-            var buffers = [Int: [String: Any]]()
-            var bufferData = [Int: String]()
-            var programs = [String: String]()
-            var programUsage = Set<String>()
-            var bufferUsage = Set<Int>()
-
-            for item in items {
-                guard let key = item.keys.first else { continue }
-
-                switch key {
-                case "buff_alloc":
-                    if let info = item[key] as? [String: Any],
-                       let num = info["num"] as? Int {
-                        buffers[num] = info
-                    }
-
-                case "copyin":
-                    if let info = item[key] as? [String: Any],
-                       let dest = info["dest"] as? Int,
-                       let data = info["data"] as? String {
-                        bufferData[dest] = data
-                    }
-
-                case "program":
-                    if let info = item[key] as? [String: Any],
-                       let name = info["name"] as? String,
-                       let lib = info["lib"] as? String {
-                        programs[name] = lib
-                    }
-
-                case "call":
-                    if let info = item[key] as? [String: Any] {
-                        if let name = info["name"] as? String {
-                            programUsage.insert(name)
-                        }
-                        if let bufs = info["buffers"] as? [Int] {
-                            for b in bufs {
-                                bufferUsage.insert(b)
-                            }
-                        }
-                    }
-
-                default:
-                    break
+            if let audioURL {
+                Button {
+                    playRecording()
+                } label: {
+                    Image(systemName: isPlaying ? "stop.fill" : "play.fill")
                 }
             }
 
-            return (buffers, bufferData, programs, programUsage, bufferUsage)
-        }
-
-        let x = extract(a)
-        let y = extract(b)
-
-        print("\n=== Programs only in \(file1) ===")
-        for p in Set(x.programs.keys).subtracting(y.programs.keys) {
-            print(p)
-        }
-
-        print("\n=== Programs only in \(file2) ===")
-        for p in Set(y.programs.keys).subtracting(x.programs.keys) {
-            print(p)
-        }
-
-        print("\n=== Buffers only in \(file1) ===")
-        for b in Set(x.buffers.keys).subtracting(y.buffers.keys) {
-            print(b)
-        }
-
-        print("\n=== Buffers only in \(file2) ===")
-        for b in Set(y.buffers.keys).subtracting(x.buffers.keys) {
-            print(b)
-        }
-
-        print("\n=== Buffers with different copyin data ===")
-        for b in Set(x.bufferData.keys).intersection(y.bufferData.keys) {
-            if x.bufferData[b] != y.bufferData[b] {
-                print("buffer \(b)")
+            if let errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
             }
-        }
 
-        print("\n=== Programs with different binaries ===")
-        for p in Set(x.programs.keys).intersection(y.programs.keys) {
-            if x.programs[p] != y.programs[p] {
-                print(p)
+            TextField("Voice name...", text: $voiceName)
+                .textFieldStyle(.roundedBorder)
+
+            TextField("Transcript...", text: $transcript)
+                .textFieldStyle(.roundedBorder)
+
+            Button("Submit") {
+                submitVoice(
+                    audio: audioURL,
+                    transcript: transcript,
+                    name: voiceName
+                )
             }
+            .disabled(!canSubmit)
         }
+        .padding()
+        .navigationTitle("Add Voice")
+    }
 
-        print("\n=== Programs used only in one ===")
-        for p in x.programUsage.subtracting(y.programUsage) {
-            print("\(p) only used in \(file1)")
-        }
-        for p in y.programUsage.subtracting(x.programUsage) {
-            print("\(p) only used in \(file2)")
-        }
 
-        print("\n=== Buffers used only in one ===")
-        for b in x.bufferUsage.subtracting(y.bufferUsage) {
-            print("\(b) only used in \(file1)")
-        }
-        for b in y.bufferUsage.subtracting(x.bufferUsage) {
-            print("\(b) only used in \(file2)")
+    func startRecording() {
+        requestMicrophonePermission()
+        
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("temp.wav")
+        audioURL = url
+        
+        // Record as raw PCM without any container
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 44100.0,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+        
+        do {
+            recorder = try AVAudioRecorder(url: url, settings: settings)
+            recorder?.isMeteringEnabled = true
+            recorder?.record()
+            isRecording = true
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                self.stopRecording()
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
+
+    func stopRecording() { // ai slop that works
+        recorder?.stop()
+        recorder = nil
+        isRecording = false
+        if let url = audioURL {
+            do {
+                var audioData = try Data(contentsOf: url)
+                if let dataRange = audioData.range(of: "data".data(using: .ascii)!) {
+                    let dataStart = dataRange.upperBound + 4
+                    audioData = audioData.subdata(in: dataStart..<audioData.count)
+                }
+                let sampleRate: UInt32 = 44100
+                let channels: UInt16 = 1
+                let bitsPerSample: UInt16 = 16
+                let byteRate = sampleRate * UInt32(channels) * UInt32(bitsPerSample / 8)
+                let blockAlign = channels * (bitsPerSample / 8)
+                let dataSize = UInt32(audioData.count)
+                let fileSize = 36 + dataSize
+                
+                var wavData = Data()
+                
+                // RIFF header
+                wavData.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
+                var fs = fileSize.littleEndian
+                wavData.append(Data(bytes: &fs, count: 4))
+                wavData.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
+                
+                // fmt chunk
+                wavData.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
+                var chunkSize: UInt32 = 16
+                wavData.append(Data(bytes: &chunkSize, count: 4))
+                var format: UInt16 = 1 // PCM
+                wavData.append(Data(bytes: &format, count: 2))
+                var ch = channels
+                wavData.append(Data(bytes: &ch, count: 2))
+                var sr = sampleRate
+                wavData.append(Data(bytes: &sr, count: 4))
+                var br = byteRate
+                wavData.append(Data(bytes: &br, count: 4))
+                var ba = blockAlign
+                wavData.append(Data(bytes: &ba, count: 2))
+                var bps = bitsPerSample
+                wavData.append(Data(bytes: &bps, count: 2))
+                
+                // data chunk
+                wavData.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
+                var ds = dataSize
+                wavData.append(Data(bytes: &ds, count: 4))
+                wavData.append(audioData)
+                
+                try wavData.write(to: url)
+                for i in stride(from: 0, to: min(44, wavData.count), by: 2) {
+                    let val = wavData.subdata(in: i..<min(i+2, wavData.count))
+                }
+                
+            } catch {
+                print("WAV writing error: \(error)")
+            }
+        }
+    }
+
+
+    func playRecording() {
+        guard let audioURL else { return }
+
+        do {
+            if isPlaying {
+                player?.stop()
+                isPlaying = false
+                return
+            }
+
+            player = try AVAudioPlayer(contentsOf: audioURL)
+            player?.play()
+            isPlaying = true
+
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + (player?.duration ?? 0)
+            ) {
+                isPlaying = false
+            }
+
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+
+    func submitVoice(audio: URL?, transcript: String, name: String) {
+        guard let audio else {
+            print("missing audio")
+            return
+        }
+        do {
+            let audioData = try Data(contentsOf: audio)
+            let base64Audio = audioData.base64EncodedString()
+
+            let json: [String: String] = [
+                "ref_text": transcript,
+                "ref_audio": base64Audio
+            ]
+
+            let data = try JSONSerialization.data(
+                withJSONObject: json,
+                options: [.prettyPrinted]
+            )
+
+            let documentsURL = FileManager.default.urls(
+                for: .documentDirectory,
+                in: .userDomainMask
+            )[0]
+
+            let fileURL = documentsURL.appendingPathComponent("\(name).cv")
+
+            try data.write(to: fileURL)
+
+            print("Saved CV file:")
+            print(fileURL.path)
+
+        } catch {
+            print("Failed saving CV:", error.localizedDescription)
+        }
+    }
+
+
+    func requestMicrophonePermission() {
+    #if os(iOS)
+        AVAudioApplication.requestRecordPermission { granted in
+            if !granted {
+                DispatchQueue.main.async {
+                    errorMessage = "Microphone permission denied."
+                }
+            }
+        }
+        do {
+            let session = AVAudioSession.sharedInstance()
+
+            try session.setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.defaultToSpeaker]
+            )
+
+            try session.setActive(true)
+
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    #endif
+    }
+    
 }
 
 struct ContentView: View {
@@ -482,78 +600,88 @@ struct ContentView: View {
     @State private var progress: Float = 0.0
     @State private var isGenerating: Bool = false
     @State private var showPlayer: Bool = false
-
+    
     var body: some View {
-        VStack(spacing: 20) {
-
-            TextField("Enter text...", text: $inputText)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
-
-            Picker("Voice", selection: $selectedVoice) {
-                ForEach(voices, id: \.self) { voice in
-                    Text(voice).tag(voice)
-                }
-            }
-            .pickerStyle(.menu)
-            .padding(.horizontal)
-
-            Picker("Language", selection: $selectedLanguage) {
-                Text("Auto").tag("None")
-                ForEach(languages) { language in Text(language.name).tag(language.id) }
-            }
-            .pickerStyle(.menu)
-            .padding(.horizontal)
-            
-            if isGenerating {
-                ProgressView(value: progress)
+        NavigationStack {
+            VStack(spacing: 20) {
+                
+                TextField("Enter text...", text: $inputText)
+                    .textFieldStyle(.roundedBorder)
                     .padding(.horizontal)
-                Text("\(Int(progress * 100))%")
-            }
-            
-            if showPlayer {
-                let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
+                
                 HStack {
-                    Button(action: { playAudio(url) }) {
-                        Image(systemName: "play.circle.fill")
-                            .font(.largeTitle)
+                    Picker("Voice", selection: $selectedVoice) {
+                        ForEach(voices, id: \.self) { voice in
+                            Text(voice).tag(voice)
+                        }
                     }
-                    ShareLink(item: url) {
-                        Image(systemName: "square.and.arrow.up")
+                    .pickerStyle(.menu)
+                    
+                    NavigationLink(destination: AddVoiceView(onDismiss: {
+                        loadVoices() //load voices when returning
+                    })) {
+                        Image(systemName: "plus.circle")
                             .font(.title2)
                     }
                 }
-            }
-            
-            Button("Generate Audio") {
-                showPlayer = false
-                isGenerating = true
-                progress = 0
-                Task.detached {
-                    generate(
-                        text: inputText,
-                        cvFile: selectedVoice,
-                        num_steps: 32,
-                        language: selectedLanguage
-                    )
-                    generationProgress = 1.0
+                
+                Picker("Language", selection: $selectedLanguage) {
+                    Text("Auto").tag("None")
+                    ForEach(languages) { language in Text(language.name).tag(language.id) }
+                }
+                .pickerStyle(.menu)
+                .padding(.horizontal)
+                
+                if isGenerating {
+                    ProgressView(value: progress)
+                        .padding(.horizontal)
+                    Text("\(Int(progress * 100))%")
+                }
+                
+                if showPlayer {
+                    let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
+                    HStack {
+                        Button(action: { playAudio(url) }) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.largeTitle)
+                        }
+                        ShareLink(item: url) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.title2)
+                        }
+                    }
+                }
+                
+                Button("Generate Audio") {
+                    showPlayer = false
+                    isGenerating = true
+                    progress = 0
+                    Task.detached {
+                        generate(
+                            text: inputText,
+                            cvFile: selectedVoice,
+                            num_steps: 32,
+                            language: selectedLanguage
+                        )
+                        generationProgress = 1.0
+                    }
                 }
             }
-        }
-        .padding()
-        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
-            if isGenerating {
-                progress = generationProgress
-                if generationProgress >= 1.0 {
-                    isGenerating = false
-                    generationProgress = 0
-                    showPlayer = true
+            .padding()
+            .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+                if isGenerating {
+                    progress = generationProgress
+                    if generationProgress >= 1.0 {
+                        isGenerating = false
+                        generationProgress = 0
+                        showPlayer = true
+                    }
                 }
             }
-        }
-        .onAppear {
-            loadVoices()
-            loadLanguages()
+            .onAppear {
+                loadVoices()
+                loadLanguages()
+            }
         }
     }
     
