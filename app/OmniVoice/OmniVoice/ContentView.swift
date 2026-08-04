@@ -497,13 +497,12 @@ struct AddVoiceView: View {
         VStack(spacing: 20) {
 
             Button {
-                isRecording ? stopRecording() : startRecording()
+                startRecording()
             } label: {
-                Image(systemName: isRecording
-                      ? "stop.circle.fill"
-                      : "mic.circle.fill")
-                .font(.largeTitle)
+                Image(systemName: "mic.circle.fill")
+                    .font(.largeTitle)
             }
+            .disabled(isRecording)
 
             if let audioURL {
                 Text(audioURL.lastPathComponent)
@@ -541,7 +540,6 @@ struct AddVoiceView: View {
 
 
     func startRecording() {
-
         #if os(iOS)
         requestMicrophonePermission()
         #endif
@@ -565,7 +563,7 @@ struct AddVoiceView: View {
             )
 
             recorder?.prepareToRecord()
-            recorder?.record(forDuration: 10)
+            recorder?.record()
 
             audioURL = url
             isRecording = true
@@ -578,7 +576,6 @@ struct AddVoiceView: View {
             errorMessage = error.localizedDescription
         }
     }
-
 
     func stopRecording() {
         recorder?.stop()
