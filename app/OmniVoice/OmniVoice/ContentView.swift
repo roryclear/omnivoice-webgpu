@@ -283,58 +283,59 @@ class GraphRunner {
     }
     
     func run(vals_dict: [Int: Int]? = nil, globals_dict: [Int: Int]? = [:]) {
-        for (index, item) in self.calls.enumerated() {
+        autoreleasepool {
             let commandBuffer = queue.makeCommandBuffer()!
-            let encoder = commandBuffer.makeComputeCommandEncoder()!
-            print(index, "of", self.calls.count)
-            let name = item["name"] as! String
-            print(name)
-            let pipeline = programs[name]!
-
-            encoder.setComputePipelineState(pipeline)
-
-            let bufferIDs = item["buffers"] as! [Int]
-            let offsets = item["buffer_offsets"] as! [Int]
-            let vals = item["vals"] as! [Int]
-            print("vals =", vals)
-
-            for i in 0..<bufferIDs.count {
-                let buffer = buffers[bufferIDs[i]]!
-                encoder.setBuffer(buffer, offset: offsets[i], index: i)
+            for (index, item) in self.calls.enumerated() {
+                let encoder = commandBuffer.makeComputeCommandEncoder()!
+                print(index, "of", self.calls.count)
+                let name = item["name"] as! String
+                print(name)
+                let pipeline = programs[name]!
+                
+                encoder.setComputePipelineState(pipeline)
+                
+                let bufferIDs = item["buffers"] as! [Int]
+                let offsets = item["buffer_offsets"] as! [Int]
+                let vals = item["vals"] as! [Int]
+                print("vals =", vals)
+                
+                for i in 0..<bufferIDs.count {
+                    let buffer = buffers[bufferIDs[i]]!
+                    encoder.setBuffer(buffer, offset: offsets[i], index: i)
+                }
+                
+                for i in 0..<vals.count{
+                    var value = Int32(vals_dict![vals[i]]!)
+                    encoder.setBytes(&value, length: 4, index: i+bufferIDs.count)
+                }
+                
+                let global = item["global_size"] as! [Int]
+                let local = item["local_size"] as! [Int]
+                
+                print("global_size =", global)
+                
+                let threadsPerGrid = MTLSize(
+                    width: globals_dict?[global[0]] ?? global[0],
+                    height: globals_dict?[global[1]] ?? global[1],
+                    depth: globals_dict?[global[2]] ?? global[2]
+                )
+                
+                
+                let threadsPerThreadgroup = MTLSize(
+                    width: local[0],
+                    height: local[1],
+                    depth: local[2]
+                )
+                
+                encoder.dispatchThreadgroups(
+                    threadsPerGrid,
+                    threadsPerThreadgroup: threadsPerThreadgroup
+                )
+                encoder.endEncoding()
+                // todo, all at once is better probably, with just one command buffer init, this is nice to watch though
             }
-            
-            for i in 0..<vals.count{
-                var value = Int32(vals_dict![vals[i]]!)
-                encoder.setBytes(&value, length: 4, index: i+bufferIDs.count)
-            }
-            
-            let global = item["global_size"] as! [Int]
-            let local = item["local_size"] as! [Int]
-            
-            print("global_size =", global)
-
-            let threadsPerGrid = MTLSize(
-                width: globals_dict?[global[0]] ?? global[0],
-                height: globals_dict?[global[1]] ?? global[1],
-                depth: globals_dict?[global[2]] ?? global[2]
-            )
-            
-
-            let threadsPerThreadgroup = MTLSize(
-                width: local[0],
-                height: local[1],
-                depth: local[2]
-            )
-
-            encoder.dispatchThreadgroups(
-                threadsPerGrid,
-                threadsPerThreadgroup: threadsPerThreadgroup
-            )
-            encoder.endEncoding()
-            // todo, all at once is better probably, with just one command buffer init, this is nice to watch though
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
-
         }
     }
     
