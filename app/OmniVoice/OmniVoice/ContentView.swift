@@ -346,6 +346,7 @@ class GraphRunner {
 }
 
 struct AddVoiceView: View {
+    @Environment(\.dismiss) private var dismiss
     var onDismiss: () -> Void = {}
 
     @State private var audioURL: URL?
@@ -530,7 +531,7 @@ struct AddVoiceView: View {
 
     func submitVoice(audio: URL?, transcript: String, name: String) {
         guard let audio else {
-            print("missing audio")
+            print("missing audio")  
             return
         }
         do {
@@ -553,11 +554,9 @@ struct AddVoiceView: View {
             )[0]
 
             let fileURL = documentsURL.appendingPathComponent("\(name).cv")
-
             try data.write(to: fileURL)
-
-            print("Saved CV file:")
-            print(fileURL.path)
+            onDismiss()
+            dismiss()
 
         } catch {
             print("Failed saving CV:", error.localizedDescription)
