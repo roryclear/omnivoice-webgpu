@@ -473,6 +473,8 @@ struct ContentView: View {
     @State private var inputText: String = ""
     @State private var voices: [String] = []
     @State private var selectedVoice: String = ""
+    @State private var languages: [Language] = []
+    @State private var selectedLanguage: String = "None"
 
     var body: some View {
         VStack(spacing: 20) {
@@ -489,6 +491,13 @@ struct ContentView: View {
             .pickerStyle(.menu)
             .padding(.horizontal)
 
+            Picker("Language", selection: $selectedLanguage) {
+                Text("Auto").tag("None")
+                ForEach(languages) { language in Text(language.name).tag(language.id) }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal)
+            
             Button("Generate Audio") {
                 generate(
                     text: inputText,
@@ -501,6 +510,7 @@ struct ContentView: View {
         .padding()
         .onAppear {
             loadVoices()
+            loadLanguages()
         }
     }
 
@@ -508,6 +518,30 @@ struct ContentView: View {
         guard let urls = Bundle.main.urls(forResourcesWithExtension: "cv", subdirectory: nil) else { return }
         voices = urls.map { $0.deletingPathExtension().lastPathComponent }
         if selectedVoice.isEmpty { selectedVoice = voices.first ?? ""}
+    }
+    
+    struct Language: Identifiable, Codable {
+        let id: String
+        let name: String
+    }
+    
+    func loadLanguages() {
+        guard let url = Bundle.main.url(
+            forResource: "languages",
+            withExtension: "json"
+        ) else {
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            languages = try JSONDecoder().decode(
+                [Language].self,
+                from: data
+            )
+        } catch {
+            print("Failed to load languages:", error)
+        }
     }
 }
 
