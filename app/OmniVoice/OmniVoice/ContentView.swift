@@ -505,8 +505,6 @@ struct AddVoiceView: View {
             .disabled(isRecording)
 
             if let audioURL {
-                Text(audioURL.lastPathComponent)
-
                 Button {
                     playRecording()
                 } label: {
