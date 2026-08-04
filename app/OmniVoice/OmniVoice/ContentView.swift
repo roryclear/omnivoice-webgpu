@@ -477,32 +477,55 @@ struct AddVoiceView: View {
     var onDismiss: () -> Void = {}
 
     @State private var audioURL: URL?
-    @State private var transcript: String = ""
-    @State private var voiceName: String = ""
-    @State private var showFilePicker = false
+    @State private var transcript = ""
+    @State private var voiceName = ""
+
+    @State private var recorder: AVAudioRecorder?
+    @State private var player: AVAudioPlayer?
+
+    @State private var isRecording = false
+    @State private var isPlaying = false
+    @State private var errorMessage: String?
+
+    var canSubmit: Bool {
+        audioURL != nil &&
+        !voiceName.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !transcript.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         VStack(spacing: 20) {
 
             Button {
-                showFilePicker = true
+                isRecording ? stopRecording() : startRecording()
             } label: {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.largeTitle)
+                Image(systemName: isRecording
+                      ? "stop.circle.fill"
+                      : "mic.circle.fill")
+                .font(.largeTitle)
             }
-            .fileImporter(
-                isPresented: $showFilePicker,
-                allowedContentTypes: [.audio]
-            ) { result in
-                if let url = try? result.get() {
-                    audioURL = url
+
+            if let audioURL {
+                Text(audioURL.lastPathComponent)
+
+                Button {
+                    playRecording()
+                } label: {
+                    Image(systemName: isPlaying ? "stop.fill" : "play.fill")
                 }
             }
-            Text(audioURL?.lastPathComponent ?? "No audio selected")
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .foregroundColor(.red)
+            }
+
             TextField("Voice name...", text: $voiceName)
                 .textFieldStyle(.roundedBorder)
+
             TextField("Transcript...", text: $transcript)
                 .textFieldStyle(.roundedBorder)
+
             Button("Submit") {
                 submitVoice(
                     audio: audioURL,
@@ -510,16 +533,104 @@ struct AddVoiceView: View {
                     name: voiceName
                 )
             }
+            .disabled(!canSubmit)
         }
         .padding()
         .navigationTitle("Add Voice")
     }
 
+
+    func startRecording() {
+
+        #if os(iOS)
+        requestMicrophonePermission()
+        #endif
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).wav")
+
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
+        ]
+
+        do {
+            recorder = try AVAudioRecorder(
+                url: url,
+                settings: settings
+            )
+
+            recorder?.prepareToRecord()
+            recorder?.record(forDuration: 10)
+
+            audioURL = url
+            isRecording = true
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                stopRecording()
+            }
+
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+
+    func stopRecording() {
+        recorder?.stop()
+        recorder = nil
+        isRecording = false
+    }
+
+
+    func playRecording() {
+        guard let audioURL else { return }
+
+        do {
+            if isPlaying {
+                player?.stop()
+                isPlaying = false
+                return
+            }
+
+            player = try AVAudioPlayer(contentsOf: audioURL)
+            player?.play()
+            isPlaying = true
+
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + (player?.duration ?? 0)
+            ) {
+                isPlaying = false
+            }
+
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+
     func submitVoice(audio: URL?, transcript: String, name: String) {
-        print(audio ?? "no audio")
+        print(audio ?? "missing audio")
         print(name)
         print(transcript)
     }
+
+
+    #if os(iOS)
+    func requestMicrophonePermission() {
+        AVAudioApplication.requestRecordPermission { granted in
+            if !granted {
+                DispatchQueue.main.async {
+                    errorMessage = "Microphone permission denied."
+                }
+            }
+        }
+    }
+    #endif
 }
 
 struct ContentView: View {
