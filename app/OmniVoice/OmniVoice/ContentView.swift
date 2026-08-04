@@ -331,6 +331,8 @@ class GraphRunner {
                     depth: local[2]
                 )
                 
+                print("global_size =",threadsPerGrid, globals_dict)
+                
                 encoder.dispatchThreadgroups(
                     threadsPerGrid,
                     threadsPerThreadgroup: threadsPerThreadgroup
@@ -593,8 +595,8 @@ struct AddVoiceView: View {
 
 struct ContentView: View {
     @State private var inputText: String = ""
-    @State private var voices: [String] = []
-    @State private var selectedVoice: String = ""
+    @State private var voices: [URL] = []
+    @State private var selectedVoice: URL?
     @State private var languages: [Language] = []
     @State private var selectedLanguage: String = "None"
     @State private var progress: Float = 0.0
@@ -611,8 +613,9 @@ struct ContentView: View {
                 
                 HStack {
                     Picker("Voice", selection: $selectedVoice) {
-                        ForEach(voices, id: \.self) { voice in
-                            Text(voice).tag(voice)
+                        ForEach(voices, id: \.self) { url in
+                            Text(url.deletingPathExtension().lastPathComponent)
+                                .tag(Optional(url))
                         }
                     }
                     .pickerStyle(.menu)
@@ -659,7 +662,7 @@ struct ContentView: View {
                     Task.detached {
                         generate(
                             text: inputText,
-                            cvFile: selectedVoice,
+                            cvFile: selectedVoice!.path,
                             num_steps: 32,
                             language: selectedLanguage
                         )
@@ -690,10 +693,23 @@ struct ContentView: View {
         audioPlayer?.play()
     }
     
+
     func loadVoices() {
-        guard let urls = Bundle.main.urls(forResourcesWithExtension: "cv", subdirectory: nil) else { return }
-        voices = urls.map { $0.deletingPathExtension().lastPathComponent }
-        if selectedVoice.isEmpty { selectedVoice = voices.first ?? ""}
+        var found: [URL] = []
+        let fm = FileManager.default
+        if let bundleURLs = Bundle.main.urls(forResourcesWithExtension: "cv", subdirectory: nil) { found.append(contentsOf: bundleURLs) }
+
+        if let documents = try? fm.url(
+            for: .documentDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ),
+        let files = try? fm.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil) {
+            found.append(contentsOf: files.filter { $0.pathExtension == "cv" })
+        }
+        voices = found
+        if selectedVoice == nil { selectedVoice = voices.first }
     }
     
     struct Language: Identifiable, Codable {
@@ -728,10 +744,8 @@ struct CVFile: Decodable {
 
 func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     encode_graph = GraphRunner(filename: "0.rc")
-    guard let url = Bundle.main.url(forResource: cvFile, withExtension: "cv"),
-          let data = try? Data(contentsOf: url) else {
-        fatalError("Failed to load CV file")
-    }
+    let url = URL(fileURLWithPath: cvFile)
+    guard let data = try? Data(contentsOf: url) else { fatalError("Failed to load CV file at path: \(cvFile)")}
 
     let decoder = JSONDecoder()
     guard let cv = try? decoder.decode(CVFile.self, from: data) else { fatalError("Failed to decode CV JSON")}
