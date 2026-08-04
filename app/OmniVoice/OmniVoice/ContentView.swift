@@ -539,43 +539,94 @@ struct AddVoiceView: View {
 
     func startRecording() {
         requestMicrophonePermission()
-
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("temp.wav")
         
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("temp.wav")
+        audioURL = url
+        
+        // Record as raw PCM without any container
         let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: 44100,
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 44100.0,
             AVNumberOfChannelsKey: 1,
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
         ]
-
+        
         do {
-            recorder = try AVAudioRecorder(
-                url: url,
-                settings: settings
-            )
-
-            recorder?.prepareToRecord()
+            recorder = try AVAudioRecorder(url: url, settings: settings)
+            recorder?.isMeteringEnabled = true
             recorder?.record()
-
-            audioURL = url
             isRecording = true
-
+            
             DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                stopRecording()
+                self.stopRecording()
             }
-
         } catch {
             errorMessage = error.localizedDescription
         }
     }
-    
-    func stopRecording() {
+
+    func stopRecording() { // ai slop that works
         recorder?.stop()
         recorder = nil
         isRecording = false
+        if let url = audioURL {
+            do {
+                var audioData = try Data(contentsOf: url)
+                if let dataRange = audioData.range(of: "data".data(using: .ascii)!) {
+                    let dataStart = dataRange.upperBound + 4
+                    audioData = audioData.subdata(in: dataStart..<audioData.count)
+                }
+                let sampleRate: UInt32 = 44100
+                let channels: UInt16 = 1
+                let bitsPerSample: UInt16 = 16
+                let byteRate = sampleRate * UInt32(channels) * UInt32(bitsPerSample / 8)
+                let blockAlign = channels * (bitsPerSample / 8)
+                let dataSize = UInt32(audioData.count)
+                let fileSize = 36 + dataSize
+                
+                var wavData = Data()
+                
+                // RIFF header
+                wavData.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
+                var fs = fileSize.littleEndian
+                wavData.append(Data(bytes: &fs, count: 4))
+                wavData.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
+                
+                // fmt chunk
+                wavData.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
+                var chunkSize: UInt32 = 16
+                wavData.append(Data(bytes: &chunkSize, count: 4))
+                var format: UInt16 = 1 // PCM
+                wavData.append(Data(bytes: &format, count: 2))
+                var ch = channels
+                wavData.append(Data(bytes: &ch, count: 2))
+                var sr = sampleRate
+                wavData.append(Data(bytes: &sr, count: 4))
+                var br = byteRate
+                wavData.append(Data(bytes: &br, count: 4))
+                var ba = blockAlign
+                wavData.append(Data(bytes: &ba, count: 2))
+                var bps = bitsPerSample
+                wavData.append(Data(bytes: &bps, count: 2))
+                
+                // data chunk
+                wavData.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
+                var ds = dataSize
+                wavData.append(Data(bytes: &ds, count: 4))
+                wavData.append(audioData)
+                
+                try wavData.write(to: url)
+                for i in stride(from: 0, to: min(44, wavData.count), by: 2) {
+                    let val = wavData.subdata(in: i..<min(i+2, wavData.count))
+                }
+                
+            } catch {
+                print("WAV writing error: \(error)")
+            }
+        }
     }
 
 
@@ -606,9 +657,39 @@ struct AddVoiceView: View {
 
 
     func submitVoice(audio: URL?, transcript: String, name: String) {
-        print(audio ?? "missing audio")
-        print(name)
-        print(transcript)
+        guard let audio else {
+            print("missing audio")
+            return
+        }
+        do {
+            let audioData = try Data(contentsOf: audio)
+            let base64Audio = audioData.base64EncodedString()
+
+            let json: [String: String] = [
+                "ref_text": transcript,
+                "ref_audio": base64Audio
+            ]
+
+            let data = try JSONSerialization.data(
+                withJSONObject: json,
+                options: [.prettyPrinted]
+            )
+
+            let documentsURL = FileManager.default.urls(
+                for: .documentDirectory,
+                in: .userDomainMask
+            )[0]
+
+            let fileURL = documentsURL.appendingPathComponent("\(name).cv")
+
+            try data.write(to: fileURL)
+
+            print("Saved CV file:")
+            print(fileURL.path)
+
+        } catch {
+            print("Failed saving CV:", error.localizedDescription)
+        }
     }
 
 
