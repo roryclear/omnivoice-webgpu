@@ -541,11 +541,9 @@ struct AddVoiceView: View {
 
     func startRecording() {
         requestMicrophonePermission()
-        configureAudioSession()
 
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(UUID().uuidString).wav")
-
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("temp.wav")
+        
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: 44100,
@@ -574,25 +572,6 @@ struct AddVoiceView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    func configureAudioSession() {
-        #if os(iOS)
-        do {
-            let session = AVAudioSession.sharedInstance()
-
-            try session.setCategory(
-                .playAndRecord,
-                mode: .default,
-                options: [.defaultToSpeaker]
-            )
-
-            try session.setActive(true)
-
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        #endif
     }
     
     func stopRecording() {
@@ -643,6 +622,20 @@ struct AddVoiceView: View {
                     errorMessage = "Microphone permission denied."
                 }
             }
+        }
+        do {
+            let session = AVAudioSession.sharedInstance()
+
+            try session.setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.defaultToSpeaker]
+            )
+
+            try session.setActive(true)
+
+        } catch {
+            errorMessage = error.localizedDescription
         }
     #endif
     }
