@@ -473,6 +473,55 @@ class GraphRunner {
     }
 }
 
+struct AddVoiceView: View {
+    var onDismiss: () -> Void = {}
+
+    @State private var audioURL: URL?
+    @State private var transcript: String = ""
+    @State private var voiceName: String = ""
+    @State private var showFilePicker = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+
+            Button {
+                showFilePicker = true
+            } label: {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.largeTitle)
+            }
+            .fileImporter(
+                isPresented: $showFilePicker,
+                allowedContentTypes: [.audio]
+            ) { result in
+                if let url = try? result.get() {
+                    audioURL = url
+                }
+            }
+            Text(audioURL?.lastPathComponent ?? "No audio selected")
+            TextField("Voice name...", text: $voiceName)
+                .textFieldStyle(.roundedBorder)
+            TextField("Transcript...", text: $transcript)
+                .textFieldStyle(.roundedBorder)
+            Button("Submit") {
+                submitVoice(
+                    audio: audioURL,
+                    transcript: transcript,
+                    name: voiceName
+                )
+            }
+        }
+        .padding()
+        .navigationTitle("Add Voice")
+    }
+
+    func submitVoice(audio: URL?, transcript: String, name: String) {
+        print(audio ?? "no audio")
+        print(name)
+        print(transcript)
+    }
+}
+
 struct ContentView: View {
     @State private var inputText: String = ""
     @State private var voices: [String] = []
@@ -482,78 +531,88 @@ struct ContentView: View {
     @State private var progress: Float = 0.0
     @State private var isGenerating: Bool = false
     @State private var showPlayer: Bool = false
-
+    
     var body: some View {
-        VStack(spacing: 20) {
-
-            TextField("Enter text...", text: $inputText)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
-
-            Picker("Voice", selection: $selectedVoice) {
-                ForEach(voices, id: \.self) { voice in
-                    Text(voice).tag(voice)
-                }
-            }
-            .pickerStyle(.menu)
-            .padding(.horizontal)
-
-            Picker("Language", selection: $selectedLanguage) {
-                Text("Auto").tag("None")
-                ForEach(languages) { language in Text(language.name).tag(language.id) }
-            }
-            .pickerStyle(.menu)
-            .padding(.horizontal)
-            
-            if isGenerating {
-                ProgressView(value: progress)
+        NavigationStack {
+            VStack(spacing: 20) {
+                
+                TextField("Enter text...", text: $inputText)
+                    .textFieldStyle(.roundedBorder)
                     .padding(.horizontal)
-                Text("\(Int(progress * 100))%")
-            }
-            
-            if showPlayer {
-                let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
+                
                 HStack {
-                    Button(action: { playAudio(url) }) {
-                        Image(systemName: "play.circle.fill")
-                            .font(.largeTitle)
+                    Picker("Voice", selection: $selectedVoice) {
+                        ForEach(voices, id: \.self) { voice in
+                            Text(voice).tag(voice)
+                        }
                     }
-                    ShareLink(item: url) {
-                        Image(systemName: "square.and.arrow.up")
+                    .pickerStyle(.menu)
+                    
+                    NavigationLink(destination: AddVoiceView(onDismiss: {
+                        loadVoices() //load voices when returning
+                    })) {
+                        Image(systemName: "plus.circle")
                             .font(.title2)
                     }
                 }
-            }
-            
-            Button("Generate Audio") {
-                showPlayer = false
-                isGenerating = true
-                progress = 0
-                Task.detached {
-                    generate(
-                        text: inputText,
-                        cvFile: selectedVoice,
-                        num_steps: 32,
-                        language: selectedLanguage
-                    )
-                    generationProgress = 1.0
+                
+                Picker("Language", selection: $selectedLanguage) {
+                    Text("Auto").tag("None")
+                    ForEach(languages) { language in Text(language.name).tag(language.id) }
+                }
+                .pickerStyle(.menu)
+                .padding(.horizontal)
+                
+                if isGenerating {
+                    ProgressView(value: progress)
+                        .padding(.horizontal)
+                    Text("\(Int(progress * 100))%")
+                }
+                
+                if showPlayer {
+                    let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
+                    HStack {
+                        Button(action: { playAudio(url) }) {
+                            Image(systemName: "play.circle.fill")
+                                .font(.largeTitle)
+                        }
+                        ShareLink(item: url) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.title2)
+                        }
+                    }
+                }
+                
+                Button("Generate Audio") {
+                    showPlayer = false
+                    isGenerating = true
+                    progress = 0
+                    Task.detached {
+                        generate(
+                            text: inputText,
+                            cvFile: selectedVoice,
+                            num_steps: 32,
+                            language: selectedLanguage
+                        )
+                        generationProgress = 1.0
+                    }
                 }
             }
-        }
-        .padding()
-        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
-            if isGenerating {
-                progress = generationProgress
-                if generationProgress >= 1.0 {
-                    isGenerating = false
-                    generationProgress = 0
-                    showPlayer = true
+            .padding()
+            .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+                if isGenerating {
+                    progress = generationProgress
+                    if generationProgress >= 1.0 {
+                        isGenerating = false
+                        generationProgress = 0
+                        showPlayer = true
+                    }
                 }
             }
-        }
-        .onAppear {
-            loadVoices()
-            loadLanguages()
+            .onAppear {
+                loadVoices()
+                loadLanguages()
+            }
         }
     }
     
