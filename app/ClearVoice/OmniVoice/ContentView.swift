@@ -412,6 +412,7 @@ struct AddVoiceView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.gray.opacity(0.3))
                 )
+                #if os(iOS)
                 .toolbar {
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
@@ -425,6 +426,7 @@ struct AddVoiceView: View {
                         }
                     }
                 }
+                #endif
 
             Button("Save Voice") {
                 submitVoice(
@@ -705,6 +707,7 @@ struct ContentView: View {
                             RoundedRectangle(cornerRadius: 8)
                                 .stroke(Color.gray.opacity(0.4))
                         )
+                        #if os(iOS)
                         .toolbar {
                             ToolbarItemGroup(placement: .keyboard) {
                                 Spacer()
@@ -718,6 +721,7 @@ struct ContentView: View {
                                 }
                             }
                         }
+                        #endif
                 }
                 .padding(.horizontal)
                 
