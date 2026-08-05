@@ -333,8 +333,6 @@ class GraphRunner {
                     depth: local[2]
                 )
                 
-                print("global_size =",threadsPerGrid, globals_dict)
-                
                 encoder.dispatchThreadgroups(
                     threadsPerGrid,
                     threadsPerThreadgroup: threadsPerThreadgroup
@@ -414,8 +412,21 @@ struct AddVoiceView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.gray.opacity(0.3))
                 )
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") {
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.resignFirstResponder),
+                                to: nil,
+                                from: nil,
+                                for: nil
+                            )
+                        }
+                    }
+                }
 
-            Button("Submit") {
+            Button("Save Voice") {
                 submitVoice(
                     audio: audioURL,
                     transcript: transcript,
@@ -614,7 +625,6 @@ struct AddVoiceView: View {
         }
     #endif
     }
-    
 }
 
 struct VoiceListView: View {
@@ -695,6 +705,19 @@ struct ContentView: View {
                             RoundedRectangle(cornerRadius: 8)
                                 .stroke(Color.gray.opacity(0.4))
                         )
+                        .toolbar {
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                Button("Done") {
+                                    UIApplication.shared.sendAction(
+                                        #selector(UIResponder.resignFirstResponder),
+                                        to: nil,
+                                        from: nil,
+                                        for: nil
+                                    )
+                                }
+                            }
+                        }
                 }
                 .padding(.horizontal)
                 
