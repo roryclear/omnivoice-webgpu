@@ -1,14 +1,6 @@
 import json
 
 
-def get_buffers(file_name):
-  data = json.load(open(file_name))
-  buffers = set()
-  for element in data:
-    if "call" in element.keys():
-      for b in element["call"]["buffers"]: buffers.add(b)
-  return buffers
-
 def opt(file_a, file_b):
   a_bufs = get_buffers(file_a)
 
@@ -27,7 +19,34 @@ def opt(file_a, file_b):
   with open(file_a, "w") as f: json.dump(data_a, f)
   with open(file_b, "w") as f: json.dump(data_b, f)
 
-print("here")
-opt("0.rc", "1.rc")
-print("done")
+def get_buffers(file_name):
+  data = json.load(open(file_name))
+  buffers = set()
+  for element in data:
+    if "call" in element.keys():
+      for b in element["call"]["buffers"]: buffers.add(b)
+  return buffers
+
+
+def get_all_buffers(files):
+  file_bufs = []
+  for file in files: file_bufs.append(get_buffers(file))
+
+  seen = set()
+  for i in reversed(range(len(file_bufs))):
+    file_bufs[i] -= seen
+    seen |= file_bufs[i]
+
+  ret = {}
+  for i in range(len(file_bufs)):
+    ret[files[i]] = list(file_bufs[i])
+  return ret
+
+rets = get_all_buffers(["0.rc", "1.rc", "2.rc", "100.rc"])
+with open("buffers.json", "w") as f: json.dump(rets, f)
+
+#print("here")
+#opt("0.rc", "1.rc")
+#print("done")
+
 
