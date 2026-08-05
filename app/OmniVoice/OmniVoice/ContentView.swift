@@ -403,9 +403,17 @@ struct AddVoiceView: View {
 
             TextField("Voice name...", text: $voiceName)
                 .textFieldStyle(.roundedBorder)
+                .frame(width: 150)
 
-            TextField("Transcript...", text: $transcript)
-                .textFieldStyle(.roundedBorder)
+            Text("Transcript:")
+
+            TextEditor(text: $transcript)
+                .frame(height: 80)
+                .frame(maxWidth: .infinity)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.gray.opacity(0.3))
+                )
 
             Button("Submit") {
                 submitVoice(
