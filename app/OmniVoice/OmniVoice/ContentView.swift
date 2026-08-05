@@ -748,6 +748,7 @@ struct ContentView: View {
                         generationProgress = 1.0
                     }
                 }
+                .disabled(isGenerating)
             }
             .padding()
             .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
