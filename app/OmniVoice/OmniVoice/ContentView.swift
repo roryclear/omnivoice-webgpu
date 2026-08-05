@@ -661,10 +661,19 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                
-                TextField("Enter text...", text: $inputText)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Enter Text:")
+                        .font(.headline)
+
+                    TextEditor(text: $inputText)
+                        .frame(width: 300, height: 100)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.4))
+                        )
+                }
+                .padding(.horizontal)
                 
                 HStack {
                     Picker("Voice", selection: $selectedVoice) {
@@ -675,7 +684,7 @@ struct ContentView: View {
                     }
                     .pickerStyle(.menu)
 
-                    NavigationLink("Edit") {
+                    NavigationLink("Manage Voices") {
                         VoiceListView(
                             voices: $voices,
                             selectedVoice: $selectedVoice
@@ -683,46 +692,52 @@ struct ContentView: View {
                     }
                 }
                 
-                HStack {
-                    NavigationLink(destination: AddVoiceView(onDismiss: {
-                        loadVoices() //load voices when returning
-                    })) {
-                        Image(systemName: "plus.circle")
-                            .font(.title2)
+                NavigationLink(destination: AddVoiceView(onDismiss: {
+                    loadVoices()
+                })) {
+                    Text("Add New Voice")
+                        .frame(width: 160)
+                }
+                .buttonStyle(.bordered)
+                
+                Picker("", selection: $selectedLanguage) {
+                    Text("Auto Language").tag("None")
+                    ForEach(languages) { language in
+                        Text(language.name).tag(language.id)
                     }
                 }
-                
-                Picker("Language", selection: $selectedLanguage) {
-                    Text("Auto").tag("None")
-                    ForEach(languages) { language in Text(language.name).tag(language.id) }
-                }
                 .pickerStyle(.menu)
+                .frame(width: 250)
                 .padding(.horizontal)
-                
+
                 if isGenerating {
                     ProgressView(value: progress)
                         .padding(.horizontal)
                     Text("\(Int(progress * 100))%")
                 }
-                
+
                 if showPlayer {
-                    let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("output.wav")
+                    let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                        .appendingPathComponent("output.wav")
+
                     HStack {
                         Button(action: { playAudio(url) }) {
                             Image(systemName: "play.circle.fill")
                                 .font(.largeTitle)
                         }
+
                         ShareLink(item: url) {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.title2)
                         }
                     }
                 }
-                
+
                 Button("Generate Audio") {
                     showPlayer = false
                     isGenerating = true
                     progress = 0
+
                     Task.detached {
                         generate(
                             text: inputText,
