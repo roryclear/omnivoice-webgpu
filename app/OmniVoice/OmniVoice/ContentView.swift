@@ -39,6 +39,8 @@ let TOKENS_BUF = 1136
 let INPUT_IDS_BUF = 1135
 let PRED_TOKENS_BUF = 1702
 
+var delete_buffers: [String: [Int]] = [:]
+
 class Tokenizer {
     let specialTokens: [String: Int32]
     let normalTokensBytes: [[UInt8]: Int32]
@@ -805,6 +807,12 @@ struct CVFile: Decodable {
 }
 
 func generate(text: String, cvFile: String, num_steps: Int, language: String) {
+    if let url = Bundle.main.url(forResource: "buffers", withExtension: "json"),
+       let data = try? Data(contentsOf: url),
+       let dict = try? JSONDecoder().decode([String: [Int]].self, from: data) {
+        delete_buffers = dict
+    }
+    
     encode_graph = GraphRunner(filename: "0.rc")
     let url = URL(fileURLWithPath: cvFile)
     guard let data = try? Data(contentsOf: url) else { fatalError("Failed to load CV file at path: \(cvFile)")}
@@ -819,6 +827,8 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     memcpy(buffers[encode_graph.copyins.last!]!.contents(), ref_wav, ref_wav.count * MemoryLayout<Float>.stride)
     encode_graph.run()
     var ref_audio_tokens = get_ref_tokens()
+    // free up some memory
+    for b in delete_buffers["0.rc"]! { buffers[b] = nil }
     model_graph = GraphRunner(filename: "1.rc")
     model_graph2 = GraphRunner(filename: "2.rc")
     //todo shrink graphs (spread the allocs to where needed?
@@ -894,6 +904,9 @@ func generate(text: String, cvFile: String, num_steps: Int, language: String) {
     }
     
     // todo move and copyin
+    // free up some memory
+    for b in delete_buffers["1.rc"]! { buffers[b] = nil }
+    for b in delete_buffers["2.rc"]! { buffers[b] = nil }
     decode_graph = GraphRunner(filename: "100.rc")
     var combinedWaveform: [Float] = []
     for (i, ret) in rets.enumerated() {

@@ -7,19 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		BE45B97A3020C40B00C809AE /* 2.rc in Resources */ = {isa = PBXBuildFile; fileRef = BE45B9783020C40B00C809AE /* 2.rc */; };
-		BE45B97B3020C40B00C809AE /* 100.rc in Resources */ = {isa = PBXBuildFile; fileRef = BE45B9793020C40B00C809AE /* 100.rc */; };
-		BE45B97C3020C40B00C809AE /* 1.rc in Resources */ = {isa = PBXBuildFile; fileRef = BE45B9773020C40B00C809AE /* 1.rc */; };
-		BE45B97D3020C40B00C809AE /* 0.rc in Resources */ = {isa = PBXBuildFile; fileRef = BE45B9763020C40B00C809AE /* 0.rc */; };
+		BE71AA623023A442000F2229 /* buffers.json in Resources */ = {isa = PBXBuildFile; fileRef = BE71AA613023A442000F2229 /* buffers.json */; };
+		BEC2C8B63023522900FCA729 /* 0.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC2C8B53023522900FCA729 /* 0.rc */; };
+		BEC2C8BA3023523400FCA729 /* 100.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC2C8B93023523400FCA729 /* 100.rc */; };
+		BEC2C8BB3023523400FCA729 /* 1.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC2C8B73023523400FCA729 /* 1.rc */; };
+		BEC2C8BC3023523400FCA729 /* 2.rc in Resources */ = {isa = PBXBuildFile; fileRef = BEC2C8B83023523400FCA729 /* 2.rc */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		BE3001AE3022543000CB61DD /* ClearVoice-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "ClearVoice-Info.plist"; sourceTree = "<group>"; };
-		BE45B9763020C40B00C809AE /* 0.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 0.rc; sourceTree = "<group>"; };
-		BE45B9773020C40B00C809AE /* 1.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 1.rc; sourceTree = "<group>"; };
-		BE45B9783020C40B00C809AE /* 2.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 2.rc; sourceTree = "<group>"; };
-		BE45B9793020C40B00C809AE /* 100.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 100.rc; sourceTree = "<group>"; };
 		BE6ED7D43010E89400847188 /* ClearVoice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClearVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BE71AA613023A442000F2229 /* buffers.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = buffers.json; sourceTree = "<group>"; };
+		BEC2C8B53023522900FCA729 /* 0.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 0.rc; sourceTree = "<group>"; };
+		BEC2C8B73023523400FCA729 /* 1.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 1.rc; sourceTree = "<group>"; };
+		BEC2C8B83023523400FCA729 /* 2.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 2.rc; sourceTree = "<group>"; };
+		BEC2C8B93023523400FCA729 /* 100.rc */ = {isa = PBXFileReference; lastKnownFileType = text; path = 100.rc; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -44,11 +46,12 @@
 		BE6ED7CB3010E89400847188 = {
 			isa = PBXGroup;
 			children = (
+				BE71AA613023A442000F2229 /* buffers.json */,
 				BE3001AE3022543000CB61DD /* ClearVoice-Info.plist */,
-				BE45B9763020C40B00C809AE /* 0.rc */,
-				BE45B9773020C40B00C809AE /* 1.rc */,
-				BE45B9783020C40B00C809AE /* 2.rc */,
-				BE45B9793020C40B00C809AE /* 100.rc */,
+				BEC2C8B73023523400FCA729 /* 1.rc */,
+				BEC2C8B83023523400FCA729 /* 2.rc */,
+				BEC2C8B93023523400FCA729 /* 100.rc */,
+				BEC2C8B53023522900FCA729 /* 0.rc */,
 				BE6ED7D63010E89400847188 /* OmniVoice */,
 				BE6ED7D53010E89400847188 /* Products */,
 			);
@@ -126,10 +129,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BE45B97A3020C40B00C809AE /* 2.rc in Resources */,
-				BE45B97B3020C40B00C809AE /* 100.rc in Resources */,
-				BE45B97C3020C40B00C809AE /* 1.rc in Resources */,
-				BE45B97D3020C40B00C809AE /* 0.rc in Resources */,
+				BE71AA623023A442000F2229 /* buffers.json in Resources */,
+				BEC2C8BA3023523400FCA729 /* 100.rc in Resources */,
+				BEC2C8BB3023523400FCA729 /* 1.rc in Resources */,
+				BEC2C8BC3023523400FCA729 /* 2.rc in Resources */,
+				BEC2C8B63023522900FCA729 /* 0.rc in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
