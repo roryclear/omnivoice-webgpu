@@ -592,6 +592,60 @@ struct AddVoiceView: View {
     
 }
 
+struct VoiceListView: View {
+    @Binding var voices: [URL]
+    @Binding var selectedVoice: URL?
+
+    var body: some View {
+        List {
+            ForEach(voices, id: \.self) { url in
+                HStack {
+                    Text(url.deletingPathExtension().lastPathComponent)
+                    Spacer()
+                    if selectedVoice == url {
+                        Image(systemName: "checkmark")
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedVoice = url
+                }
+                .contextMenu {
+                    Button("Delete", role: .destructive) {
+                        delete(url)
+                    }
+                }
+            }
+            .onDelete(perform: deleteOffsets) // works with keyboard (⌫)
+        }
+        .navigationTitle("Manage Voices")
+    }
+
+    func delete(_ url: URL) {
+        deleteURLs([url])
+    }
+    func deleteOffsets(at offsets: IndexSet) {
+        let urls = offsets.map { voices[$0] }
+        deleteURLs(urls)
+    }
+
+    func deleteURLs(_ urls: [URL]) {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
+        for url in urls {
+            if url.path.contains(documents.path) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+
+        voices.removeAll { urls.contains($0) }
+
+        if let selected = selectedVoice, !voices.contains(selected) {
+            selectedVoice = voices.first
+        }
+    }
+}
+
 struct ContentView: View {
     @State private var inputText: String = ""
     @State private var voices: [URL] = []
@@ -618,7 +672,16 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    
+
+                    NavigationLink("Edit") {
+                        VoiceListView(
+                            voices: $voices,
+                            selectedVoice: $selectedVoice
+                        )
+                    }
+                }
+                
+                HStack {
                     NavigationLink(destination: AddVoiceView(onDismiss: {
                         loadVoices() //load voices when returning
                     })) {
