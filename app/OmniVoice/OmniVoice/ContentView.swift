@@ -361,6 +361,7 @@ struct AddVoiceView: View {
     @State private var isRecording = false
     @State private var isPlaying = false
     @State private var errorMessage: String?
+    @State private var recordingTimeLeft: Int = 10
 
     var canSubmit: Bool {
         audioURL != nil &&
@@ -371,13 +372,21 @@ struct AddVoiceView: View {
     var body: some View {
         VStack(spacing: 20) {
 
-            Button {
-                startRecording()
-            } label: {
-                Image(systemName: "mic.circle.fill")
-                    .font(.largeTitle)
+            HStack {
+                Button {
+                    startRecording()
+                } label: {
+                    Image(systemName: "mic.circle.fill")
+                        .font(.largeTitle)
+                        .foregroundColor(isRecording ? .red : .primary)
+                }
+                .disabled(isRecording)
+
+                if isRecording {
+                    Text("Recording \(recordingTimeLeft)s")
+                        .foregroundColor(.red)
+                }
             }
-            .disabled(isRecording)
 
             if let audioURL {
                 Button {
@@ -433,10 +442,16 @@ struct AddVoiceView: View {
             recorder = try AVAudioRecorder(url: url, settings: settings)
             recorder?.isMeteringEnabled = true
             recorder?.record()
-            isRecording = true
             
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                self.stopRecording()
+            isRecording = true
+            recordingTimeLeft = 10
+
+            Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+                if self.recordingTimeLeft > 0 { self.recordingTimeLeft -= 1 }
+                if self.recordingTimeLeft == 0 {
+                    timer.invalidate()
+                    self.stopRecording()
+                }
             }
         } catch {
             errorMessage = error.localizedDescription
