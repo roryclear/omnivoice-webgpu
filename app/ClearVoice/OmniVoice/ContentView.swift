@@ -808,6 +808,9 @@ struct ContentView: View {
                         isGenerating = false
                         generationProgress = 0
                         showPlayer = true
+                        let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                            .appendingPathComponent("output.wav")
+                        playAudio(url)
                     }
                 }
             }
