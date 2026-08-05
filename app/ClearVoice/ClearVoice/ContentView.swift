@@ -530,8 +530,8 @@ struct AddVoiceView: View {
                 wavData.append(audioData)
                 
                 try wavData.write(to: url)
-                for i in stride(from: 0, to: min(44, wavData.count), by: 2) {
-                    let val = wavData.subdata(in: i..<min(i+2, wavData.count))
+                DispatchQueue.main.async {
+                    self.playRecording()
                 }
                 
             } catch {
