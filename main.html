@@ -113,28 +113,31 @@ loadLanguages();
 loadVoices();
 
 
-// SAVE VOICE
 voiceForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const formData = new FormData(voiceForm);
 
-  const response = await fetch("/", {
-    method: "POST",
-    body: formData
-  });
+  try {
+    const response = await fetch("/", {
+      method: "POST",
+      body: formData
+    });
 
-  if (response.ok) {
-    alert("Voice saved!");
-    await loadVoices(); // refresh dropdown
-    voiceForm.reset();
-  } else {
-    alert("Failed to save voice");
+    if (response.ok) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await loadVoices();
+      voiceForm.reset();
+    } else {
+      const errorText = await response.text();
+      alert(`Failed to save voice: ${errorText}`);
+    }
+  } catch (err) {
+    console.error("Error saving voice:", err);
+    alert("Error saving voice. Check console for details.");
   }
 });
 
-
-// GENERATE AUDIO
 generateForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 

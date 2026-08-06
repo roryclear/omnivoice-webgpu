@@ -1013,6 +1013,9 @@ class Handler(BaseHTTPRequestHandler):
         voice = { "ref_text": data['ref_text'], "ref_audio": base64.b64encode(data['file']).decode("ascii")}
         with open(f"voices/{data['voice_name']}.cv", "w") as f: json.dump(voice, f)
         self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"status": "success"}).encode())
         return
 
       data['voice_name'] = selected_voice
