@@ -1375,7 +1375,7 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
     print(wavLen)
     print(styleTokens)
     print(num_ref_tokens)
-    let pattern = #"[^。，！？；：、.,?]+[。，！？；：、.,?]?"#
+    let pattern = #"[^。，！？；：、,.?，\(\)\[\]（）【】]+[。，！？；：、,.?，\(\)\[\]（）【】]?"#
     let regex = try! NSRegularExpression(pattern: pattern, options: [])
 
     let nsText = text as NSString
