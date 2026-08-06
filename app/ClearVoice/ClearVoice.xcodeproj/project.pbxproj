@@ -25,9 +25,9 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		BE6ED7D63010E89400847188 /* OmniVoice */ = {
+		BE6ED7D63010E89400847188 /* ClearVoice */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = OmniVoice;
+			path = ClearVoice;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -52,7 +52,7 @@
 				BE5126773023ADC7005E0114 /* 100.rc */,
 				BE71AA613023A442000F2229 /* buffers.json */,
 				BE3001AE3022543000CB61DD /* ClearVoice-Info.plist */,
-				BE6ED7D63010E89400847188 /* OmniVoice */,
+				BE6ED7D63010E89400847188 /* ClearVoice */,
 				BE6ED7D53010E89400847188 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -81,7 +81,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				BE6ED7D63010E89400847188 /* OmniVoice */,
+				BE6ED7D63010E89400847188 /* ClearVoice */,
 			);
 			name = ClearVoice;
 			packageProductDependencies = (
