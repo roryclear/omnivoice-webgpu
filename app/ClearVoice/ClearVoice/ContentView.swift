@@ -632,37 +632,59 @@ struct AddVoiceView: View {
 struct VoiceListView: View {
     @Binding var voices: [URL]
     @Binding var selectedVoice: URL?
+    
+    private var filteredVoices: [URL] {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return voices.filter { $0.path.contains(documents.path) }
+    }
 
     var body: some View {
-        List {
-            ForEach(voices, id: \.self) { url in
-                HStack {
-                    Text(url.deletingPathExtension().lastPathComponent)
-                    Spacer()
-                    if selectedVoice == url {
-                        Image(systemName: "checkmark")
-                    }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedVoice = url
-                }
-                .contextMenu {
-                    Button("Delete", role: .destructive) {
-                        delete(url)
-                    }
-                }
+        VStack {
+            Group {
+                #if os(macOS)
+                Text("Right-click to delete a voice")
+                #else
+                Text("Swipe left to delete a voice")
+                #endif
             }
-            .onDelete(perform: deleteOffsets) // works with keyboard (⌫)
+            .font(.footnote)
+            .foregroundColor(.secondary)
+
+            List {
+                ForEach(filteredVoices, id: \.self) { url in
+                    row(for: url)
+                }
+                .onDelete(perform: deleteOffsets)
+            }
         }
         .navigationTitle("Manage Voices")
+    }
+    
+    @ViewBuilder
+    private func row(for url: URL) -> some View {
+        HStack {
+            Text(url.deletingPathExtension().lastPathComponent)
+            Spacer()
+            if selectedVoice == url {
+                Image(systemName: "checkmark")
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedVoice = url
+        }
+        .contextMenu {
+            Button("Delete", role: .destructive) {
+                delete(url)
+            }
+        }
     }
 
     func delete(_ url: URL) {
         deleteURLs([url])
     }
     func deleteOffsets(at offsets: IndexSet) {
-        let urls = offsets.map { voices[$0] }
+        let urls = offsets.map { filteredVoices[$0] }
         deleteURLs(urls)
     }
 
