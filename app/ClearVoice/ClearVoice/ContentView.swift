@@ -755,6 +755,11 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .padding(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.gray.opacity(0.4))
+                    )
 
                     NavigationLink("Manage Voices") {
                         VoiceListView(
@@ -762,6 +767,7 @@ struct ContentView: View {
                             selectedVoice: $selectedVoice
                         )
                     }
+                    .buttonStyle(.bordered)
                 }
                 
                 NavigationLink(destination: AddVoiceView(onDismiss: {
@@ -779,6 +785,13 @@ struct ContentView: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .frame(width: 250)
+                .padding(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.gray.opacity(0.4))
+                )
+                .padding(.horizontal)
                 .frame(width: 250)
                 .padding(.horizontal)
 
@@ -820,6 +833,7 @@ struct ContentView: View {
                         generationProgress = 1.0
                     }
                 }
+                .buttonStyle(.bordered)
                 .disabled(isGenerating)
             }
             .padding()
