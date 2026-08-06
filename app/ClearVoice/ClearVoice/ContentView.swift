@@ -435,10 +435,11 @@ struct AddVoiceView: View {
                     name: voiceName
                 )
             }
+            .buttonStyle(.bordered)
             .disabled(!canSubmit)
         }
         .padding()
-        .navigationTitle("Add Voice")
+        .navigationTitle("Add New Voice")
     }
 
 
