@@ -107,8 +107,7 @@ AUDIO_CODEBOOK_WEIGHTS = [8, 8, 6, 6, 4, 4, 2, 2]
 AUDIO_MASK_ID = 1024
 SAMPLING_RATE = 24000
 # saved from getting all chars with https://github.com/k2-fsa/OmniVoice/blob/9948396864cb713b0c2f92495cf4449bd8717127/omnivoice/utils/duration.py#L204
-CHAR_WEIGHTS = pickle.load(open('char_weights.pkl', 'rb'))
-with open("char_weights.json", "w") as f: json.dump(CHAR_WEIGHTS, f)
+with open("char_weights.json", "r") as f: CHAR_WEIGHTS = json.load(f)
 
 data = json.load(urllib.request.urlopen("https://huggingface.co/k2-fsa/OmniVoice/resolve/main/tokenizer.json"))
 special_tokens = data["added_tokens"]
