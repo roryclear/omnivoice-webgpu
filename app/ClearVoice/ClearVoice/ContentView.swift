@@ -719,7 +719,12 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-
+                Image("icon")
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 25))
+                    .frame(width: 120, height: 120)
+                
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Enter Text:")
                         .font(.headline)
@@ -855,6 +860,11 @@ struct ContentView: View {
                 loadVoices()
                 loadLanguages()
             }
+            #if os(iOS)
+            .padding()
+            .navigationTitle("ClearVoice")
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
     }
     
