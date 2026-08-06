@@ -439,6 +439,7 @@ struct AddVoiceView: View {
             .disabled(!canSubmit)
         }
         .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Add New Voice")
     }
 
