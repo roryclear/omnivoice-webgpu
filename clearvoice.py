@@ -89,9 +89,9 @@ class SimpleTokenizer:
     return ([] if self.bos_id is None else [self.bos_id]) + (self.encode("<sop>") if self.preset == 'glm4' else [])
   def is_end(self, token_id:int) -> bool: return token_id in (self.eos_id, self.eot_id)
   
-# ios needs to be like 500 for RAM
-MAX_LEN = 500
-REF_AUDIO_LEN = 10
+# ios needs to be like 500 max_len and 15s ref len for RAM
+MAX_LEN = 1000
+REF_AUDIO_LEN = 15
 FRAME_RATE = 25
 AUDIO_CHUNK_DURATION = 15.0
 POSITION_TEMP = 5.0
@@ -198,7 +198,6 @@ def load_audio(audio, sampling_rate: int):
   data = [sum(samples) / len(samples) for samples in zip(*data)]
   data = resample([data], sr, sampling_rate)[0]
   rms = math.sqrt(sum(x * x for x in data) / len(data))
-  print("rms =",rms)
   if 0 < rms < 0.1:
     scale = 0.1 / rms
     data = [x * scale for x in data]
@@ -620,10 +619,6 @@ class DacResidualUnit:
     output_tensor = self.snake2(output_tensor)
     output_tensor = self.conv2(output_tensor)
     padding = (hidden_state.shape[-1] - output_tensor.shape[-1]) // 2
-    if padding > 0:
-        print("does this get hit?")
-        exit()
-        hidden_state = hidden_state[..., padding:-padding]
     output_tensor = hidden_state + output_tensor
     return output_tensor    
 
@@ -782,7 +777,6 @@ class omni:
     # so c_len doesn't exceed MAX_LEN
     style_tokens = tok.encode(f"<|denoise|><|lang_start|>{language}<|lang_end|><|instruct_start|>None<|instruct_end|>")
     chunks = self.get_chunks(text, ref_text, wav_len, style_tokens, ref_audio_tokens)
-    print("CHUNKS", len(chunks), chunks)
     res = []
     rets = []
     target_lengths = []
@@ -889,8 +883,6 @@ class omni:
     audio_mask[0][:c_len] = cond_audio_mask
     audio_mask[1][:target_length] = cond_audio_mask[-target_length:]
 
-    #print("AUDIO_MASK",audio_mask, "target_length", target_length, "shape",np.array(audio_mask).shape, "sum:", np.array(audio_mask).sum())
-
     attention_mask = [[[[False] * MAX_LEN for _ in range(MAX_LEN)]] for _ in range(2)]
     for i in range(c_len): attention_mask[0][0][i][:c_len] = [True] * c_len
     for i in range(target_length): attention_mask[1][0][i][:target_length] = [True] * target_length
@@ -902,7 +894,6 @@ class omni:
   def _generate_iterative(self, text_tokens, target_length, ref_audio_tokens, num_steps=16, style_tokens=None):
     c_len, audio_mask, attention_mask, input_ids = self.get_inputs(text_tokens, target_length, ref_audio_tokens, style_tokens)
     sched, num_steps = get_sched(num_steps=num_steps, target_length=target_length)
-    print("sched, num_steps =",sched, num_steps)
 
     c_len_var = Variable("c_len",1,MAX_LEN).bind(c_len)
     t_len_var = Variable("t_len",1,MAX_LEN).bind(target_length)
@@ -1023,11 +1014,6 @@ class Handler(BaseHTTPRequestHandler):
         with open(f"voices/{data['voice_name']}.cv", "w") as f: json.dump(voice, f)
       else: data['voice_name'] = selected_voice
 
-
-      print("RORY REF_TEXT =",data['ref_text'])
-      print("RORY TEXT =",data['target_text'])
-      print("RORY LANG =",data.get('language'))
-
       audio = model.generate(
         text=data['target_text'],
         cv_path=f"voices/{data['voice_name']}.cv",
@@ -1035,7 +1021,6 @@ class Handler(BaseHTTPRequestHandler):
         language=data["language"]
       )
       wav_bytes = waveform_to_wav_bytes(audio, SAMPLING_RATE)
-      with open("output420.wav", "wb") as f: f.write(wav_bytes)
       self.send_response(200)
       self.send_header("Content-Type", "audio/wav")
       self.send_header("Content-Length", str(len(wav_bytes)))
@@ -1047,9 +1032,6 @@ class Handler(BaseHTTPRequestHandler):
       self.send_response(500)
       self.end_headers()
 
-def write_waveform(file_name, audio):
-  with open(file_name, "wb") as f: f.write(waveform_to_wav_bytes(audio, SAMPLING_RATE))
-
 if __name__ == "__main__":
   import os
   import glob
@@ -1057,38 +1039,24 @@ if __name__ == "__main__":
   model = omni()
   
   if "--test" in sys.argv:
-    
-    with open("voices/rory-10s.wav", "rb") as f:
+    '''
+    with open("voices/rory-15s.wav", "rb") as f:
       voice = {"ref_text":"Yeah so I was just on the thirty three there, on my way to astro, and like I'm just reading my book and looking out the window, and I look, and there's a dog getting on the bus, and the thing has a leap card in its mouth, and it jumps up and taps the machine",
         "ref_audio":base64.b64encode(f.read()).decode("ascii")} 
-      json.dump(voice, open("voices/rory.cv", "w"))
+      json.dump(voice, open("voices/Rory.cv", "w"))
+    exit()
+    '''
     
-
-    # tinygrad cbfcf36e4 with metalgraph turned off, my macbook air m3
     os.makedirs("outputs", exist_ok=True)
     Tensor.manual_seed(0)
 
     audio = model.generate(
         text="That's it, turn the page on the day, walk away ,'Cause there's sense in what I say, I'm forty-fifth generation roman but I don't know them or care when I'm spitting, So return to your sitting position and listen",
-        cv_path="voices/rory-10s.cv",
+        cv_path="voices/Rory.cv",
         num_steps=32,
         language="None"
     )
-    pickle.dump(audio, open("outputs/rory.pkl", "wb"))
-    exp = pickle.load(open("outputs/rory.pkl", "rb"))
-    write_waveform("outputs/rory.wav", audio)
-    np.testing.assert_allclose(exp, audio, rtol=1e-5)
-    exit()
-    Tensor.manual_seed(1)
-    audio = model.generate(
-        text="Testing testing one two three, this has another string of text for me to read, James and Hammond are both blithering idiots, and on that bombshell, it's time to end",
-        ref_audio=open("voices/jezza-15s.wav", "rb").read(),
-        ref_text="it's what non car people don't get, they see all cars as just, a tonne and a half, two tonnes of wires, glass metal and rubber, they, that's all they see.",
-        num_steps=32
-    ) # audio is a list of `np.ndarray` with shape (T,) at 24 kHz.
-    pickle.dump(audio, open("outputs/jezza.pkl", "wb"))
-    exp = pickle.load(open("outputs/jezza.pkl", "rb"))
-    write_waveform("outputs/jezza.wav", audio)
+    with open("outputs/output.wav", "wb") as f: f.write(waveform_to_wav_bytes(audio, SAMPLING_RATE))
   else:
     server = HTTPServer(("0.0.0.0", 8080), Handler)
     server.model = model
