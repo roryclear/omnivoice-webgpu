@@ -348,7 +348,6 @@ class GraphRunner {
 struct AddVoiceView: View {
     @Environment(\.dismiss) private var dismiss
     var onDismiss: () -> Void = {}
-
     @State private var audioURL: URL?
     @State private var transcript = ""
     @State private var voiceName = ""
@@ -662,6 +661,7 @@ struct VoiceListView: View {
         .navigationTitle("Manage Voices")
     }
     
+    
     @ViewBuilder
     private func row(for url: URL) -> some View {
         HStack {
@@ -716,6 +716,8 @@ struct ContentView: View {
     @State private var progress: Float = 0.0
     @State private var isGenerating: Bool = false
     @State private var showPlayer: Bool = false
+    @State private var showRAMWarning: Bool = false
+    @State private var didCheckRAM: Bool = false
     
     var body: some View {
         NavigationStack {
@@ -860,6 +862,15 @@ struct ContentView: View {
             .onAppear {
                 loadVoices()
                 loadLanguages()
+                if !didCheckRAM {
+                    checkRAM()
+                    didCheckRAM = true
+                }
+            }
+            .alert("Memory Warning", isPresented: $showRAMWarning) {
+                Button("OK") {}
+            } message: {
+                Text("6GB of available RAM required to run the voice model to avoid crashes.")
             }
             #if os(iOS)
             .padding()
@@ -867,6 +878,15 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
         }
+    }
+    
+    func checkRAM() {
+        #if os(iOS)
+        let availableGB = Double(os_proc_available_memory()) / (1024.0 * 1024.0 * 1024.0)
+        if availableGB < 6.0 {
+            showRAMWarning = true
+        }
+        #endif
     }
     
     func playAudio(_ url: URL) {
