@@ -1397,11 +1397,40 @@ func getChunks(text: String, refText: String, wavLen: Int, styleTokens: [Int32],
         let textTokens = tokenizer.encode("<|text_start|>\(joinedText)<|text_end|>")
         print(styleTokens.count + textTokens.count + num_ref_tokens + targetLength)
         if styleTokens.count + textTokens.count + num_ref_tokens + targetLength < MAX_LEN {
-
             chunks[j] += chunksSmall[i]
         } else {
-            chunks.append(chunksSmall[i])
-            j += 1
+            // Check if the single chunk is too large
+            let singleTargetLength = estimateTargetTokens(text: chunksSmall[i], refText: refText, numRefAudioTokens: Int(wavLen / CHUNK_SIZE))
+            let singleJoinedText = [refText, chunksSmall[i]].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+            let singleTextTokens = tokenizer.encode("<|text_start|>\(singleJoinedText)<|text_end|>")
+            if styleTokens.count + singleTextTokens.count + num_ref_tokens + singleTargetLength > MAX_LEN {
+                let words = chunksSmall[i].components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                var currentChunk = ""
+                for word in words {
+                    let testChunk = currentChunk.isEmpty ? word : currentChunk + " " + word
+                    let testTargetLength = estimateTargetTokens(text: testChunk, refText: refText, numRefAudioTokens: Int(wavLen / CHUNK_SIZE))
+                    let testJoinedText = [refText, testChunk].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+                    let testTextTokens = tokenizer.encode("<|text_start|>\(testJoinedText)<|text_end|>")
+                    
+                    if styleTokens.count + testTextTokens.count + num_ref_tokens + testTargetLength < MAX_LEN {
+                        currentChunk = testChunk
+                    } else {
+                        if !currentChunk.isEmpty {
+                            chunks.append(currentChunk)
+                            j += 1
+                        }
+                        currentChunk = word
+                    }
+                }
+                
+                if !currentChunk.isEmpty {
+                    chunks.append(currentChunk)
+                    j += 1
+                }
+            } else {
+                chunks.append(chunksSmall[i])
+                j += 1
+            }
         }
     }
     print(chunks)
