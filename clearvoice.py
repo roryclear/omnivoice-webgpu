@@ -986,7 +986,8 @@ class Handler(BaseHTTPRequestHandler):
       self.end_headers()
   
   def do_POST(self):
-    try:
+    #try:
+    if 1==1:
       content_type = self.headers.get('Content-Type')
       boundary = content_type.split('boundary=')[1].encode().strip(b'"')
       body = self.rfile.read(int(self.headers['Content-Length']))
@@ -1008,10 +1009,13 @@ class Handler(BaseHTTPRequestHandler):
         elif b'name="language"' in part:
           data['language'] = content.decode()
       
-      if len(data["ref_text"]) > 0:
+      if "ref_text" in data and len(data["ref_text"]) > 0:
         voice = { "ref_text": data['ref_text'], "ref_audio": base64.b64encode(data['file']).decode("ascii")}
         with open(f"voices/{data['voice_name']}.cv", "w") as f: json.dump(voice, f)
-      else: data['voice_name'] = selected_voice
+        self.send_response(200)
+        return
+
+      data['voice_name'] = selected_voice
 
       audio = model.generate(
         text=data['target_text'],
@@ -1026,10 +1030,10 @@ class Handler(BaseHTTPRequestHandler):
       self.end_headers()
       self.wfile.write(wav_bytes)
 
-    except Exception as e:
-      print(f"Error: {e}")
-      self.send_response(500)
-      self.end_headers()
+    #except Exception as e:
+    #  print(f"Error: {e}")
+    #  self.send_response(500)
+    #  self.end_headers()
 
 if __name__ == "__main__":
   import os
